@@ -41,6 +41,8 @@ Playwright starts and stops an isolated guest Next dev server on port 3181. On W
 
 ## Known caveats
 
+Production is https://kinetix-chan.vercel.app. The release uses guest mode. The initial migration is checked in and has not been applied to a live Neon branch. Live Clerk authentication and distributed Upstash throttling have not been exercised against provider accounts.
+
 - The suite exercises actual Clerk anonymous rejection and injected authenticated identity. A live sign-in with the intended Clerk tenant requires its keys. The guest fallback cannot save.
 - The guest limiter is process-local without Redis. Use Upstash for shared limits across Vercel instances.
 - npm audit --omit=dev reported zero known runtime advisories at release verification. The development tree reported advisories in the Vitest/Vite glob tooling and Drizzle Kit's older esbuild dependency.

@@ -29,6 +29,10 @@ Exported `AppType` supports Hono's hc client. All APIs are throttled before iden
 
 The checked-in migration is `drizzle/0000_foundation.sql`. Rigs have UUID primary keys, Clerk owner IDs, names, a JSONB state document, nonnegative revision numbers and timestamps. The owner/update index supports the dashboard. Clips belong to a rig with cascading deletion, bounded fps, positive frame count and JSONB tracks. In 1.2, scope every mutation and lookup to the authenticated owner, including clip access via the parent rig. Update the revision and updated_at together when persisting edits.
 
+## Release topology
+
+The GitHub repository is chanchan012/kinetix-chan. Vercel builds the Next.js app from this repository, with separate feature-branch preview and main production deployments. Both serve the guest shell without external state. Preview and production service credentials can be configured independently.
+
 ## Later milestones
 
 Inngest thumbnails begin in 1.2. The shared command model, IK solver, timeline editing, exports, SSE and MCP resources/tools belong to subsequent subgoals. No MCP endpoint is registered in this release.

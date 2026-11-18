@@ -1,13 +1,19 @@
 # Kinetix progress
 
-## Subgoal 1.1 · Foundation
+## Completed · Subgoal 1.1 foundation
 
 Implemented the application shell, interactive guest playground, Clerk access routes, Hono RPC, request throttling and the initial Neon/Drizzle migration. Strict type checking, 9 Vitest cases and 20 Playwright checks pass.
 
-## Active step
+## Release verification · November 18, 2026
 
-Release the tested foundation to GitHub and Vercel. Record release verification here before starting 1.2.
+| Stage | Evidence |
+| --- | --- |
+| Brief and build | Scoped to the foundation, guest and authenticated service boundaries, and responsive shell. |
+| Test | Strict TypeScript, 9 Vitest and 20 Playwright checks passed. Desktop and mobile screenshots were visually reviewed. |
+| Merge | Feature commit `2d5e23a` merged into `main` at `ab166b1`. Both branches were pushed to [GitHub](https://github.com/chanchan012/kinetix-chan). |
+| Deploy | Local Next.js 16.4.6 production build passed. Vercel reported READY for the [feature preview](https://kinetix-chan-142em68el-chanchans-projects-aada625f.vercel.app) and [production](https://kinetix-chan.vercel.app). |
+| Document | Architecture and resume handoff include schema, API, environment setup, test commands and live-service caveats. |
 
-## Next subgoal
+## Active subgoal and next exact step
 
-1.2 begins with owner-scoped rig CRUD and dashboard grid tests. Implement the dashboard against the existing schema and identity boundary, then add Inngest thumbnail generation. Follow BRIEF → BUILD → TEST → MERGE → DEPLOY → DOCUMENT.
+1.1 is released in guest mode. 1.2 is next and has not started. Begin its BRIEF on a feature branch from main. First write owner-isolation tests for listing and creating rigs using the Hono API factory, then implement Neon-backed rig CRUD, the dashboard grid and Inngest thumbnail generation. Run migrations against the intended Neon branch before live CRUD verification.
