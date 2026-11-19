@@ -1,0 +1,60 @@
+import { Hono } from "hono";
+import { validator } from "hono/validator";
+import { z } from "zod";
+import type { IdentityEnv } from "./api";
+import type { Library } from "../db/library";
+
+const name = z.string().trim().min(1).max(120);
+const createRig = z.strictObject({name,study:z.enum(["fox","heron","fish"])});
+const renameRig = z.strictObject({name});
+const editClip = z.strictObject({name,fps:z.int().min(1).max(120),frameCount:z.int().min(1).max(36000)});
+function body<T extends z.ZodType>(schema:T) {
+  return validator("json",(value,c) => {
+    const result = schema.safeParse(value);
+    return result.success ? result.data as z.output<T> : c.json({error:"invalid_input"},400);
+  });
+}
+const missing = {error:"not_found"} as const;
+export function libraryApi(repository:()=>Library) {
+  return new Hono<IdentityEnv>()
+    .use("*",async(c,next) => {
+      if (!c.get("userId")) return c.json({error:"authentication_required"},401);
+      await next();
+    })
+    .use("/:id/*",async(c,next) => {
+      if (!z.uuid().safeParse(c.req.param("id")).success) return c.json(missing,404);
+      await next();
+    })
+    .use("/:id/clips/:clip",async(c,next) => {
+      if (!z.uuid().safeParse(c.req.param("clip")).success) return c.json(missing,404);
+      await next();
+    })
+    .get("/",async c => c.json(await repository().list(c.get("userId")!)))
+    .post("/",body(createRig),async c => {
+      const {name,study} = c.req.valid("json");
+      return c.json(await repository().create(c.get("userId")!,name,study),201);
+    })
+    .get("/:id",async c => {
+      const row = await repository().get(c.get("userId")!,c.req.param("id"));
+      return row ? c.json(row) : c.json(missing,404);
+    })
+    .patch("/:id",body(renameRig),async c => {
+      const row = await repository().rename(c.get("userId")!,c.req.param("id"),c.req.valid("json").name);
+      return row ? c.json(row) : c.json(missing,404);
+    })
+    .delete("/:id",async c => await repository().remove(c.get("userId")!,c.req.param("id")) ? c.body(null,204) : c.json(missing,404))
+    .get("/:id/clips",async c => {
+      const rows = await repository().listClips(c.get("userId")!,c.req.param("id"));
+      return rows ? c.json(rows) : c.json(missing,404);
+    })
+    .post("/:id/clips",body(editClip),async c => {
+      const row = await repository().addClip(c.get("userId")!,c.req.param("id"),c.req.valid("json"));
+      return row ? c.json(row,201) : c.json(missing,404);
+    })
+    .patch("/:id/clips/:clip",body(editClip),async c => {
+      const row = await repository().editClip(c.get("userId")!,c.req.param("id"),c.req.param("clip"),c.req.valid("json"));
+      return row ? c.json(row) : c.json(missing,404);
+    })
+    .delete("/:id/clips/:clip",async c => await repository().removeClip(c.get("userId")!,c.req.param("id"),c.req.param("clip"))
+      ? c.body(null,204) : c.json(missing,404));
+}
