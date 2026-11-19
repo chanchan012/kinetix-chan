@@ -29,3 +29,22 @@ export const clips = pgTable("clips", {
   check("clip_time_valid", sql`${t.fps} between 1 and 120 and ${t.frameCount} > 0`),
   check("clip_track_revision_nonnegative", sql`${t.trackRevision} >= 0`)
 ]);
+
+export const exportJobs = pgTable("export_jobs", {
+  id: uuid().primaryKey(),
+  rigId: uuid("rig_id").notNull().references(() => rigs.id, { onDelete: "cascade" }),
+  format: text({enum:["lottie","spritesheet","png-sequence","mp4","webm"]}).notNull(),
+  status: text({enum:["queued","running","ready","failed"]}).notNull().default("queued"),
+  snapshot: jsonb().$type<Record<string, unknown>>().notNull(),
+  leaseId: uuid("lease_id"),
+  leaseUntil: timestamp("lease_until", { withTimezone: true }),
+  artifact: text(),
+  byteCount: integer("byte_count"),
+  createdAt: timestamp("created_at", {withTimezone:true}).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", {withTimezone:true}).defaultNow().notNull(),
+}, t => [
+  index("export_rig_created_idx").on(t.rigId,t.createdAt),
+  index("export_status_created_idx").on(t.status,t.createdAt),
+  check("export_format_valid", sql`${t.format} in ('lottie','spritesheet','png-sequence','mp4','webm')`),
+  check("export_status_valid", sql`${t.status} in ('queued','running','ready','failed')`),
+]);

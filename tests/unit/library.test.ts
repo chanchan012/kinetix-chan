@@ -7,6 +7,7 @@ import { Library } from "../../db/library";
 import { processThumbnails } from "../../jobs/thumbnails";
 import { createRigState } from "../../lib/rig/model";
 import { setKey } from "../../lib/rig/animation";
+import { processExport } from "../../jobs/exports";
 
 const pg = new PGlite();
 const library = new Library(drizzle(pg));
@@ -25,6 +26,46 @@ beforeAll(async () => {
 },30000);
 afterAll(() => pg.close());
 describe("saved library", () => {
+  it("stores an immutable export snapshot and hands completed bytes only to the owner", async () => {
+    const rig = await (await call("artist","POST","",{name:"Export fixture",study:"fox"})).json();
+    const id = "21dfd810-ec66-4c8e-8122-7140bbcaf6a2";
+    const path = `/${rig.id}/exports`;
+    const request = {id,format:"lottie",startFrame:2,endFrame:5};
+    expect((await call("other","POST",path,request)).status).toBe(404);
+    expect((await call("artist","POST",path,{...request,endFrame:50})).status).toBe(400);
+    expect((await call("artist","POST",path,request)).status).toBe(202);
+    expect((await call("artist","POST",path,request)).status).toBe(202);
+    expect((await (await call("artist","GET",path)).json())).toHaveLength(1);
+    expect(await (await call("other","GET",path)).json()).toEqual([]);
+    expect((await call("artist","GET",path+"/"+id+"/download")).status).toBe(404);
+    expect((await call("artist","PATCH",`/${rig.id}`,{name:"Renamed later"})).status).toBe(200);
+    expect(await processExport(library.exports,id)).toEqual({id,status:"ready"});
+    expect(await processExport(library.exports,id)).toBeNull();
+    const download = path+"/"+id+"/download";
+    expect((await call("other","GET",download)).status).toBe(404);
+    const file = await call("artist","GET",download);
+    expect(file.headers.get("content-type")).toBe("application/json");
+    expect(file.headers.get("content-disposition")).toContain(".json");
+    expect(await file.json()).toMatchObject({nm:"Export fixture",op:4});
+    expect((await call("artist","DELETE",`/${rig.id}`)).status).toBe(204);
+  });
+
+  it("recovers an expired render lease and rejects output from the expired worker", async () => {
+    const rig = await library.create("lease","Lease","fish");
+    const id = "102f75b4-29c0-4172-8daa-c6a054c720bb";
+    await library.exports.enqueue("lease",rig.id,id,"spritesheet",{
+      rig:createRigState("fish"),name:"Lease",fps:24,frameCount:48,startFrame:0,endFrame:5,tracks:[],
+    });
+    const now = new Date();
+    const first = await library.exports.claim(id,now);
+    expect(first?.leaseId).toBeTruthy();
+    expect(await library.exports.claim(id,now)).toBeUndefined();
+    const next = await library.exports.claim(id,new Date(now.getTime()+181_000));
+    expect(next?.leaseId).not.toBe(first?.leaseId);
+    expect(await library.exports.finish(id,first!.leaseId!,Buffer.from("stale"))).toEqual([]);
+    expect(await library.exports.finish(id,next!.leaseId!,Buffer.from("current"))).toEqual([{id,status:"ready"}]);
+    await library.remove("lease",rig.id);
+  });
   it("persists typed keyframes, rejects stale and out-of-range writes, and clips keys on duration changes", async () => {
     const rig = await (await call("animator","POST","",{ name:"Animation",study:"fox" })).json();
     const clipTiming = { name:"Walk", fps:24, frameCount:24 };

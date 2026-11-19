@@ -13,15 +13,17 @@ import { studyFor } from "@/lib/studies";
 import type { RigCommand } from "@/lib/rig/commands";
 import { Viewport, type Selection, type Tool, type Brush } from "./viewport";
 import { Timeline, type ClipTiming, type FramePreview } from "./timeline";
+import { ExportDialog } from "./export-dialog";
 
 type Props = {
   actorId: string; rigId: string; name: string; initial: KinetixRigState; revision: number; clips: ClipTiming[];
+  renderConfigured: boolean;
 };
 const degrees = 180 / Math.PI;
 const tools = [{ id: "select", label: "Select", icon: Cursor }, { id: "bone", label: "Draw bone", icon: BoneIcon },
   { id: "pen", label: "Pen", icon: PenNib }] as const;
 
-export function Studio({actorId, rigId, name, initial, revision: initialRevision, clips}: Props) {
+export function Studio({actorId, rigId, name, initial, revision: initialRevision, clips, renderConfigured}: Props) {
   const [store] = useState(() => createRigStore(initial));
   const rig = useStore(store, state => state.rig);
   const past = useStore(store, state => state.past);
@@ -36,6 +38,8 @@ export function Studio({actorId, rigId, name, initial, revision: initialRevision
   const [zoom, setZoom] = useState(1);
   const [animation, setAnimation] = useState<FramePreview>({ frame: 0, frames: studyFor(initial.study).frames, tracks: [], onion: false });
   const [timelineDirty, setTimelineDirty] = useState(false);
+  const [clip, setClip] = useState<ClipTiming | undefined>(clips[0]);
+  const [exportOpen, setExportOpen] = useState(false);
   const [brush, setBrush] = useState<Brush | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -171,6 +175,7 @@ export function Studio({actorId, rigId, name, initial, revision: initialRevision
       <h1>{name}</h1>
       <span role="status" className="studio-save-status">{conflict ? "Save conflict" : saving ? "Saving…" : dirty ? "Unsaved" : timelineDirty ? "Unsaved keys" : "Saved"}</span>
       <button className="studio-save" disabled={!dirty || saving || conflict} onClick={() => void save()}><FloppyDisk size={16}/>Save</button>
+      <button className="studio-export-button" onClick={() => setExportOpen(true)}>Export</button>
     </header>
 
     {(error || conflict) && <aside className="studio-alert" role="alert">
@@ -221,8 +226,10 @@ export function Studio({actorId, rigId, name, initial, revision: initialRevision
         {part?.closed && <WeightTools key={part.id} part={part} rig={rig} brush={activeBrush} setBrush={setBrush} edit={edit} report={setError}/>}
         {last && <p className="studio-history" role="status">{last.actor.kind === "ai" ? "AI" : "Human"} · {last.label}</p>}
       </aside>
-      <Timeline {...{ clips, rigId, rig, selected, select }} preview={setAnimation} onDirty={setTimelineDirty}/>
+      <Timeline {...{ clips, rigId, rig, selected, select }} preview={setAnimation} onDirty={setTimelineDirty} onClip={setClip}/>
     </div>
+    {exportOpen && <ExportDialog rigId={rigId} clip={clip} frameCount={studyFor(rig.study).frames}
+      unsaved={dirty || timelineDirty} renderConfigured={renderConfigured} close={() => setExportOpen(false)}/>}
   </main>;
 }
 
