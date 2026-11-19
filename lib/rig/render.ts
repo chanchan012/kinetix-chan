@@ -3,13 +3,18 @@ import { rotatePoint, type BonePose } from "./kinematics";
 import { createRigState, type KinetixRigState, type Point, type VectorPart } from "./model";
 import { deformMesh } from "./skinning";
 
+export type RigDrawingContext = Pick<CanvasRenderingContext2D,
+  "arc" | "beginPath" | "bezierCurveTo" | "closePath" | "fill" | "lineTo" |
+  "lineWidth" | "moveTo" | "restore" | "rotate" | "save" | "stroke" | "translate"
+> & { fillStyle: unknown; strokeStyle: unknown };
+
 export function partSpace(point: Point, part: VectorPart, poses: Map<string, BonePose>): Point {
   const parent = part.parentId === null ? undefined : poses.get(part.parentId);
   const local = parent ? rotatePoint({ x: point.x - parent.origin.x, y: point.y - parent.origin.y }, -parent.angle) : point;
   return { x: local.x - part.offset.x, y: local.y - part.offset.y };
 }
 
-export function tracePart(context: CanvasRenderingContext2D, part: VectorPart) {
+export function tracePart(context: RigDrawingContext, part: VectorPart) {
   const first = part.knots[0];
   context.beginPath();
   context.moveTo(first.point.x, first.point.y);
@@ -29,7 +34,7 @@ export function tracePart(context: CanvasRenderingContext2D, part: VectorPart) {
 }
 
 export function inPartSpace(
-  context: CanvasRenderingContext2D, part: VectorPart, poses: Map<string, BonePose>, draw: () => void,
+  context: RigDrawingContext, part: VectorPart, poses: Map<string, BonePose>, draw: () => void,
 ) {
   context.save();
   const parent = part.parentId === null ? undefined : poses.get(part.parentId);
@@ -42,7 +47,7 @@ export function inPartSpace(
   context.restore();
 }
 
-export function traceMesh(context: CanvasRenderingContext2D, points: Point[], triangles: NonNullable<VectorPart["mesh"]>["triangles"]) {
+export function traceMesh(context: RigDrawingContext, points: Point[], triangles: NonNullable<VectorPart["mesh"]>["triangles"]) {
   context.beginPath();
   for (const [a, b, c] of triangles) {
     context.moveTo(points[a].x, points[a].y);
@@ -53,7 +58,7 @@ export function traceMesh(context: CanvasRenderingContext2D, points: Point[], tr
 }
 
 export function drawRigArtwork(
-  context: CanvasRenderingContext2D, rig: KinetixRigState, poses: Map<string, BonePose>, phase: number,
+  context: RigDrawingContext, rig: KinetixRigState, poses: Map<string, BonePose>, phase: number,
   reference = true,
 ) {
   if (reference) {

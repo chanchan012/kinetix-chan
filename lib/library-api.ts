@@ -5,6 +5,7 @@ import type { IdentityEnv } from "./api";
 import type { Library } from "../db/library";
 import { readRigState, rigStateSchema } from "./rig/model";
 import { tracksSchema } from "./rig/animation";
+import { exportApi } from "./export/api";
 
 const name = z.string().trim().min(1).max(120);
 const createRig = z.strictObject({name,study:z.enum(["fox","heron","fish"])});
@@ -95,5 +96,6 @@ export function libraryApi(repository:()=>Library) {
       return row ? c.json(row) : c.json(missing,404);
     })
     .delete("/:id/clips/:clip",async c => await repository().removeClip(c.get("userId")!,c.req.param("id"),c.req.param("clip"))
-      ? c.body(null,204) : c.json(missing,404));
+      ? c.body(null,204) : c.json(missing,404))
+    .route("/",exportApi(repository));
 }

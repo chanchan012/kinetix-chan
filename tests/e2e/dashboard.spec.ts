@@ -3,10 +3,52 @@ import { expect, test } from "@playwright/test";
 import { clerk } from "@clerk/testing/playwright";
 import type { KinetixRigState } from "../../lib/rig/model";
 import { forwardKinematics } from "../../lib/rig/kinematics";
+import { formats, type ExportFormat } from "../../lib/export/frames";
 
 test.beforeEach(async ({page}) => {
   await page.goto("/");
   await clerk.signIn({page, emailAddress:process.env.KINETIX_TEST_EMAIL!});
+});
+
+test("a member queues an export from the studio", async ({page}, info) => {
+  const name = "Export " + info.project.name + " rig";
+  const created = await page.request.post("/api/rigs", {data:{name,study:"fox"}});
+  expect(created.status()).toBe(201);
+  const { id } = await created.json();
+  const path = "/api/rigs/" + id;
+  try {
+    await page.goto("/studio/"+id);
+    await page.getByRole("button",{name:"Export",exact:true}).click();
+    const dialog = page.getByRole("dialog",{name:"Export animation"});
+    await expect(dialog).toBeVisible();
+    const jobList = dialog.getByRole("region",{name:"Export jobs"});
+    const byViewport: Record<string,ExportFormat[]> = {
+      desktop:["lottie","png-sequence"], tablet:["spritesheet"], mobile:["mp4"], landscape:["webm"],
+    };
+    for (const format of byViewport[info.project.name] ?? ["lottie"]) {
+      const {label,mime,extension} = formats[format];
+      await dialog.getByLabel("Format").selectOption(format);
+      await dialog.getByLabel("Last frame").fill("4");
+      await dialog.getByRole("button",{name:"Queue export"}).click();
+      const row = jobList.getByRole("listitem").filter({hasText:label});
+      await expect(row.getByText(label,{exact:true})).toBeVisible();
+      if (process.env.INNGEST_DEV === "1") {
+        const link = row.getByRole("link",{name:"Download"});
+        await expect(link).toBeVisible({timeout:35_000});
+        const downloaded = await page.request.get((await link.getAttribute("href"))!);
+        expect(downloaded.status()).toBe(200);
+        expect(downloaded.headers()["content-type"]).toBe(mime);
+        expect(downloaded.headers()["content-disposition"]).toContain("." + extension);
+        if (format === "lottie") expect(await downloaded.json()).toMatchObject({nm:name,op:4,v:"5.12.2"});
+        else expect((await downloaded.body()).length).toBeGreaterThan(100);
+      } else {
+        await expect(row.getByText("Queued",{exact:true})).toBeVisible();
+      }
+    }
+    expect(await page.evaluate(()=>document.documentElement.scrollHeight<=innerHeight && document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+  } finally {
+    expect((await page.request.delete(path)).status()).toBe(204);
+  }
 });
 
 test("a member can author easing, preview onion skins, and paint a closed shape", async ({page}, info) => {

@@ -4,6 +4,7 @@ import { clips, rigs } from "./schema";
 import type { Study } from "../lib/studies";
 import { createRigState, type KinetixRigState } from "../lib/rig/model";
 import type { Track } from "../lib/rig/animation";
+import { ExportQueue } from "./exports";
 
 type ClipInput = Pick<typeof clips.$inferInsert, "name" | "fps" | "frameCount">;
 const rigFields = {id:rigs.id,name:rigs.name,state:rigs.state,revision:rigs.revision,updatedAt:rigs.updatedAt};
@@ -14,7 +15,10 @@ const clipAnimationFields = {
 };
 
 export class Library {
-  constructor(private db: Pick<PgDatabase<PgQueryResultHKT>, "select" | "insert" | "update" | "delete" | "execute">) {}
+  readonly exports: ExportQueue;
+  constructor(private db: Pick<PgDatabase<PgQueryResultHKT>, "select" | "insert" | "update" | "delete" | "execute">) {
+    this.exports = new ExportQueue(db);
+  }
 
   private owned(owner:string,id:string) {
     return and(eq(rigs.ownerId,owner),eq(rigs.id,id));

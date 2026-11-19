@@ -14,10 +14,11 @@ type Draft = { clip: ClipTiming; tracks: Track[]; conflict: boolean };
 const emptyTracks: Track[] = [];
 const degrees = 180 / Math.PI;
 
-export function Timeline({clips, rigId, rig, selected, select, preview, onDirty}: {
+export function Timeline({clips, rigId, rig, selected, select, preview, onDirty, onClip}: {
   clips: ClipTiming[]; rigId: string; rig: KinetixRigState; selected: Selection;
   select: (selection: Selection) => void;
   preview: (frame: FramePreview) => void; onDirty: (value: boolean) => void;
+  onClip: (clip: ClipTiming | undefined) => void;
 }) {
   const source = studyFor(rig.study);
   const [clipId, setClipId] = useState(clips[0]?.id ?? "");
@@ -56,6 +57,7 @@ export function Timeline({clips, rigId, rig, selected, select, preview, onDirty}
   const units = active?.channel.property === "rotation" ? degrees : 1;
   const hasDrafts = Object.values(drafts).some(item => item.tracks !== item.clip.tracks);
   useEffect(() => { onDirty(hasDrafts); }, [hasDrafts, onDirty]);
+  useEffect(() => { onClip(clip); }, [clip, onClip]);
 
   useEffect(() => {
     preview({ frame: current, frames, tracks: basePose ? emptyTracks : tracks, onion });
