@@ -3,11 +3,13 @@ import { validator } from "hono/validator";
 import { z } from "zod";
 import type { IdentityEnv } from "./api";
 import type { Library } from "../db/library";
+import { readRigState, rigStateSchema } from "./rig/model";
 
 const name = z.string().trim().min(1).max(120);
 const createRig = z.strictObject({name,study:z.enum(["fox","heron","fish"])});
 const renameRig = z.strictObject({name});
 const editClip = z.strictObject({name,fps:z.int().min(1).max(120),frameCount:z.int().min(1).max(36000)});
+const editRigState = z.strictObject({ revision:z.int().min(0).max(2_147_483_646), state:rigStateSchema });
 function body<T extends z.ZodType>(schema:T) {
   return validator("json",(value,c) => {
     const result = schema.safeParse(value);
@@ -43,6 +45,22 @@ export function libraryApi(repository:()=>Library) {
       return row ? c.json(row) : c.json(missing,404);
     })
     .delete("/:id",async c => await repository().remove(c.get("userId")!,c.req.param("id")) ? c.body(null,204) : c.json(missing,404))
+    .get("/:id/state",async c => {
+      const row = await repository().get(c.get("userId")!,c.req.param("id"));
+      return row ? c.json({ ...row, state:readRigState(row.state) }) : c.json(missing,404);
+    })
+    .patch("/:id/state",body(editRigState),async c => {
+      const owner = c.get("userId")!;
+      const id = c.req.param("id");
+      const {revision,state} = c.req.valid("json");
+      const library = repository();
+      const saved = await library.saveRigState(owner,id,revision,state);
+      if (saved) return c.json({ ...saved, state });
+      const current = await library.get(owner,id);
+      if (!current) return c.json(missing,404);
+      if (current.revision !== revision) return c.json({error:"revision_conflict",revision:current.revision},409);
+      return c.json({error:"study_mismatch"},400);
+    })
     .get("/:id/clips",async c => {
       const rows = await repository().listClips(c.get("userId")!,c.req.param("id"));
       return rows ? c.json(rows) : c.json(missing,404);

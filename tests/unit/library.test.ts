@@ -5,6 +5,7 @@ import { readFileSync, readdirSync } from "node:fs";
 import { createApi } from "../../lib/api";
 import { Library } from "../../db/library";
 import { processThumbnails } from "../../jobs/thumbnails";
+import { createRigState } from "../../lib/rig/model";
 
 const pg = new PGlite();
 const library = new Library(drizzle(pg));
@@ -23,6 +24,25 @@ beforeAll(async () => {
 },30000);
 afterAll(() => pg.close());
 describe("saved library", () => {
+  it("reads legacy rig state and applies exactly one of two competing owner saves", async () => {
+    const id = "e88df79a-62d6-4e08-91e8-9dc8ef2b7abc";
+    await pg.query("insert into rigs (id,owner_id,name,state) values ($1,$2,$3,$4)", [id,"editor","Legacy",JSON.stringify({study:"heron"})]);
+    const path = "/" + id + "/state";
+    const state = createRigState("heron");
+    expect(await (await call("editor","GET",path)).json()).toMatchObject({ revision:0, state });
+    expect((await call("","GET",path)).status).toBe(401);
+    expect((await call("other","PATCH",path,{revision:0,state})).status).toBe(404);
+    expect((await call("editor","PATCH",path,{revision:0,state:createRigState("fish")})).status).toBe(400);
+
+    state.bones[1].rotation = Math.PI / 3;
+    const competing = await Promise.all([
+      call("editor","PATCH",path,{revision:0,state}),
+      call("editor","PATCH",path,{revision:0,state}),
+    ]);
+    expect(competing.map(response => response.status).sort()).toEqual([200,409]);
+    expect(await (await call("editor","GET",path)).json()).toMatchObject({ revision:1, state });
+    expect((await call("editor","DELETE","/"+id)).status).toBe(204);
+  });
   it("rejects guest access and malformed data", async () => {
     expect((await call("", "GET")).status).toBe(401);
     expect((await call("a","GET","/invalid")).status).toBe(404);

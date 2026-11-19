@@ -27,11 +27,13 @@
     "@upstash/redis": "^1.41.0",
     "drizzle-orm": "^0.45.4",
     "hono": "^4.13.19",
+    "immer": "^11.2.10",
     "inngest": "^4.26.2",
     "next": "^16.4.6",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",
-    "zod": "^4.6.7"
+    "zod": "^4.6.7",
+    "zustand": "^5.1.0"
   },
   "devDependencies": {
     "@clerk/testing": "^2.3.3",
