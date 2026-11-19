@@ -16,7 +16,14 @@ Implemented the application shell, interactive guest playground, Clerk access ro
 
 ## Active subgoal and next exact step
 
-1.1 is released. 1.2 is next and has not started. Begin its BRIEF on a feature branch from main. First write owner-isolation tests for listing and creating rigs using the Hono API factory, then implement Neon-backed rig CRUD, the dashboard grid and Inngest thumbnail generation.
+1.2 is deployed. The owner will supply Inngest credentials. After the next production deploy, sync the Inngest endpoint and verify a hosted run. Next development subgoal is 2.1. Start a feature branch and define deterministic rig-state fixtures and forward/inverse kinematics tests before implementing commands, history and attribution.
+
+## Subgoal 1.2 release · November 19, 2026
+
+- **Brief and build** covered the dashboard library, Hono rig and clip CRUD, owner isolation and durable thumbnail generation. Guests open the three sample studies. Members manage their own records.
+- **Test** passed strict TypeScript, 11 Vitest tests and 28 Playwright checks. A live Neon fixture verified owner isolation, clip insertion and PNG persistence and was removed afterward. The SDK advertised one function in local development mode.
+- **Merge and deploy** published feature commit `1f81d5c` and main merge `3b56e10`. The production build passed and both Vercel deployments reached READY. [Signed-in preview](https://kinetix-chan-git-feature-12-cac1a9-chanchans-projects-aada625f.vercel.app/dashboard) · [Guest dashboard](https://kinetix-chan.vercel.app/dashboard)
+- **Document** recorded the additional SQL column, API contracts, preview database scope, SDK setup and pending cloud verification.
 
 ## Service configuration · November 19, 2026
 

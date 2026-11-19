@@ -24,6 +24,9 @@ Copy .env.example to .env.local for local development. Configure deployment vari
 | DATABASE_URL | Neon Postgres connection string with TLS, needed for migrations and future persistent operations |
 | KINETIX_DEMO_ONLY | Test override. A value of 1 disables Clerk and Redis access for isolated browser runs. |
 | PLAYWRIGHT_CHANNEL | Optional browser channel; set to chrome to use installed Google Chrome |
+| INNGEST_SIGNING_KEY | Inngest Cloud signing key. The owner will add this to Vercel Production. |
+| INNGEST_EVENT_KEY | Owner-managed key for sending events. The 1.2 thumbnail trigger uses a cron schedule. |
+| INNGEST_DEV | Set to 1 locally when working with the Inngest Dev Server. |
 
 The initial migration has been applied to the `kinetix` database on the default branch of Neon project `still-bird-86777802`. Confirm the database and branch before running future migrations. Use the direct connection for `npm run db:migrate` and the pooled URL for Vercel. Generate future migrations with `npm run db:generate`. Redeploy Vercel after changing environment variables.
 
@@ -45,5 +48,12 @@ Production is https://kinetix-chan.vercel.app. Redis and Neon are configured the
 
 - The suite exercises actual Clerk anonymous rejection and injected authenticated identity. The guest fallback cannot save.
 - The existing kinora Free Tier Redis database is shared with Kinetix. Kinetix rate-limit entries use the `kinetix:v1` prefix.
-- npm audit --omit=dev reported zero known runtime advisories at release verification. The development tree reported advisories in the Vitest/Vite glob tooling and Drizzle Kit's older esbuild dependency.
-- The fixed playback studies are demo data. Persistent dashboard CRUD, background jobs, IK and MCP parity have their own milestones.
+- The fixed playback studies are demo data. Saved rigs currently reference a study in their state document. The editable rig command model starts in 2.1.
+
+## Resume after 1.2
+
+Both SQL migrations are applied. The preview branch `feature/1.2-dashboard` has a branch-specific sensitive DATABASE_URL using the `kinetix_dashboard_preview` read/write role scoped to the public schema of the kinetix database. Other feature branches need their own preview database configuration. Production serves the guest dashboard. Use the 1.2 preview or local Clerk development instance for saved rigs.
+
+The owner is managing the Inngest keys. After setting them, redeploy Vercel Production and sync https://kinetix-chan.vercel.app/api/inngest in Inngest Cloud. Confirm that the `kinetix-motion-studio` app lists `render-animation-thumbnails`; create a clip in the signed-in dashboard and verify the scheduled run stores its PNG. Before signing-key configuration the cloud endpoint returned HTTP 500. Local SDK discovery and the actual render/persistence path have passed; hosted execution is pending.
+
+For local background jobs, use `INNGEST_DEV=1` in .env.local, start Next, then run `npx inngest-cli@latest dev -u http://localhost:3000/api/inngest`. Unit tests use embedded PostgreSQL and real migrations. Member UI tests use mocked HTTP responses; the PostgreSQL/API suite tests actual writes and access boundaries separately.

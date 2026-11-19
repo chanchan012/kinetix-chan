@@ -35,4 +35,19 @@ The GitHub repository is chanchan012/kinetix-chan. Vercel builds the Next.js app
 
 ## Later milestones
 
-Inngest thumbnails begin in 1.2. The shared command model, IK solver, timeline editing, exports, SSE and MCP resources/tools belong to subsequent subgoals. No MCP endpoint is registered in this release.
+The shared command model, IK solver, timeline editing, exports, SSE and MCP resources/tools belong to subsequent subgoals.
+
+## Subgoal 1.2
+
+The landing page links to `/dashboard`. Guests can open a study at its own playback URL. Authenticated users can create a rig from a study, rename or delete it, and manage its animation clips. The dashboard has a fixed viewport shell with an internally scrollable library. Clerk returns newly signed-in members to the dashboard.
+
+| Resource | Methods | Data |
+| --- | --- | --- |
+| /api/rigs | GET, POST | List the caller's rigs or create one with name and study (fox, heron, fish). |
+| /api/rigs/:id | GET, PATCH, DELETE | Read, rename, or delete a rig and its dependent clips. |
+| /api/rigs/:id/clips | GET, POST | List clips including thumbnails or create a clip with name, fps and frameCount. |
+| /api/rigs/:id/clips/:clip | PATCH, DELETE | Update name and timing together or delete the clip. |
+
+Hono verifies identity before each library request. SQL predicates enforce the owner for rig operations and the parent rig for clip operations. Guest requests return 401, inaccessible resources return 404, and invalid bodies return 400. FPS ranges from 1 to 120, frame counts from 1 to 36,000, and names from 1 to 120 trimmed characters. Rig renames advance revision and updated_at.
+
+Migration `0001_clip_thumbnail.sql` adds nullable PNG data URLs to clips. A null thumbnail is the durable work queue. Inngest polls up to 50 pending clips every five minutes through `/api/inngest`. Its worker uses the same character drawing functions as the browser at a representative clip frame. The write verifies that timing still matches and the thumbnail is still pending. Editing the clip invalidates its thumbnail. Repeated runs are safe, and the dashboard refreshes pending previews while the clip list is open.
