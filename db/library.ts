@@ -2,9 +2,10 @@ import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
 import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 import { clips, rigs } from "./schema";
 import type { Study } from "../lib/studies";
+import { createRigState, type KinetixRigState } from "../lib/rig/model";
 
 type ClipInput = Pick<typeof clips.$inferInsert, "name" | "fps" | "frameCount">;
-const rigFields = {id:rigs.id,name:rigs.name,state:rigs.state,updatedAt:rigs.updatedAt};
+const rigFields = {id:rigs.id,name:rigs.name,state:rigs.state,revision:rigs.revision,updatedAt:rigs.updatedAt};
 const clipFields = {id:clips.id,name:clips.name,fps:clips.fps,frameCount:clips.frameCount,thumbnail:clips.thumbnail};
 
 export class Library {
@@ -20,7 +21,16 @@ export class Library {
     return (await this.db.select(rigFields).from(rigs).where(this.owned(owner,id)))[0];
   }
   async create(owner:string,name:string,study:Study["id"]) {
-    return (await this.db.insert(rigs).values({ownerId:owner,name,state:{study}}).returning(rigFields))[0];
+    return (await this.db.insert(rigs).values({ownerId:owner,name,state:createRigState(study)}).returning(rigFields))[0];
+  }
+  async saveRigState(owner:string,id:string,revision:number,state:KinetixRigState) {
+    const study = sql`case when ${rigs.state}->>'study' in ('fox','heron','fish')
+      then ${rigs.state}->>'study' else 'fox' end`;
+    const [saved] = await this.db.update(rigs).set({
+      state, updatedAt:new Date(), revision:sql`${rigs.revision} + 1`,
+    }).where(and(this.owned(owner,id),eq(rigs.revision,revision),sql`${study} = ${state.study}`))
+      .returning(rigFields);
+    return saved;
   }
   async rename(owner:string,id:string,name:string) {
     return (await this.db.update(rigs).set({name,updatedAt:new Date(),revision:sql`${rigs.revision} + 1`}).where(this.owned(owner,id)).returning(rigFields))[0];

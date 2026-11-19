@@ -1,10 +1,33 @@
 import { expect, test } from "@playwright/test";
 
 import { clerk } from "@clerk/testing/playwright";
+import type { KinetixRigState } from "../../lib/rig/model";
 
 test.beforeEach(async ({page}) => {
   await page.goto("/");
   await clerk.signIn({page, emailAddress:process.env.KINETIX_TEST_EMAIL!});
+});
+
+test("a member can open and save a versioned rig through Hono", async ({page}) => {
+  const created = await page.request.post("/api/rigs", {
+    data: { name: "Playwright rig", study: "fox" },
+  });
+  expect(created.status()).toBe(201);
+  const { id } = await created.json();
+  const path = "/api/rigs/" + id;
+  try {
+    const fetched = await page.request.get(path + "/state");
+    expect(fetched.status()).toBe(200);
+    const { revision, state }: { revision: number; state: KinetixRigState } = await fetched.json();
+    expect(state.version).toBe(1);
+    state.bones[1].rotation = Math.PI / 4;
+    const saved = await page.request.patch(path + "/state", { data: { revision, state } });
+    expect(saved.status()).toBe(200);
+    expect(await saved.json()).toMatchObject({ state, revision: revision + 1 });
+    expect((await page.request.patch(path + "/state", { data: { revision, state } })).status()).toBe(409);
+  } finally {
+    expect((await page.request.delete(path)).status()).toBe(204);
+  }
 });
 
 test("member library fits the viewport and opens the chosen study",async({page},info)=>{
