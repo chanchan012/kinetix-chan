@@ -16,7 +16,10 @@ type Clip = {id:string; name:string; fps:number; frameCount:number; thumbnail:st
 async function request<T>(path:string,method="GET",body?:object):Promise<T> {
   const response = await fetch("/api/"+path,{method,cache:"no-store",headers:body?{"content-type":"application/json"}:undefined,body:body?JSON.stringify(body):undefined});
   if (!response.ok) {
-    if(response.status === 401) throw Error("Your session has expired. Sign in again to continue.");
+    if(response.status === 401) {
+      window.location.replace("/sign-in?redirect_url=%2Fdashboard");
+      throw Error("Your session has expired.");
+    }
     if(response.status === 404) throw Error("This item no longer exists. Refresh your library.");
     if(response.status === 429) throw Error("Too many requests. Try again in a moment.");
     throw Error("The library could not complete this request. Please try again.");
@@ -112,8 +115,8 @@ function RigDetail({rig,change,remove,close}:{rig:Rig;change:(r:Rig)=>void;remov
     </form>{error&&<p role="alert">{error}</p>}
   </Modal>;
 }
-export function RigLibrary({accounts}:{accounts:boolean}) {
-  const [mode,setMode]=useState<"loading"|"guest"|"member">("loading");
+export function RigLibrary() {
+  const [loading,setLoading]=useState(true);
   const [rigs,setRigs]=useState<Rig[]>([]);
   const [error,setError]=useState("");
   const [selected,setSelected]=useState<string|null>(null);
@@ -122,22 +125,21 @@ export function RigLibrary({accounts}:{accounts:boolean}) {
   const refresh=useCallback(async()=>{
     setError("");
     try {
-      const session=await request<{mode:"member"|"guest"}>("session");
-      if(session.mode==="member")setRigs(await request<Rig[]>("rigs"));
-      setMode(session.mode);
+      setRigs(await request<Rig[]>("rigs"));
+      setLoading(false);
     } catch(e){setError(e instanceof Error?e.message:"Could not load library.");}
   },[]);
   useEffect(()=>{void refresh();},[refresh]);
   return <div className="app-shell"><header className="topbar"><Brand/><span className="brand-divider"/><span className="studio-name">Motion Studio</span>
-    <nav><Link className="guide-link" href="/">Playground</Link>{accounts && (mode==="member"?<UserButton/>:<Link href="/sign-in" className="signin">Sign in</Link>)}</nav></header>
+    <nav aria-label="Account"><UserButton/></nav></header>
     <main className="dashboard"><div className="dashboard-content"><div className="library-heading"><div><h1>Rig library</h1>
-      <p>{mode==="member"?"Manage your character rigs and animation clips.":"Open a character study to explore its motion."}</p></div>
-      {mode==="member"&&<button className="primary" onClick={()=>setCreating(true)}><PlusIcon/>New rig</button>}</div>
+      <p>Manage your character rigs and animation clips.</p></div>
+      <button className="primary" onClick={()=>setCreating(true)}><PlusIcon/>New rig</button></div>
       {error&&<p role="alert">{error} <button onClick={()=>void refresh()}>Retry</button></p>}
-      {mode==="loading"&&!error&&<p role="status">Loading library…</p>}
-      {mode==="member"&&<section><h2>Your rigs</h2>{rigs.length===0?<p className="empty-library">Create a rig to start your collection.</p>:<div className="rig-grid">
+      {loading&&!error&&<p role="status">Loading library…</p>}
+      {!loading&&<section><h2>Your rigs</h2>{rigs.length===0?<p className="empty-library">Create a rig to start your collection.</p>:<div className="rig-grid">
         {rigs.map(r=><button className="rig-card" key={r.id} onClick={()=>setSelected(r.id)}><Art study={studyFor(r.state.study)}/><span><strong>{r.name}</strong><small>Manage rig and clips</small></span></button>)}</div>}</section>}
-      <section><h2>Motion studies</h2><div className="rig-grid">{studies.map(s=><Link key={s.id} href={"/?demo=1&study="+s.id} className="rig-card">
+      <section><h2>Motion studies</h2><div className="rig-grid">{studies.map(s=><Link key={s.id} href={"/studio/studies/"+s.id} className="rig-card">
         <Art study={s}/><span><strong>{s.name}</strong><small>{s.clip} · {s.frames} frames</small><ArrowUpRightIcon/></span></Link>)}</div></section>
     </div></main>
     {creating&&<CreateRig close={()=>setCreating(false)} created={r=>{setRigs(rows=>[r,...rows]);setCreating(false);setSelected(r.id);}}/>}

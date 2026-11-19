@@ -22,9 +22,9 @@ button { transition:background-color .15s,color .15s,border-color .15s }
 .brand-divider { height:21px; width:1px; background:var(--line) }
 .studio-name { font-size:14px; color:var(--muted); font-weight:500 }
 .topbar nav { margin-left:auto; display:flex; align-items:center; gap:30px }
-.guide-link,.signin,.guest-link { display:inline-flex; gap:8px; align-items:center; font-size:14px; font-weight:600 }
-.guide-link svg,.signin svg,.guest-link svg { width:17px; height:17px }
-.guide-link:hover,.guest-link:hover { color:var(--accent) }
+.guide-link,.signin { display:inline-flex; gap:8px; align-items:center; font-size:14px; font-weight:600 }
+.guide-link svg,.signin svg { width:17px; height:17px }
+.guide-link:hover { color:var(--accent) }
 .signin { padding:9px 16px; border:1px solid #aeafa5; border-radius:6px }
 .signin:hover,.icon-button:hover { background:#eae9e2 }
 .landing { flex:1; min-height:0; width:min(100%,1600px); margin-inline:auto; padding:clamp(24px,5dvh,58px) clamp(20px,4.5vw,88px) clamp(20px,4dvh,45px); display:grid; grid-template-rows:minmax(0,1fr) auto; gap:clamp(22px,4.7dvh,50px) }
@@ -92,9 +92,9 @@ button { transition:background-color .15s,color .15s,border-color .15s }
 .guide dl { margin:20px 0 0 }.guide dl div { display:flex; justify-content:space-between; align-items:center; border-top:1px solid var(--line); padding:9px 0; font-size:14px }
 kbd { font:11px var(--mono); background:#eae9df; padding:3px 7px; border-radius:3px }
 .access-main { flex:1; min-height:0; display:grid; overflow:auto; padding:18px; background:#efefe6; background-image:radial-gradient(#c5c7ba .8px,transparent .9px); background-size:16px 16px }
-.access-panel { width:min(100%,430px); margin:auto; padding:clamp(20px,4vw,38px); border-radius:10px; border:1px solid var(--line); background:var(--paper) }
-.auth-art { height:clamp(68px,18dvh,160px); margin-bottom:22px; background:#f2e7d9; border-radius:4px }
-.access-panel .eyebrow { margin:0 }.access-panel .primary,.guest-link { margin-top:20px }
+.access-main { grid-template-columns:minmax(0,1fr) }
+.access-panel { width:min(100%,25rem); min-width:0; margin:auto }
+.access-panel [role=status] { text-align:center; padding:20px }
 @media (max-width:850px) {
   .hero { grid-template-columns:minmax(210px,.7fr) minmax(0,1.3fr); gap:22px }
   .intro h1 { font-size:clamp(64px,10vw,86px) }.study { gap:9px }.study-arrow { display:none }
@@ -133,3 +133,4 @@ kbd { font:11px var(--mono); background:#eae9df; padding:3px 7px; border-radius:
   .landing { gap:8px; padding-block:9px }.topbar { height:41px }.thumb { height:25px }
 }
 @media (prefers-reduced-motion:reduce) { *,*::before,*::after { transition:none!important } }
+@media (pointer:coarse) { .play,.rig-toggle,.guide-link,.icon-button { min-height:32px } }

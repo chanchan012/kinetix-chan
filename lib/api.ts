@@ -11,10 +11,7 @@ export interface Services {
   limit: (key: string) => Promise<LimitResult>;
   clientKey: (request: Request) => string;
 }
-export const sessionSchema = z.discriminatedUnion("mode", [
-  z.object({ mode: z.literal("guest"), canSave: z.literal(false) }),
-  z.object({ mode: z.literal("member"), userId: z.string().min(1), canSave: z.literal(true) })
-]);
+export const sessionSchema = z.object({ mode: z.literal("member"), userId: z.string().min(1), canSave: z.literal(true) });
 export function createApi(services: Services, repository = () => new Library(connectDatabase())) {
   return new Hono<IdentityEnv>().basePath("/api")
     .use("*", async (c, next) => {
@@ -34,7 +31,7 @@ export function createApi(services: Services, repository = () => new Library(con
     .use("*", services.identify)
     .get("/session", c => {
       const userId = c.get("userId");
-      return c.json(sessionSchema.parse(userId ? { mode: "member", userId, canSave: true } : { mode: "guest", canSave: false }));
+      return userId ? c.json(sessionSchema.parse({ mode: "member", userId, canSave: true })) : c.json({ error: "authentication_required" }, 401);
     })
     .get("/account", c => {
       const userId = c.get("userId");

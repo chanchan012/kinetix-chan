@@ -26,4 +26,6 @@
 .library-modal button:not(.primary),.dashboard [role=alert] button {border:1px solid var(--line);border-radius:4px;padding:4px 8px}
 .library-modal ul {list-style:none;padding:0}.library-modal li {padding-block:8px;border-bottom:1px solid var(--line);font-size:13px}
 .library-modal li span {flex:1;min-width:0}.library-modal li img {width:50px}.library-modal [role=alert],.dashboard [role=alert] {color:var(--accent)}
+.library-modal label,.library-modal input,.library-modal select {min-width:0}
+@media(max-width:400px){.library-modal {padding:16px}.library-modal li {flex-wrap:wrap}.library-modal li strong {overflow-wrap:anywhere}}
 @media(max-width:620px){.rig-grid {grid-template-columns:1fr}.rig-card {display:grid;grid-template-columns:100px 1fr}.library-art {height:85px}.library-heading {margin-bottom:25px}}
