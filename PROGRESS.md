@@ -16,7 +16,15 @@ Implemented the application shell, interactive guest playground, Clerk access ro
 
 ## Active subgoal and next exact step
 
-1.1, 1.2, the authenticated workspace release, M2, and both M3 releases are deployed. Next development subgoal is 4.1. Add scoped rig presence and change events over Upstash Pub/Sub and Hono SSE, then connect the studio to revision-checked Neon autosave. Hosted export and thumbnail execution await owner-managed Inngest credentials and endpoint sync.
+1.1, 1.2, the authenticated workspace release, M2, M3, and 4.1 are deployed. Next development subgoal is 4.2. Add rig-scoped MCP credentials, register the shared resources and tools on the Hono and stdio transports, and verify that an agent's edits arrive in the studio through the existing room. Hosted export and thumbnail execution await owner-managed Inngest credentials and endpoint sync.
+
+## Subgoal 4.1 release · November 20, 2026
+
+- **Brief and build** added private editor sharing, scoped SSE rooms, live selections, and revision-checked Neon autosave. The room protocol accepts human and AI actors.
+- **Test** passed strict TypeScript, 32 Vitest tests and 41 Playwright checks. The desktop-only two-account test was skipped on the other three profiles. It verified access grants and revocation, live selections, autosave, and the latest revision on a fresh stream.
+- **Merge** published feature commit `1928146` and main merge `37566ec` to GitHub.
+- **Deploy** applied `0004_rig_collaborators.sql` and passed the production build. Vercel marked the [feature preview](https://kinetix-chan-arvkmdbm3-chanchans-projects-aada625f.vercel.app) and [production](https://kinetix-chan.vercel.app) ready. Two production sessions confirmed selection delivery and autosaved rotations.
+- **Document** records room permissions, recovery behavior and the MCP integration point.
 
 ## Subgoal 3.2 release · November 20, 2026
 

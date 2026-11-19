@@ -36,7 +36,7 @@ Vercel builds feature previews and production from the GitHub repository chancha
 
 ## Later milestones
 
-SSE and MCP resources and tools belong to subsequent subgoals.
+MCP resources and tools belong to Subgoal 4.2.
 
 ## Subgoal 1.2
 
@@ -100,3 +100,11 @@ Export requests capture a point-in-time copy of the saved rig, clip timing, trac
 | /api/rigs/:id/exports/:job/download | GET | Streams the completed artifact as an owner-only attachment. |
 
 `0003_export_jobs.sql` adds jobs and private artifacts indexed by rig and status. Removing a rig cascades to its exports. Inngest job events request immediate rendering, and a minute schedule picks up queued work or expired leases. Workers commit bytes only while holding their lease. Artifacts are limited to 16 MiB. Frame caps per job are 180 for Lottie, 96 for spritesheets, 150 for ZIP and 240 for video, with a lower bound for dense meshes based on render complexity.
+
+## Subgoal 4.1
+
+Owners can grant editor access to another verified Clerk account through the studio Share dialog. `rig_collaborators` stores that grant, which enables editing of the rig and its clips. Rig rename, deletion, access management and export history belong to the owner.
+
+Hono serves `POST /api/rigs/:id/presence` and `GET /api/rigs/:id/events`. Connection snapshots carry current presence and the latest revision. Upstash hashes cache short-lived presence and small saved state documents, and Pub/Sub delivers changes to SSE subscribers. Server-side session identity determines the actor type and ID. Reconnecting reads the revision from Neon, and membership changes close revoked streams.
+
+The studio debounces writes to the existing revision-checked state endpoint. A clean session fetches a newer saved document after a room change. A dirty session keeps its local edits and exposes a conflict. Polling snapshots and automatic SSE reconnects recover missed notifications. Remote refresh establishes a fresh local undo history.

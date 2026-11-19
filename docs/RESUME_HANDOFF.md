@@ -83,3 +83,9 @@ The export queue migration is applied to Kinetix Neon. To verify local jobs, sta
 In Vercel Production, the owner supplies `INNGEST_SIGNING_KEY` and `INNGEST_EVENT_KEY`. After redeploying, sync the existing `/api/inngest` endpoint in Inngest Cloud and verify that it lists `render-animation-thumbnails` and `render-animation-export`. Queue a production export and confirm the job reaches Ready and downloads successfully. Production queue persistence was verified before activation.
 
 Next, implement 4.1 around the existing owner-scoped rig state API and store. Neon is authoritative for revisions, with Upstash carrying presence and committed-change events to authenticated SSE subscribers.
+
+## Resume after 4.1
+
+The `0004_rig_collaborators.sql` migration is applied to Kinetix Neon. The existing Upstash and Clerk credentials cover the room and account lookup. No new deployment keys are needed. Validate the two-account workflow with `npm run test:e2e -- --project desktop tests/e2e/collaboration.spec.ts`. The existing unit suite covers the rate limit and owner/editor rules.
+
+For 4.2, use `lib/realtime/protocol.ts` for attributed events and `RoomBus` to publish committed agent edits. Expose only the rig bound to an MCP credential. Reuse the model, command, animation and export modules to keep studio and agent behavior aligned.
