@@ -21,15 +21,33 @@ export const constraintSchema = z.strictObject({
   bend: z.union([z.literal(1), z.literal(-1)]),
 });
 
+export const knotSchema = z.strictObject({
+  point: pointSchema,
+  incoming: pointSchema.optional(),
+  outgoing: pointSchema.optional(),
+});
+export const partSchema = z.strictObject({
+  id: identifier,
+  name: z.string().trim().min(1).max(120),
+  parentId: identifier.nullable(),
+  offset: pointSchema,
+  knots: z.array(knotSchema).min(2).max(256),
+  fill: z.string().regex(/^#[a-fA-F0-9]{6}$/),
+  closed: z.boolean(),
+});
+
 export type Point = z.infer<typeof pointSchema>;
 export type Bone = z.infer<typeof boneSchema>;
 export type IKConstraint = z.infer<typeof constraintSchema>;
+export type VectorPart = z.infer<typeof partSchema>;
+export type VectorKnot = z.infer<typeof knotSchema>;
 
 const documentSchema = z.strictObject({
   version: z.literal(1),
   study: z.enum(["fox", "heron", "fish"]),
   bones: z.array(boneSchema).max(512),
   constraints: z.array(constraintSchema).max(128),
+  parts: z.array(partSchema).max(128).default([]),
 });
 export type KinetixRigState = z.infer<typeof documentSchema>;
 
@@ -80,6 +98,13 @@ export const rigStateSchema = documentSchema.superRefine((rig, context) => {
     constrained.add(constraint.upperId);
     constrained.add(constraint.lowerId);
   }
+  const partIds = new Set<string>();
+  for (const [index, part] of rig.parts.entries()) {
+    if (partIds.has(part.id) || (part.parentId !== null && !bones.has(part.parentId))) {
+      context.addIssue({ code: "custom", path: ["parts", index], message: "Parts require unique IDs and an existing parent." });
+    }
+    partIds.add(part.id);
+  }
 });
 
 const starter = {
@@ -92,7 +117,7 @@ const limbAngles = { fox: 1.3, heron: -2.6, fish: 2.3 };
 export function createRigState(study: KinetixRigState["study"]): KinetixRigState {
   const { x, y, length, name, joint, upper, lower } = starter[study];
   return {
-    version: 1, study, constraints: [],
+    version: 1, study, constraints: [], parts: [],
     bones: [
       { id: "root", name: "Body", parentId: null, offset: { x, y }, length, rotation: 0 },
       { id: "upper", name, parentId: "root", offset: { ...joint }, length: upper, rotation: limbAngles[study] },

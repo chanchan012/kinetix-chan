@@ -93,7 +93,7 @@ function RigDetail({rig,change,remove,close}:{rig:Rig;change:(r:Rig)=>void;remov
   return <Modal title={rig.name} close={close}>
     <form onSubmit={e=>{e.preventDefault();const name=new FormData(e.currentTarget).get("name");void run(async()=>change(await request<Rig>(path,"PATCH",{name})));}}>
       <label>Rig name<input name="name" defaultValue={rig.name} required maxLength={120}/></label>
-      <div className="actions"><button disabled={busy}>Save name</button><button type="button" disabled={busy} onClick={()=>{
+      <div className="actions"><Link className="primary" href={"/studio/"+rig.id} prefetch={false}>Open studio</Link><button disabled={busy}>Save name</button><button type="button" disabled={busy} onClick={()=>{
         if(window.confirm("Delete this rig and all its animation clips?"))void run(async()=>{await request(path,"DELETE");remove();});
       }}>Delete rig</button></div>
     </form>

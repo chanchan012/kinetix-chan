@@ -1,6 +1,6 @@
 import { enablePatches, produceWithPatches, type Draft } from "immer";
 import { z } from "zod";
-import { boneSchema, constraintSchema, orderedBones, rigStateSchema, type KinetixRigState } from "./model";
+import { boneSchema, constraintSchema, orderedBones, partSchema, rigStateSchema, type KinetixRigState } from "./model";
 
 enablePatches();
 
@@ -13,6 +13,9 @@ export const rigCommandSchema = z.discriminatedUnion("type", [
   z.strictObject({ type: z.literal("ik.create"), constraint: constraintSchema }),
   z.strictObject({ type: z.literal("ik.target"), id: constraintId, target: constraintSchema.shape.target }),
   z.strictObject({ type: z.literal("ik.remove"), id: constraintId }),
+  z.strictObject({ type: z.literal("part.create"), part: partSchema }),
+  z.strictObject({ type: z.literal("part.update"), id: partSchema.shape.id, changes: partSchema.omit({ id: true }).partial() }),
+  z.strictObject({ type: z.literal("part.remove"), id: partSchema.shape.id }),
 ]);
 export type RigCommand = z.infer<typeof rigCommandSchema>;
 
@@ -44,6 +47,7 @@ function applyCommand(rig: Draft<KinetixRigState>, command: RigCommand) {
       }
       rig.bones = rig.bones.filter(bone => !removed.has(bone.id));
       rig.constraints = rig.constraints.filter(ik => !removed.has(ik.upperId) && !removed.has(ik.lowerId));
+      rig.parts = rig.parts.filter(part => part.parentId === null || !removed.has(part.parentId));
       break;
     }
     case "ik.create":
@@ -55,6 +59,16 @@ function applyCommand(rig: Draft<KinetixRigState>, command: RigCommand) {
     case "ik.remove":
       findById(rig.constraints, command.id, "Constraint");
       rig.constraints = rig.constraints.filter(ik => ik.id !== command.id);
+      break;
+    case "part.create":
+      rig.parts.push(command.part);
+      break;
+    case "part.update":
+      Object.assign(findById(rig.parts, command.id, "Vector part"), command.changes);
+      break;
+    case "part.remove":
+      findById(rig.parts, command.id, "Vector part");
+      rig.parts = rig.parts.filter(part => part.id !== command.id);
       break;
   }
 }
