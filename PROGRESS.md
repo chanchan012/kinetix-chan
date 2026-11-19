@@ -16,7 +16,15 @@ Implemented the application shell, interactive guest playground, Clerk access ro
 
 ## Active subgoal and next exact step
 
-1.2 is deployed. The owner will supply Inngest credentials. After the next production deploy, sync the Inngest endpoint and verify a hosted run. Next development subgoal is 2.1. Start a feature branch and define deterministic rig-state fixtures and forward/inverse kinematics tests before implementing commands, history and attribution.
+1.1, 1.2 and the authenticated workspace release are deployed. Next development subgoal is 2.1. Start a feature branch, define a deterministic parent/child rig fixture, and write forward-kinematics and two-bone IK tests before implementing commands, history and attribution. Hosted thumbnail execution awaits owner-managed Inngest credentials and endpoint sync.
+
+## Authenticated workspace release · November 19, 2026
+
+- **Brief and build** moved interactive studies behind Clerk, removed guest entry and the demo override, and kept the landing and account forms public. Dashboard and studio pages enforce sessions on the server. Private Hono endpoints require verified identity. Auth forms resize within the viewport and scroll internally on short screens.
+- **Test** passed strict TypeScript, all 10 Vitest tests and all 28 Playwright cases across four viewport profiles with real Clerk development sessions.
+- **Merge** published feature commit `8d4b807` and main merge `d95bc56` to GitHub.
+- **Deploy** passed the local production build. Vercel marked the [feature preview](https://kinetix-chan-ngnqx9sk6-chanchans-projects-aada625f.vercel.app) and [production](https://kinetix-chan.vercel.app) ready. Chrome at a phone viewport verified a sign-in redirect, 401s for signed-out API requests, a member session matching the temporary user, the Neon-backed library, and protected study playback. The temporary account was removed.
+- **Document** updated the current route contracts, Vercel scopes, test setup and next development step. Earlier release notes below describe the behavior at the time of those releases.
 
 ## Subgoal 1.2 release · November 19, 2026
 

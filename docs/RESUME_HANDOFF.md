@@ -9,11 +9,11 @@ npm ci
 npm run dev
 ```
 
-Open http://localhost:3000. The workspace's ignored .env.local is configured for the Kinetix Clerk development instance, Upstash and Neon. Use the .env.example template on fresh checkouts. With no variables configured, the app runs as a guest playground.
+Open http://localhost:3000. Supply the Clerk, Upstash and Neon variables in the process environment for local integration work. This workspace already had ignored local configuration when the authentication release began.
 
 ## Service configuration
 
-Copy .env.example to .env.local for local development. Configure deployment variables separately for Preview and Production in Vercel.
+Manage deployment keys directly under the Kinetix project’s Environment Variables in Vercel. The tracked .env.example lists names only. Redeploy after changing values or target scopes.
 
 | Variable | Purpose |
 | --- | --- |
@@ -22,7 +22,6 @@ Copy .env.example to .env.local for local development. Configure deployment vari
 | UPSTASH_REDIS_REST_URL | Redis REST endpoint for distributed rate limiting |
 | UPSTASH_REDIS_REST_TOKEN | Server-only Redis REST token |
 | DATABASE_URL | Neon Postgres connection string with TLS, needed for migrations and future persistent operations |
-| KINETIX_DEMO_ONLY | Test override. A value of 1 disables Clerk and Redis access for isolated browser runs. |
 | PLAYWRIGHT_CHANNEL | Optional browser channel; set to chrome to use installed Google Chrome |
 | INNGEST_SIGNING_KEY | Inngest Cloud signing key. The owner will add this to Vercel Production. |
 | INNGEST_EVENT_KEY | Owner-managed key for sending events. The 1.2 thumbnail trigger uses a cron schedule. |
@@ -40,19 +39,20 @@ npm run test:e2e
 npm run build
 ```
 
-Playwright starts and stops an isolated guest Next dev server on port 3181. On Windows with Chrome installed, set `$env:PLAYWRIGHT_CHANNEL='chrome'` before the E2E command. The four viewport profiles are 1440×900, 768×1024, 375×667 and 844×390. The tests check document dimensions, visible controls, typed API behavior, guest access, playback, scrubbing, skeleton toggling and the quick guide. Screenshots are written under ignored test-results/.
+Playwright starts Next on localhost:3181. Use the same hostname throughout Clerk sign-in. On Windows with Chrome installed, set `$env:PLAYWRIGHT_CHANNEL='chrome'`. The suite requires network access to Clerk, Upstash and Neon. Setup checks for development-instance keys, creates a unique Clerk test user and deletes it in teardown. Session credentials stay out of browser trace artifacts.
+
+The 1440×900, 768×1024, 375×667 and 844×390 profiles exercise landing, sign-in, sign-up, redirects with return destinations, private API rejection, authenticated dashboard and motion playback. The rig/clip editing UI test uses a real session and fixture HTTP responses. Vitest exercises actual SQL against embedded PostgreSQL, including ownership and thumbnail persistence.
 
 ## Known caveats
 
-Production is https://kinetix-chan.vercel.app. Redis and Neon are configured there. Production Clerk setup needs a custom domain controlled by the project owner and matching production keys. The feature preview uses Clerk development keys for testing.
+Production is https://kinetix-chan.vercel.app. Both Vercel release targets use the Kinetix Clerk development instance at the owner's request. Clerk applies development-instance limits to the live site. The dashboard and studio require sign-in on both deployments.
 
-- The suite exercises actual Clerk anonymous rejection and injected authenticated identity. The guest fallback cannot save.
 - The existing kinora Free Tier Redis database is shared with Kinetix. Kinetix rate-limit entries use the `kinetix:v1` prefix.
 - The fixed playback studies are demo data. Saved rigs currently reference a study in their state document. The editable rig command model starts in 2.1.
 
 ## Resume after 1.2
 
-Both SQL migrations are applied. The preview branch `feature/1.2-dashboard` has a branch-specific sensitive DATABASE_URL using the `kinetix_dashboard_preview` read/write role scoped to the public schema of the kinetix database. Other feature branches need their own preview database configuration. Production serves the guest dashboard. Use the 1.2 preview or local Clerk development instance for saved rigs.
+Both SQL migrations are applied. Vercel Production uses the pooled Neon URL. The release branches `feature/1.2-dashboard` and `feature/authenticated-workspace` have branch-scoped sensitive DATABASE_URL entries for the existing `kinetix_dashboard_preview` role in the kinetix database. Configure the appropriate database scope before testing a new feature deployment.
 
 The owner is managing the Inngest keys. After setting them, redeploy Vercel Production and sync https://kinetix-chan.vercel.app/api/inngest in Inngest Cloud. Confirm that the `kinetix-motion-studio` app lists `render-animation-thumbnails`; create a clip in the signed-in dashboard and verify the scheduled run stores its PNG. Before signing-key configuration the cloud endpoint returned HTTP 500. Local SDK discovery and the actual render/persistence path have passed; hosted execution is pending.
 

@@ -2,14 +2,15 @@
 
 ## Subgoal 1.1
 
-Next.js 16 App Router renders the shell and auth pages. The interactive playground is a client island. Its three fixed motion studies are sample artwork for the landing experience. They do not implement the editable rig format planned for 2.1.
+Next.js 16 App Router serves a public landing page and Clerk sign-in and sign-up pages. The authenticated workspace contains the rig library and three motion studies. The editable rig format begins in 2.1.
 
 | Entry | Responsibility |
 | --- | --- |
-| `app/page.tsx`, `components/playground.tsx` | Guest entry, clip choice, frame slider, skeleton visibility, playback and keyboard controls |
+| `app/page.tsx`, `components/study-links.tsx` | Public artwork and links into the workspace |
+| `app/studio/studies/[id]/page.tsx`, `components/playground.tsx` | Server-verified member access to playback, frame scrubbing, bones and keyboard controls |
 | `components/art-canvas.tsx`, `lib/artwork.ts` | Canvas 2D facets and joint overlays, deterministic per-frame poses, pixel-ratio-aware resizing |
 | `app/globals.css` | Flex shell locked to 100dvh, grid layout, touch and short-landscape adaptations, internally scrollable auth content |
-| `proxy.ts` | Clerk page middleware when configured |
+| `proxy.ts` | Clerk session handling and sign-in redirects for dashboard and studio paths, including deep links |
 | `lib/api.ts` | Typed Hono RPC factory, optional verified identity, explicit private account boundary, cache policy |
 | `lib/services.ts` | Clerk verification via @hono/clerk-auth and Upstash Redis sliding-window implementation |
 | `app/api/[[...route]]/route.ts` | Next Node runtime adapter for Hono |
@@ -20,10 +21,10 @@ Next.js 16 App Router renders the shell and auth pages. The interactive playgrou
 | Method | Route | Contract |
 | --- | --- | --- |
 | GET | /api/health | Service liveness; no dependency probe |
-| GET | /api/session | Guest returns mode and canSave=false. Verified member returns mode, Clerk userId and canSave=true for future owner-scoped operations. |
+| GET | /api/session | Verified member returns mode, Clerk userId and canSave=true. Signed-out requests return 401. |
 | GET | /api/account | Verified userId, or 401 for guests |
 
-Exported `AppType` supports Hono's hc client. All APIs are throttled before identity resolution and use private, no-store responses. Exhausted windows return 429 with Retry-After. Limiter faults return 503. On Vercel the distributed limiter uses the platform-supplied client address. Outside Vercel it uses a shared local key. Guest-only mode without Redis uses a bounded, per-instance window of 120 requests per minute. Account mode requires both Upstash variables. No client-provided identity header grants access.
+Exported `AppType` supports Hono's hc client. Hono throttles requests before identity resolution and uses private, no-store responses. Exhausted windows return 429 with Retry-After. Limiter faults and missing authentication configuration on private APIs return 503. Upstash keys requests by the platform-supplied client address on Vercel and a shared local bucket elsewhere. The session identity used for database access comes from Clerk verification.
 
 ## Storage
 
@@ -31,7 +32,7 @@ The checked-in migration is `drizzle/0000_foundation.sql`. Rigs have UUID primar
 
 ## Release topology
 
-The GitHub repository is chanchan012/kinetix-chan. Vercel builds the Next.js app from this repository, with separate feature-branch preview and main production deployments. The preview uses the Kinetix Clerk development instance. Both Vercel environments use the existing kinora Redis database. Production also has a pooled connection to the kinetix Neon database. Production currently serves guest access.
+Vercel builds feature previews and production from the GitHub repository chanchan012/kinetix-chan. Both targets use the same page guards and the Kinetix Clerk development instance. Vercel holds deployment credentials for Clerk, the existing kinora Redis database and the kinetix Neon database.
 
 ## Later milestones
 
@@ -39,7 +40,7 @@ The shared command model, IK solver, timeline editing, exports, SSE and MCP reso
 
 ## Subgoal 1.2
 
-The landing page links to `/dashboard`. Guests can open a study at its own playback URL. Authenticated users can create a rig from a study, rename or delete it, and manage its animation clips. The dashboard has a fixed viewport shell with an internally scrollable library. Clerk returns newly signed-in members to the dashboard.
+The landing page links to `/dashboard` and `/studio/studies/[id]`. Both page implementations call `auth.protect()` before rendering. The proxy preserves the requested local path and query when sending a visitor to sign in. Direct sign-in defaults to the dashboard. Members can create a rig from a study, rename or delete it, and manage its animation clips. The dashboard has a fixed viewport shell with an internally scrollable library.
 
 | Resource | Methods | Data |
 | --- | --- | --- |
