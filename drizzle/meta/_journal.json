@@ -36,6 +36,13 @@
       "when": 1795107538596,
       "tag": "0004_rig_collaborators",
       "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1795108419356,
+      "tag": "0005_rig_tokens",
+      "breakpoints": true
     }
   ]
 }

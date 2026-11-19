@@ -5,6 +5,7 @@ import type { Study } from "../lib/studies";
 import { createRigState, type KinetixRigState } from "../lib/rig/model";
 import type { Track } from "../lib/rig/animation";
 import { ExportQueue } from "./exports";
+import { RigTokens } from "./tokens";
 
 type ClipInput = Pick<typeof clips.$inferInsert, "name" | "fps" | "frameCount">;
 const rigFields = {id:rigs.id,name:rigs.name,state:rigs.state,revision:rigs.revision,updatedAt:rigs.updatedAt};
@@ -16,8 +17,10 @@ const clipAnimationFields = {
 
 export class Library {
   readonly exports: ExportQueue;
+  readonly tokens: RigTokens;
   constructor(private db: Pick<PgDatabase<PgQueryResultHKT>, "select" | "insert" | "update" | "delete" | "execute">) {
     this.exports = new ExportQueue(db);
+    this.tokens = new RigTokens(db);
   }
 
   private owned(owner:string,id:string) {
@@ -88,6 +91,10 @@ export class Library {
   listClipAnimation(owner:string,id:string) {
     return this.db.select(clipAnimationFields).from(clips).where(inArray(clips.rigId,this.parent(owner,id)))
       .orderBy(asc(clips.name),asc(clips.id));
+  }
+  listClipVersions(user:string,id:string) {
+    return this.db.select({id:clips.id,revision:clips.trackRevision}).from(clips)
+      .where(inArray(clips.rigId,this.parent(user,id))).orderBy(asc(clips.id));
   }
   async getClipAnimation(owner:string,id:string,clipId:string) {
     return (await this.db.select(clipAnimationFields).from(clips)

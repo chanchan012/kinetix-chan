@@ -15,6 +15,7 @@ import { Viewport, type Selection, type Tool, type Brush } from "./viewport";
 import { Timeline, type ClipTiming, type FramePreview } from "./timeline";
 import { ExportDialog } from "./export-dialog";
 import { ShareDialog } from "./share-dialog";
+import { McpDialog } from "./mcp-dialog";
 import { useRoom } from "./use-room";
 
 type Props = {
@@ -42,13 +43,15 @@ export function Studio({actorId, rigId, name, initial, revision: initialRevision
   const [animation, setAnimation] = useState<FramePreview>({ frame: 0, frames: studyFor(initial.study).frames, tracks: [], onion: false });
   const [timelineDirty, setTimelineDirty] = useState(false);
   const [clip, setClip] = useState<ClipTiming | undefined>(clips[0]);
+  const [liveClips, setLiveClips] = useState(clips);
   const [exportOpen, setExportOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
+  const [mcpOpen, setMcpOpen] = useState(false);
   const [brush, setBrush] = useState<Brush | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [conflict, setConflict] = useState(false);
-  const room = useRoom(rigId,selected);
+  const room = useRoom(rigId,selected,clips);
   const remoteBones = new Set(room.presence.flatMap(entry => entry.selection?.kind === "bone" ? [entry.selection.id] : []));
   const pending = useRef(false);
   const dirty = saved !== rig;
@@ -64,6 +67,18 @@ export function Studio({actorId, rigId, name, initial, revision: initialRevision
   }).filter(ghost => ghost.frame !== animation.frame), [rig,animation]);
   const last = past.at(-1);
   const path = "/api/rigs/" + rigId + "/state";
+  useEffect(() => {
+    if (!room.timeline) return;
+    const controller = new AbortController();
+    const timer = setTimeout(() => void fetch("/api/rigs/"+rigId+"/animation",{
+      cache:"no-store",signal:controller.signal,
+    }).then(async response => {
+      if (!response.ok) return;
+      const rows: ClipTiming[] = await response.json();
+      if (!controller.signal.aborted) setLiveClips(rows);
+    }).catch(()=>{}),180);
+    return () => { clearTimeout(timer); controller.abort(); };
+  },[room.timeline,rigId]);
 
   function edit(label: string, ...commands: RigCommand[]) {
     try {
@@ -203,8 +218,11 @@ export function Studio({actorId, rigId, name, initial, revision: initialRevision
       <h1>{name}</h1>
       <span role="status" className="studio-save-status">{conflict ? "Save conflict" : saving ? "Saving…" : dirty ? "Unsaved" : timelineDirty ? "Unsaved keys" : "Saved"}</span>
       <button className="studio-save" disabled={!dirty || saving || conflict} onClick={() => void save()}><FloppyDisk size={16}/>Save</button>
-      {owned && <button className="studio-export-button" onClick={() => setExportOpen(true)}>Export</button>}
-      {owned && <button className="studio-export-button" onClick={() => setShareOpen(true)}>Share</button>}
+      {owned && <nav className="studio-owner-actions" aria-label="Rig actions">
+        <button className="studio-export-button" onClick={() => setExportOpen(true)}>Export</button>
+        <button className="studio-export-button" onClick={() => setShareOpen(true)}>Share</button>
+        <button className="studio-export-button" onClick={() => setMcpOpen(true)}>MCP</button>
+      </nav>}
     </header>
 
     {(error || conflict) && <aside className="studio-alert" role="alert">
@@ -264,12 +282,14 @@ export function Studio({actorId, rigId, name, initial, revision: initialRevision
         <Inspector {...{ bone, part, rig, edit }} clear={() => select(null)}/>
         {part?.closed && <WeightTools key={part.id} part={part} rig={rig} brush={activeBrush} setBrush={setBrush} edit={edit} report={setError}/>}
         {last && <p className="studio-history" role="status">{last.actor.kind === "ai" ? "AI" : "Human"} · {last.label}</p>}
+        {!last && room.lastEdit?.kind === "ai" && <p className="studio-history" role="status">AI · {room.lastEdit.label ?? "Edit rig"}</p>}
       </aside>
-      <Timeline {...{ clips, rigId, rig, selected, select }} preview={setAnimation} onDirty={setTimelineDirty} onClip={setClip}/>
+      <Timeline {...{ rigId, rig, selected, select }} clips={liveClips} preview={setAnimation} onDirty={setTimelineDirty} onClip={setClip}/>
     </div>
     {exportOpen && <ExportDialog rigId={rigId} clip={clip} frameCount={studyFor(rig.study).frames}
       unsaved={dirty || timelineDirty} renderConfigured={renderConfigured} close={() => setExportOpen(false)}/>}
     {shareOpen && <ShareDialog rigId={rigId} close={() => setShareOpen(false)}/>}
+    {mcpOpen && <McpDialog rigId={rigId} close={() => setMcpOpen(false)}/>}
   </main>;
 }
 

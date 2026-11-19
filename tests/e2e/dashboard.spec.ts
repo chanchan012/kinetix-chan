@@ -74,8 +74,7 @@ test("a member can author easing, preview onion skins, and paint a closed shape"
     await expect(graph.getByRole("img",{name:"Cubic Bézier curve"})).toBeVisible();
     await graph.getByLabel("Y1").fill("0.6");
     await graph.getByRole("button",{name:"Done",exact:true}).click();
-    await page.getByRole("button",{name:"Save keys",exact:true}).click();
-    await expect(page.getByText("Saved",{exact:true})).toBeVisible();
+    await expect(page.getByText("Saved",{exact:true})).toBeVisible({timeout:8000});
     const saved = await (await page.request.get(path+"/clips/"+clip.id+"/tracks")).json();
     expect(saved.tracks[0].keys.map((key:{frame:number})=>key.frame)).toEqual([0,12]);
     expect(saved.tracks[0].keys[0].easing.y1).toBe(0.6);

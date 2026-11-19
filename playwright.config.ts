@@ -7,7 +7,8 @@ const baseURL = "http://localhost:3181";
 export default defineConfig({
   globalSetup: "./tests/e2e/setup.ts",
   testDir: "./tests/e2e",
-  workers: 2,
+  // Browser fixtures share the app's Upstash IP bucket on localhost.
+  workers: 1,
   timeout: 60000,
   use: { baseURL, channel: process.env.PLAYWRIGHT_CHANNEL || undefined, trace: "off" },
   projects: [

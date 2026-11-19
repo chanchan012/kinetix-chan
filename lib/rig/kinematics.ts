@@ -54,7 +54,8 @@ export function solveTwoBoneIK({
 export function evaluateRig(rig: KinetixRigState): Map<string, BonePose> {
   const bones = orderedBones(rig.bones);
   const order = new Map(bones.map((bone, index) => [bone.id, index]));
-  const constraints = [...rig.constraints].sort((a, b) => order.get(a.upperId)! - order.get(b.upperId)!);
+  const constraints = rig.constraints.filter(item => item.enabled !== false)
+    .sort((a, b) => order.get(a.upperId)! - order.get(b.upperId)!);
   const rotations = new Map<string, number>();
   let poses = poseBones(bones);
   for (const constraint of constraints) {

@@ -90,14 +90,15 @@ export function realtimeApi(repository: () => Library, roomService?: () => RoomB
         };
         stream.onAbort(close);
         try {
-          await stream.writeSSE({ event:"snapshot", data:JSON.stringify({revision,presence:await bus.recent(id)}) });
+          const initial = await Promise.all([bus.recent(id),library.listClipVersions(userId,id)]);
+          await stream.writeSSE({ event:"snapshot", data:JSON.stringify({revision,presence:initial[0],clips:initial[1]}) });
           for (let tick = 0; tick < 3 && !stream.aborted; tick++) {
             await stream.sleep(12_000);
             if (stream.aborted) return;
             revision = await library.rigRevision(userId,id);
             if (revision === undefined) return;
-            const [cached, presence] = await Promise.all([bus.revision(id),bus.recent(id)]);
-            await stream.writeSSE({ event:"snapshot", data:JSON.stringify({revision:Math.max(revision,cached),presence}) });
+            const [cached, presence, clips] = await Promise.all([bus.revision(id),bus.recent(id),library.listClipVersions(userId,id)]);
+            await stream.writeSSE({ event:"snapshot", data:JSON.stringify({revision:Math.max(revision,cached),presence,clips}) });
           }
         } finally {
           close();

@@ -6,8 +6,11 @@ import { createApi } from "../../lib/api";
 import { Library } from "../../db/library";
 import { processThumbnails } from "../../jobs/thumbnails";
 import { createRigState } from "../../lib/rig/model";
-import { setKey } from "../../lib/rig/animation";
+import { sampleRig, setKey, tracksSchema } from "../../lib/rig/animation";
 import { processExport } from "../../jobs/exports";
+import { RigAgent } from "../../lib/mcp/actions";
+import { evaluateRig } from "../../lib/rig/kinematics";
+import { readRigState } from "../../lib/rig/model";
 
 const pg = new PGlite();
 const library = new Library(drizzle(pg));
@@ -26,6 +29,36 @@ beforeAll(async () => {
 },30000);
 afterAll(() => pg.close());
 describe("saved library", () => {
+  it("issues owner-only, revocable rig credentials and bakes a matching IK pose", async () => {
+    const rig = await library.create("owner","MCP fixture","fox");
+    const path = "/" + rig.id + "/mcp-credentials";
+    expect((await call("other","POST",path,{label:"Agent"})).status).toBe(404);
+    const issued = await call("owner","POST",path,{label:"Agent"});
+    expect(issued.status).toBe(201);
+    const {id,token} = await issued.json();
+    const publicRows = await (await call("owner","GET",path)).json();
+    expect(Object.keys(publicRows[0]).sort()).toEqual(["createdAt","expiresAt","id","label"]);
+    const credential = await library.tokens.verify(token);
+    expect(credential?.rigId).toEqual(rig.id);
+    const agent = new RigAgent(library,credential!);
+    await agent.attachIK({constraint:{id:"foot",upperId:"upper",lowerId:"lower",target:{x:348,y:194},bend:1}});
+    const clip = await agent.createClip({name:"Bake",fps:24,frameCount:12});
+    const clipId = clip.id as string;
+    await agent.generateCycle({clipId,cycle:"walk",boneId:"upper",amplitude:12});
+    const before = await library.getClipAnimation("owner",rig.id,clipId);
+    const authored = readRigState((await library.get("owner",rig.id))!.state);
+    const target = evaluateRig(sampleRig(authored,tracksSchema.parse(before!.tracks),5)).get("lower")!.tip;
+    await agent.bakeIK({clipId,constraintId:"foot",startFrame:3,endFrame:9});
+    const baked = tracksSchema.parse((await library.getClipAnimation("owner",rig.id,clipId))!.tracks);
+    const pose = sampleRig(authored,baked,5);
+    expect(pose.constraints[0].enabled).toBe(false);
+    expect(sampleRig(authored,baked,2).constraints[0].enabled).toBe(true);
+    expect(evaluateRig(pose).get("lower")!.tip.x).toBeCloseTo(target.x);
+    expect(evaluateRig(pose).get("lower")!.tip.y).toBeCloseTo(target.y);
+    expect((await call("owner","DELETE",path+"/"+id)).status).toBe(204);
+    expect(await library.tokens.verify(token)).toBeUndefined();
+    await library.remove("owner",rig.id);
+  });
   it("allows an authorized editor to modify the rig and its clips until access is revoked", async () => {
     const rig = await library.create("owner","Shared","fox");
     const path = "/"+rig.id;
