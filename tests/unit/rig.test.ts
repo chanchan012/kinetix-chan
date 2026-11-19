@@ -5,7 +5,7 @@ import { createRigStore } from "../../lib/rig/store";
 import type { RigCommand } from "../../lib/rig/commands";
 
 const fixture = (): KinetixRigState => ({
-  version: 1, study: "fox", constraints: [],
+  version: 1, study: "fox", constraints: [], parts: [],
   bones: [
     { id: "body", name: "Body", parentId: null, offset: { x: 10, y: 20 }, length: 6, rotation: Math.PI / 2 },
     { id: "upper", name: "Foreleg", parentId: "body", offset: { x: 6, y: 0 }, length: 5, rotation: 0 },

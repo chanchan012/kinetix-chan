@@ -45,6 +45,11 @@ export class Library {
     if (!await this.get(owner,id)) return null;
     return this.db.select(clipFields).from(clips).where(inArray(clips.rigId,this.parent(owner,id))).orderBy(asc(clips.name),asc(clips.id));
   }
+  listClipTiming(owner:string,id:string) {
+    const { thumbnail, ...timing } = clipFields;
+    return this.db.select(timing).from(clips).where(inArray(clips.rigId,this.parent(owner,id)))
+      .orderBy(asc(clips.name),asc(clips.id));
+  }
   async addClip(owner:string,id:string,input:ClipInput) {
     // INSERT ... SELECT keeps the ownership check and write in a single statement.
     const rows = await this.db.execute(sql`
