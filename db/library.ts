@@ -1,0 +1,62 @@
+import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
+import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
+import { clips, rigs } from "./schema";
+import type { Study } from "../lib/studies";
+
+type ClipInput = Pick<typeof clips.$inferInsert, "name" | "fps" | "frameCount">;
+const rigFields = {id:rigs.id,name:rigs.name,state:rigs.state,updatedAt:rigs.updatedAt};
+const clipFields = {id:clips.id,name:clips.name,fps:clips.fps,frameCount:clips.frameCount,thumbnail:clips.thumbnail};
+
+export class Library {
+  constructor(private db: Pick<PgDatabase<PgQueryResultHKT>, "select" | "insert" | "update" | "delete" | "execute">) {}
+
+  private owned(owner:string,id:string) {
+    return and(eq(rigs.ownerId,owner),eq(rigs.id,id));
+  }
+  list(owner:string) {
+    return this.db.select(rigFields).from(rigs).where(eq(rigs.ownerId,owner)).orderBy(desc(rigs.updatedAt),asc(rigs.id));
+  }
+  async get(owner:string,id:string) {
+    return (await this.db.select(rigFields).from(rigs).where(this.owned(owner,id)))[0];
+  }
+  async create(owner:string,name:string,study:Study["id"]) {
+    return (await this.db.insert(rigs).values({ownerId:owner,name,state:{study}}).returning(rigFields))[0];
+  }
+  async rename(owner:string,id:string,name:string) {
+    return (await this.db.update(rigs).set({name,updatedAt:new Date(),revision:sql`${rigs.revision} + 1`}).where(this.owned(owner,id)).returning(rigFields))[0];
+  }
+  async remove(owner:string,id:string) {
+    return (await this.db.delete(rigs).where(this.owned(owner,id)).returning({id:rigs.id}))[0];
+  }
+  private parent(owner:string,id:string) {
+    return this.db.select({id:rigs.id}).from(rigs).where(this.owned(owner,id));
+  }
+  async listClips(owner:string,id:string) {
+    if (!await this.get(owner,id)) return null;
+    return this.db.select(clipFields).from(clips).where(inArray(clips.rigId,this.parent(owner,id))).orderBy(asc(clips.name),asc(clips.id));
+  }
+  async addClip(owner:string,id:string,input:ClipInput) {
+    // INSERT ... SELECT keeps the ownership check and write in a single statement.
+    const rows = await this.db.execute(sql`
+      insert into clips (rig_id,name,fps,frame_count)
+      select ${rigs.id}, ${input.name}, ${input.fps}, ${input.frameCount} from ${rigs} where ${this.owned(owner,id)}
+      returning id,name,fps,frame_count as "frameCount",thumbnail`);
+    return (rows as {rows:Record<string,unknown>[]}).rows[0];
+  }
+  async editClip(owner:string,id:string,clipId:string,input:ClipInput) {
+    return (await this.db.update(clips).set({...input,thumbnail:null})
+      .where(and(eq(clips.id,clipId),inArray(clips.rigId,this.parent(owner,id)))).returning(clipFields))[0];
+  }
+  async removeClip(owner:string,id:string,clipId:string) {
+    return (await this.db.delete(clips).where(and(eq(clips.id,clipId),inArray(clips.rigId,this.parent(owner,id))))
+      .returning({id:clips.id}))[0];
+  }
+  pending() {
+    return this.db.select({id:clips.id,state:rigs.state,fps:clips.fps,frames:clips.frameCount})
+      .from(clips).innerJoin(rigs,eq(rigs.id,clips.rigId)).where(isNull(clips.thumbnail)).orderBy(asc(clips.id)).limit(50);
+  }
+  saveThumbnail(id:string,fps:number,frames:number,thumbnail:string) {
+    return this.db.update(clips).set({thumbnail}).where(and(eq(clips.id,id),eq(clips.fps,fps),
+      eq(clips.frameCount,frames),isNull(clips.thumbnail))).returning({id:clips.id});
+  }
+}

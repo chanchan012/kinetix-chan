@@ -10,5 +10,5 @@ export const metadata: Metadata = {
   description: "An interactive playground for 2D character rigs and motion studies."
 };
 export default function RootLayout({children}: Readonly<{children: React.ReactNode}>) {
-  return <html lang="en"><body>{clerkEnabled() ? <ClerkProvider signInUrl="/sign-in" signUpUrl="/sign-up" signInFallbackRedirectUrl="/" signUpFallbackRedirectUrl="/">{children}</ClerkProvider> : children}</body></html>;
+  return <html lang="en"><body>{clerkEnabled() ? <ClerkProvider signInUrl="/sign-in" signUpUrl="/sign-up" signInFallbackRedirectUrl="/dashboard" signUpFallbackRedirectUrl="/dashboard">{children}</ClerkProvider> : children}</body></html>;
 }

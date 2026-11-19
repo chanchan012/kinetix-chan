@@ -4,3 +4,6 @@ export const studies = [
   { id: "fish", name: "Jade koi", clip: "Swim cycle", frames: 48, color: "#398f80", wash: "#deede5" }
 ] as const;
 export type Study = typeof studies[number];
+export function studyFor(id:unknown):Study {
+  return studies.find(study => study.id === id) ?? studies[0];
+}

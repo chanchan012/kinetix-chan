@@ -8,6 +8,13 @@
       "when": 1795008921316,
       "tag": "0000_foundation",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1795051703102,
+      "tag": "0001_clip_thumbnail",
+      "breakpoints": true
     }
   ]
 }

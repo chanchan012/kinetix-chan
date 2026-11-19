@@ -20,8 +20,8 @@ import { studies } from "@/lib/studies";
 import { ArtCanvas } from "./art-canvas";
 import { Brand } from "./brand";
 
-export function Playground({initialDemo}: {initialDemo: boolean}) {
-  const [index,setIndex] = useState(0);
+export function Playground({initialDemo,initialStudy}: {initialDemo: boolean;initialStudy?:string}) {
+  const [index,setIndex] = useState(Math.max(0,studies.findIndex(s=>s.id===initialStudy)));
   const [frame,setFrame] = useState(0);
   const [playing,setPlaying] = useState(false);
   const [rig,setRig] = useState(true);
@@ -94,7 +94,7 @@ export function Playground({initialDemo}: {initialDemo: boolean}) {
         </section>
       </div>
       <section className="library" aria-label="Motion studies">
-        <div className="library-head"><h2><StackIcon size={22}/> Motion studies</h2><span>SELECT A RIG</span></div>
+        <div className="library-head"><h2><StackIcon size={22}/> Motion studies</h2><Link className="guide-link" href="/dashboard">Rig library <ArrowRightIcon/></Link></div>
         <div className="study-list">{studies.map((item,i) =>
           <button key={item.id} className={"study" + (i===index ? " selected" : "")} aria-pressed={i===index} onClick={() => selectStudy(i)}>
             <span className="thumb" style={{backgroundColor:item.wash}}><ArtCanvas study={item} mini/></span>

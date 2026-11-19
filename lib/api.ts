@@ -1,5 +1,8 @@
 import { Hono, type MiddlewareHandler } from "hono";
 import { z } from "zod";
+import { libraryApi } from "./library-api";
+import { Library } from "../db/library";
+import { connectDatabase } from "../db/client";
 
 export type IdentityEnv = { Variables: { userId: string | null } };
 export type LimitResult = { success: boolean; reset: number };
@@ -12,7 +15,7 @@ export const sessionSchema = z.discriminatedUnion("mode", [
   z.object({ mode: z.literal("guest"), canSave: z.literal(false) }),
   z.object({ mode: z.literal("member"), userId: z.string().min(1), canSave: z.literal(true) })
 ]);
-export function createApi(services: Services) {
+export function createApi(services: Services, repository = () => new Library(connectDatabase())) {
   return new Hono<IdentityEnv>().basePath("/api")
     .use("*", async (c, next) => {
       c.header("Cache-Control", "private, no-store");
@@ -36,6 +39,6 @@ export function createApi(services: Services) {
     .get("/account", c => {
       const userId = c.get("userId");
       return userId ? c.json({ userId }, 200) : c.json({ error: "authentication_required" }, 401);
-    });
+    }).route("/rigs",libraryApi(repository));
 }
 export type AppType = ReturnType<typeof createApi>;

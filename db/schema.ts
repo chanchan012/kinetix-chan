@@ -21,7 +21,8 @@ export const clips = pgTable("clips", {
   name: text().notNull(),
   fps: integer().notNull().default(24),
   frameCount: integer("frame_count").notNull().default(24),
-  tracks: jsonb().$type<unknown[]>().notNull().default([])
+  tracks: jsonb().$type<unknown[]>().notNull().default([]),
+  thumbnail: text()
 }, t => [
   index("clip_rig_idx").on(t.rigId),
   check("clip_time_valid", sql`${t.fps} between 1 and 120 and ${t.frameCount} > 0`)
