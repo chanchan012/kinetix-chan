@@ -57,4 +57,12 @@ describe("Hono RPC", () => {
     const app = fixture({limit: async () => { throw Error("redis unavailable"); }});
     expect((await app.request("/api/session")).status).toBe(503);
   });
+  it("rate-limits presence posts and event subscriptions before authentication", async () => {
+    const identify = vi.fn();
+    const app = fixture({identify,limit:async()=>({success:false,reset:Date.now()+1000})});
+    const base = "/api/rigs/04f2a718-ffe2-4153-8ce4-f6682e89e7a3";
+    expect((await app.request(base+"/events")).status).toBe(429);
+    expect((await app.request(base+"/presence",{method:"POST"})).status).toBe(429);
+    expect(identify).not.toHaveBeenCalled();
+  });
 });

@@ -1,6 +1,6 @@
-import { and, asc, desc, eq, inArray, isNull, sql } from "drizzle-orm";
+import { and, asc, desc, eq, exists, inArray, isNull, or, sql } from "drizzle-orm";
 import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
-import { clips, rigs } from "./schema";
+import { clips, rigCollaborators, rigs } from "./schema";
 import type { Study } from "../lib/studies";
 import { createRigState, type KinetixRigState } from "../lib/rig/model";
 import type { Track } from "../lib/rig/animation";
@@ -23,11 +23,42 @@ export class Library {
   private owned(owner:string,id:string) {
     return and(eq(rigs.ownerId,owner),eq(rigs.id,id));
   }
-  list(owner:string) {
-    return this.db.select(rigFields).from(rigs).where(eq(rigs.ownerId,owner)).orderBy(desc(rigs.updatedAt),asc(rigs.id));
+  private canEdit(user:string) {
+    const grant = this.db.select({userId:rigCollaborators.userId}).from(rigCollaborators)
+      .where(and(eq(rigCollaborators.rigId,rigs.id),eq(rigCollaborators.userId,user)));
+    return or(eq(rigs.ownerId,user),exists(grant));
+  }
+  list(user:string) {
+    return this.db.select({...rigFields,owned:sql<boolean>`${rigs.ownerId} = ${user}`})
+      .from(rigs).where(this.canEdit(user)).orderBy(desc(rigs.updatedAt),asc(rigs.id));
   }
   async get(owner:string,id:string) {
     return (await this.db.select(rigFields).from(rigs).where(this.owned(owner,id)))[0];
+  }
+  async open(user:string,id:string) {
+    return (await this.db.select({...rigFields,owned:sql<boolean>`${rigs.ownerId} = ${user}`})
+      .from(rigs).where(and(eq(rigs.id,id),this.canEdit(user))))[0];
+  }
+  async rigRevision(user:string,id:string) {
+    return (await this.db.select({revision:rigs.revision}).from(rigs)
+      .where(and(eq(rigs.id,id),this.canEdit(user))))[0]?.revision;
+  }
+  async collaborators(owner:string,id:string) {
+    if (!await this.get(owner,id)) return null;
+    return this.db.select({userId:rigCollaborators.userId,email:rigCollaborators.email}).from(rigCollaborators)
+      .where(eq(rigCollaborators.rigId,id)).orderBy(asc(rigCollaborators.email));
+  }
+  async addCollaborator(owner:string,id:string,user:string,email:string) {
+    if (owner === user || !await this.get(owner,id)) return;
+    return (await this.db.insert(rigCollaborators).values({rigId:id,userId:user,email})
+      .onConflictDoUpdate({target:[rigCollaborators.rigId,rigCollaborators.userId],set:{email}})
+      .returning({userId:rigCollaborators.userId,email:rigCollaborators.email}))[0];
+  }
+  async removeCollaborator(owner:string,id:string,user:string) {
+    const owned = this.db.select({id:rigs.id}).from(rigs).where(this.owned(owner,id));
+    return (await this.db.delete(rigCollaborators)
+      .where(and(inArray(rigCollaborators.rigId,owned),eq(rigCollaborators.userId,user)))
+      .returning({userId:rigCollaborators.userId}))[0];
   }
   async create(owner:string,name:string,study:Study["id"]) {
     return (await this.db.insert(rigs).values({ownerId:owner,name,state:createRigState(study)}).returning(rigFields))[0];
@@ -37,7 +68,7 @@ export class Library {
       then ${rigs.state}->>'study' else 'fox' end`;
     const [saved] = await this.db.update(rigs).set({
       state, updatedAt:new Date(), revision:sql`${rigs.revision} + 1`,
-    }).where(and(this.owned(owner,id),eq(rigs.revision,revision),sql`${study} = ${state.study}`))
+    }).where(and(eq(rigs.id,id),this.canEdit(owner),eq(rigs.revision,revision),sql`${study} = ${state.study}`))
       .returning(rigFields);
     return saved;
   }
@@ -48,10 +79,10 @@ export class Library {
     return (await this.db.delete(rigs).where(this.owned(owner,id)).returning({id:rigs.id}))[0];
   }
   private parent(owner:string,id:string) {
-    return this.db.select({id:rigs.id}).from(rigs).where(this.owned(owner,id));
+    return this.db.select({id:rigs.id}).from(rigs).where(and(eq(rigs.id,id),this.canEdit(owner)));
   }
   async listClips(owner:string,id:string) {
-    if (!await this.get(owner,id)) return null;
+    if (!await this.open(owner,id)) return null;
     return this.db.select(clipFields).from(clips).where(inArray(clips.rigId,this.parent(owner,id))).orderBy(asc(clips.name),asc(clips.id));
   }
   listClipAnimation(owner:string,id:string) {
@@ -71,7 +102,7 @@ export class Library {
     // INSERT ... SELECT keeps the ownership check and write in a single statement.
     const rows = await this.db.execute(sql`
       insert into clips (rig_id,name,fps,frame_count)
-      select ${rigs.id}, ${input.name}, ${input.fps}, ${input.frameCount} from ${rigs} where ${this.owned(owner,id)}
+      select ${rigs.id}, ${input.name}, ${input.fps}, ${input.frameCount} from ${rigs} where ${and(eq(rigs.id,id),this.canEdit(owner))}
       returning id,name,fps,frame_count as "frameCount",thumbnail`);
     return (rows as {rows:Record<string,unknown>[]}).rows[0];
   }

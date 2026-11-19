@@ -25,6 +25,7 @@ type Props = {
   phase: number;
   ghosts: { rig: KinetixRigState; phase: number }[];
   brush: Brush | null;
+  remoteBones: ReadonlySet<string>;
   selected: Selection;
   select: (value: Selection) => void;
   tool: Tool;
@@ -54,7 +55,7 @@ function circle(context: CanvasRenderingContext2D, point: Point, radius: number)
   context.stroke();
 }
 
-export function Viewport({rig, phase, ghosts, brush, selected, select, tool, reference, zoom, showBones, pen, addKnot, addBone, edit}: Props) {
+export function Viewport({rig, phase, ghosts, brush, remoteBones, selected, select, tool, reference, zoom, showBones, pen, addKnot, addBone, edit}: Props) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
   const [gesture, setGesture] = useState<Gesture | null>(null);
@@ -151,8 +152,9 @@ export function Viewport({rig, phase, ghosts, brush, selected, select, tool, ref
 
       if (showBones) for (const [id, pose] of poses) {
         const active = selected?.kind === "bone" && selected.id === id;
-        context.strokeStyle = active ? "#a93716" : "#474b43";
-        context.fillStyle = active ? "#f78355" : "#fffcef";
+        const remote = remoteBones.has(id);
+        context.strokeStyle = active ? "#a93716" : remote ? "#1e6b61" : "#474b43";
+        context.fillStyle = active ? "#f78355" : remote ? "#85bfad" : "#fffcef";
         context.beginPath();
         context.moveTo(pose.origin.x, pose.origin.y);
         context.lineTo(pose.tip.x, pose.tip.y);
@@ -216,7 +218,7 @@ export function Viewport({rig, phase, ghosts, brush, selected, select, tool, ref
       }
     });
     return () => cancelAnimationFrame(frame);
-  }, [scale, size, camera.x, camera.y, preview, rig, authoredPoses, phase, reference, selected, showBones, gesture, cursor, pen, ghosts, brush]);
+  }, [scale, size, camera.x, camera.y, preview, rig, authoredPoses, phase, reference, selected, showBones, gesture, cursor, pen, ghosts, brush, remoteBones]);
 
   function down(event: PointerEvent<HTMLCanvasElement>) {
     if (!scale || event.button !== 0 || !event.isPrimary) return;

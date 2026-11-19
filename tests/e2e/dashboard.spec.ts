@@ -97,8 +97,7 @@ test("a member can author easing, preview onion skins, and paint a closed shape"
     await page.getByLabel("Influence bone").selectOption("upper");
     await page.getByRole("button",{name:"Paint weights"}).click();
     await page.mouse.click(point.x,point.y);
-    await page.getByRole("button",{name:"Save",exact:true}).click();
-    await expect(page.getByText("Saved",{exact:true})).toBeVisible();
+    await expect(page.getByText("Saved",{exact:true})).toBeVisible({timeout:8000});
     const state: KinetixRigState = (await (await page.request.get(path+"/state")).json()).state;
     expect(state.parts[0].mesh?.vertices.some(vertex => vertex.weights.some(weight => weight.boneId === "upper"))).toBe(true);
     expect(await page.evaluate(()=>document.documentElement.scrollHeight<=innerHeight && document.documentElement.scrollWidth<=innerWidth)).toBe(true);
@@ -179,9 +178,8 @@ test("a member can open, manipulate, and save a studio rig", async ({page}, info
     await page.mouse.click(box.x + box.width * .42, box.y + box.height * .30);
     await page.getByRole("button",{name:"Finish path"}).click();
     await expect(page.getByRole("button",{name:"Path 1"})).toHaveAttribute("aria-pressed","true");
-    await page.getByRole("button",{name:"Save",exact:true}).click();
+    await expect(page.getByText("Saved",{exact:true})).toBeVisible({timeout:8000});
     await expect(page.getByRole("button",{name:"Save",exact:true})).toBeDisabled();
-    await expect(page.getByText("Saved",{exact:true})).toBeVisible();
     const reopened = await page.request.get(path + "/state");
     const edited: KinetixRigState = (await reopened.json()).state;
     expect(edited.parts[0].knots[0].outgoing).toBeDefined();
