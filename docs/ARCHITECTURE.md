@@ -36,7 +36,7 @@ Vercel builds feature previews and production from the GitHub repository chancha
 
 ## Later milestones
 
-The shared command model, IK solver, timeline editing, exports, SSE and MCP resources/tools belong to subsequent subgoals.
+The editable viewport, timeline editing, exports, SSE and MCP resources and tools belong to subsequent subgoals.
 
 ## Subgoal 1.2
 
@@ -52,3 +52,18 @@ The landing page links to `/dashboard` and `/studio/studies/[id]`. Both page imp
 Hono verifies identity before each library request. SQL predicates enforce the owner for rig operations and the parent rig for clip operations. Guest requests return 401, inaccessible resources return 404, and invalid bodies return 400. FPS ranges from 1 to 120, frame counts from 1 to 36,000, and names from 1 to 120 trimmed characters. Rig renames advance revision and updated_at.
 
 Migration `0001_clip_thumbnail.sql` adds nullable PNG data URLs to clips. A null thumbnail is the durable work queue. Inngest polls up to 50 pending clips every five minutes through `/api/inngest`. Its worker uses the same character drawing functions as the browser at a representative clip frame. The write verifies that timing still matches and the thumbnail is still pending. Editing the clip invalidates its thumbnail. Repeated runs are safe, and the dashboard refreshes pending previews while the clip list is open.
+
+## Subgoal 2.1
+
+`lib/rig/model.ts` defines the version-1 JSONB document. Each bone has a stable ID, optional parent, local translation and rotation, and positive length along its local x-axis. Coordinates follow the canvas convention with y increasing downwards. Rotations are in radians. Graph validation rejects duplicate IDs, missing parents and cycles. Legacy study-only records hydrate to deterministic starter bones when read. Saving persists the hydrated structure in the existing JSONB column.
+
+`forwardKinematics` composes bone transforms parent first. `evaluateRig` resolves two-bone constraints ancestor first against world-space targets, clamps unreachable distances, and leaves authored angles available for subsequent edits. Each constrained lower bone starts at its upper bone's tip. A bone can participate in one IK pair.
+
+`createRigStore` creates an independent Zustand store for one rig. Command groups validate atomically and use Immer forward and inverse patches for up to 100 undo entries. Each entry records a human or AI actor ID. Local history lives within the store instance. Opening a fresh state starts a fresh history.
+
+| Resource | Methods | Contract |
+| --- | --- | --- |
+| /api/rigs/:id/state | GET | Owner-scoped saved rig with hydrated state and revision. |
+| /api/rigs/:id/state | PATCH | Owner-scoped write using revision and full validated state. A conflicting revision returns 409 and the current revision. |
+
+State saves keep the original study and update revision and updated_at in the same conditional SQL statement. This release uses the existing database schema.

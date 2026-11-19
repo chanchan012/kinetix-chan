@@ -16,7 +16,15 @@ Implemented the application shell, interactive guest playground, Clerk access ro
 
 ## Active subgoal and next exact step
 
-1.1, 1.2 and the authenticated workspace release are deployed. Next development subgoal is 2.1. Start a feature branch, define a deterministic parent/child rig fixture, and write forward-kinematics and two-bone IK tests before implementing commands, history and attribution. Hosted thumbnail execution awaits owner-managed Inngest credentials and endpoint sync.
+1.1, 1.2, the authenticated workspace release and 2.1 are deployed. Next development subgoal is 2.2. Add the Clerk-protected `/studio/[id]` page, load the owner's rig and clips on the server, and mount a per-rig command store in the viewport. Hosted thumbnail execution awaits owner-managed Inngest credentials and endpoint sync.
+
+## Subgoal 2.1 release · November 20, 2026
+
+- **Brief and build** added deterministic rig documents, hierarchical forward kinematics, two-bone IK, and an attributed Zustand/Immer command history with undo and redo. The owner API accepts revision-checked saves and supports existing study-only records.
+- **Test** passed strict TypeScript, 20 Vitest tests and 32 authenticated Playwright cases across the four viewport profiles.
+- **Merge** published feature commit `78859f3` and main merge `ec5f1e0` to GitHub.
+- **Deploy** passed the local production build. Vercel marked the [feature preview](https://kinetix-chan-rkmrpi7rx-chanchans-projects-aada625f.vercel.app) and [production](https://kinetix-chan.vercel.app) ready. The live check created a rig, loaded version 1, saved a rotation and received a 409 on a stale retry. The temporary rig and account were removed.
+- **Document** records the rig format, save contract and viewport integration entry point.
 
 ## Authenticated workspace release · November 19, 2026
 
