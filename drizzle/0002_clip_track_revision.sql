@@ -1,0 +1,2 @@
+ALTER TABLE "clips" ADD COLUMN "track_revision" integer DEFAULT 0 NOT NULL;--> statement-breakpoint
+ALTER TABLE "clips" ADD CONSTRAINT "clip_track_revision_nonnegative" CHECK ("clips"."track_revision" >= 0);

@@ -48,6 +48,9 @@ function applyCommand(rig: Draft<KinetixRigState>, command: RigCommand) {
       rig.bones = rig.bones.filter(bone => !removed.has(bone.id));
       rig.constraints = rig.constraints.filter(ik => !removed.has(ik.upperId) && !removed.has(ik.lowerId));
       rig.parts = rig.parts.filter(part => part.parentId === null || !removed.has(part.parentId));
+      for (const part of rig.parts) {
+        if (part.mesh?.bindings.some(binding => removed.has(binding.id))) delete part.mesh;
+      }
       break;
     }
     case "ik.create":
@@ -63,9 +66,13 @@ function applyCommand(rig: Draft<KinetixRigState>, command: RigCommand) {
     case "part.create":
       rig.parts.push(command.part);
       break;
-    case "part.update":
-      Object.assign(findById(rig.parts, command.id, "Vector part"), command.changes);
+    case "part.update": {
+      const part = findById(rig.parts, command.id, "Vector part");
+      if (command.changes.knots || command.changes.closed === false ||
+          (command.changes.parentId !== undefined && command.changes.parentId !== part.parentId)) delete part.mesh;
+      Object.assign(part, command.changes);
       break;
+    }
     case "part.remove":
       findById(rig.parts, command.id, "Vector part");
       rig.parts = rig.parts.filter(part => part.id !== command.id);

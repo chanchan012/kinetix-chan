@@ -9,6 +9,62 @@ test.beforeEach(async ({page}) => {
   await clerk.signIn({page, emailAddress:process.env.KINETIX_TEST_EMAIL!});
 });
 
+test("a member can author easing, preview onion skins, and paint a closed shape", async ({page}, info) => {
+  const name = "Animation " + info.project.name + " rig";
+  const created = await page.request.post("/api/rigs", {data:{name,study:"fox"}});
+  expect(created.status()).toBe(201);
+  const { id } = await created.json();
+  const path = "/api/rigs/" + id;
+  try {
+    const response = await page.request.post(path+"/clips",{data:{name:"Walk",fps:24,frameCount:24}});
+    expect(response.status()).toBe(201);
+    const clip = await response.json();
+    await page.goto("/studio/"+id);
+    await page.getByRole("button",{name:"Foreleg",exact:true}).click();
+    await page.getByLabel("Keyframe value").fill("10");
+    await page.getByRole("button",{name:"Insert keyframe"}).click();
+    await page.getByRole("slider",{name:"Timeline frame"}).fill("12");
+    await page.getByLabel("Keyframe value").fill("90");
+    await page.getByRole("button",{name:"Insert keyframe"}).click();
+    await page.getByRole("button",{name:"Foreleg rotation keyframe 1",exact:true}).click();
+    await page.getByRole("button",{name:"Easing",exact:true}).click();
+    const graph = page.getByRole("dialog",{name:"Easing curve"});
+    await expect(graph.getByRole("img",{name:"Cubic Bézier curve"})).toBeVisible();
+    await graph.getByLabel("Y1").fill("0.6");
+    await graph.getByRole("button",{name:"Done",exact:true}).click();
+    await page.getByRole("button",{name:"Save keys",exact:true}).click();
+    await expect(page.getByText("Saved",{exact:true})).toBeVisible();
+    const saved = await (await page.request.get(path+"/clips/"+clip.id+"/tracks")).json();
+    expect(saved.tracks[0].keys.map((key:{frame:number})=>key.frame)).toEqual([0,12]);
+    expect(saved.tracks[0].keys[0].easing.y1).toBe(0.6);
+    await page.getByRole("slider",{name:"Timeline frame"}).fill("6");
+    const onion = page.getByRole("button",{name:"Onion skin",exact:true});
+    await onion.click();
+    await expect(onion).toHaveAttribute("aria-pressed","true");
+
+    await page.getByRole("button",{name:"Base pose",exact:true}).click();
+    await page.getByRole("button",{name:"Body",exact:true}).click();
+    const canvas = page.getByRole("img",{name:"Rig canvas"});
+    const box = (await canvas.boundingBox())!;
+    const position = (x:number,y:number) => ({ x:box.x + box.width*x, y:box.y + box.height*y });
+    const point = position(.30,.30);
+    await page.getByRole("button",{name:"Pen",exact:true}).click();
+    for (const vertex of [point,position(.50,.30),position(.39,.58)]) await page.mouse.click(vertex.x,vertex.y);
+    await page.getByRole("button",{name:"Close shape"}).click();
+    await page.getByRole("button",{name:"Bind mesh"}).click();
+    await page.getByLabel("Influence bone").selectOption("upper");
+    await page.getByRole("button",{name:"Paint weights"}).click();
+    await page.mouse.click(point.x,point.y);
+    await page.getByRole("button",{name:"Save",exact:true}).click();
+    await expect(page.getByText("Saved",{exact:true})).toBeVisible();
+    const state: KinetixRigState = (await (await page.request.get(path+"/state")).json()).state;
+    expect(state.parts[0].mesh?.vertices.some(vertex => vertex.weights.some(weight => weight.boneId === "upper"))).toBe(true);
+    expect(await page.evaluate(()=>document.documentElement.scrollHeight<=innerHeight && document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+  } finally {
+    expect((await page.request.delete(path)).status()).toBe(204);
+  }
+});
+
 test("a member can open, manipulate, and save a studio rig", async ({page}, info) => {
   const name = "Playwright " + info.project.name + " rig";
   const created = await page.request.post("/api/rigs", {

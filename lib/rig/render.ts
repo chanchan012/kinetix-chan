@@ -1,6 +1,7 @@
 import { drawStudy } from "../artwork";
 import { rotatePoint, type BonePose } from "./kinematics";
 import { createRigState, type KinetixRigState, type Point, type VectorPart } from "./model";
+import { deformMesh } from "./skinning";
 
 export function partSpace(point: Point, part: VectorPart, poses: Map<string, BonePose>): Point {
   const parent = part.parentId === null ? undefined : poses.get(part.parentId);
@@ -41,6 +42,16 @@ export function inPartSpace(
   context.restore();
 }
 
+export function traceMesh(context: CanvasRenderingContext2D, points: Point[], triangles: NonNullable<VectorPart["mesh"]>["triangles"]) {
+  context.beginPath();
+  for (const [a, b, c] of triangles) {
+    context.moveTo(points[a].x, points[a].y);
+    context.lineTo(points[b].x, points[b].y);
+    context.lineTo(points[c].x, points[c].y);
+    context.closePath();
+  }
+}
+
 export function drawRigArtwork(
   context: CanvasRenderingContext2D, rig: KinetixRigState, poses: Map<string, BonePose>, phase: number,
   reference = true,
@@ -58,6 +69,12 @@ export function drawRigArtwork(
     context.restore();
   }
   for (const part of rig.parts) {
+    if (part.mesh) {
+      traceMesh(context, deformMesh(part, poses), part.mesh.triangles);
+      context.fillStyle = part.fill;
+      context.fill();
+      continue;
+    }
     inPartSpace(context, part, poses, () => {
       tracePart(context, part);
       if (part.closed) {
