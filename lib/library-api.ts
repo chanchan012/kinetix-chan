@@ -4,12 +4,14 @@ import { z } from "zod";
 import type { IdentityEnv } from "./api";
 import type { Library } from "../db/library";
 import { readRigState, rigStateSchema } from "./rig/model";
+import { tracksSchema } from "./rig/animation";
 
 const name = z.string().trim().min(1).max(120);
 const createRig = z.strictObject({name,study:z.enum(["fox","heron","fish"])});
 const renameRig = z.strictObject({name});
 const editClip = z.strictObject({name,fps:z.int().min(1).max(120),frameCount:z.int().min(1).max(36000)});
 const editRigState = z.strictObject({ revision:z.int().min(0).max(2_147_483_646), state:rigStateSchema });
+const editTracks = z.strictObject({ trackRevision:z.int().min(0).max(2_147_483_646), tracks:tracksSchema });
 function body<T extends z.ZodType>(schema:T) {
   return validator("json",(value,c) => {
     const result = schema.safeParse(value);
@@ -64,6 +66,25 @@ export function libraryApi(repository:()=>Library) {
     .get("/:id/clips",async c => {
       const rows = await repository().listClips(c.get("userId")!,c.req.param("id"));
       return rows ? c.json(rows) : c.json(missing,404);
+    })
+    .get("/:id/clips/:clip/tracks",async c => {
+      if (!z.uuid().safeParse(c.req.param("clip")).success) return c.json(missing,404);
+      const row = await repository().getClipAnimation(c.get("userId")!,c.req.param("id"),c.req.param("clip"));
+      return row ? c.json({ ...row, tracks:tracksSchema.parse(row.tracks) }) : c.json(missing,404);
+    })
+    .patch("/:id/clips/:clip/tracks",body(editTracks),async c => {
+      const owner = c.get("userId")!;
+      const id = c.req.param("id");
+      const clipId = c.req.param("clip");
+      if (!z.uuid().safeParse(clipId).success) return c.json(missing,404);
+      const {trackRevision,tracks} = c.req.valid("json");
+      const library = repository();
+      const current = await library.getClipAnimation(owner,id,clipId);
+      if (!current) return c.json(missing,404);
+      if (current.trackRevision !== trackRevision) return c.json({error:"track_conflict"},409);
+      if (tracks.some(track => track.keys.at(-1)!.frame >= current.frameCount)) return c.json({error:"frame_out_of_range"},400);
+      const saved = await library.saveClipTracks(owner,id,clipId,trackRevision,tracks);
+      return saved ? c.json({ ...saved, tracks }) : c.json({error:"track_conflict"},409);
     })
     .post("/:id/clips",body(editClip),async c => {
       const row = await repository().addClip(c.get("userId")!,c.req.param("id"),c.req.valid("json"));

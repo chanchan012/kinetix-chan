@@ -3,10 +3,15 @@ import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 import { clips, rigs } from "./schema";
 import type { Study } from "../lib/studies";
 import { createRigState, type KinetixRigState } from "../lib/rig/model";
+import type { Track } from "../lib/rig/animation";
 
 type ClipInput = Pick<typeof clips.$inferInsert, "name" | "fps" | "frameCount">;
 const rigFields = {id:rigs.id,name:rigs.name,state:rigs.state,revision:rigs.revision,updatedAt:rigs.updatedAt};
 const clipFields = {id:clips.id,name:clips.name,fps:clips.fps,frameCount:clips.frameCount,thumbnail:clips.thumbnail};
+const clipAnimationFields = {
+  id:clips.id, name:clips.name, fps:clips.fps, frameCount:clips.frameCount,
+  tracks:clips.tracks, trackRevision:clips.trackRevision,
+};
 
 export class Library {
   constructor(private db: Pick<PgDatabase<PgQueryResultHKT>, "select" | "insert" | "update" | "delete" | "execute">) {}
@@ -45,10 +50,18 @@ export class Library {
     if (!await this.get(owner,id)) return null;
     return this.db.select(clipFields).from(clips).where(inArray(clips.rigId,this.parent(owner,id))).orderBy(asc(clips.name),asc(clips.id));
   }
-  listClipTiming(owner:string,id:string) {
-    const { thumbnail, ...timing } = clipFields;
-    return this.db.select(timing).from(clips).where(inArray(clips.rigId,this.parent(owner,id)))
+  listClipAnimation(owner:string,id:string) {
+    return this.db.select(clipAnimationFields).from(clips).where(inArray(clips.rigId,this.parent(owner,id)))
       .orderBy(asc(clips.name),asc(clips.id));
+  }
+  async getClipAnimation(owner:string,id:string,clipId:string) {
+    return (await this.db.select(clipAnimationFields).from(clips)
+      .where(and(eq(clips.id,clipId),inArray(clips.rigId,this.parent(owner,id)))))[0];
+  }
+  async saveClipTracks(owner:string,id:string,clipId:string,trackRevision:number,tracks:Track[]) {
+    return (await this.db.update(clips).set({tracks,trackRevision:sql`${clips.trackRevision} + 1`})
+      .where(and(eq(clips.id,clipId),inArray(clips.rigId,this.parent(owner,id)),eq(clips.trackRevision,trackRevision)))
+      .returning(clipAnimationFields))[0];
   }
   async addClip(owner:string,id:string,input:ClipInput) {
     // INSERT ... SELECT keeps the ownership check and write in a single statement.
@@ -59,7 +72,15 @@ export class Library {
     return (rows as {rows:Record<string,unknown>[]}).rows[0];
   }
   async editClip(owner:string,id:string,clipId:string,input:ClipInput) {
-    return (await this.db.update(clips).set({...input,thumbnail:null})
+    // Trim keys outside a shortened clip in the same update that changes its duration.
+    const tracks = sql`case when ${clips.frameCount} <= ${input.frameCount} then ${clips.tracks} else
+      coalesce((select jsonb_agg(jsonb_set(track, '{keys}', kept.keys) order by track_index)
+        from jsonb_array_elements(${clips.tracks}) with ordinality as source(track, track_index)
+        cross join lateral (select jsonb_agg(key order by key_index) as keys
+          from jsonb_array_elements(track->'keys') with ordinality as entries(key, key_index)
+          where (key->>'frame')::int < ${input.frameCount}) as kept
+        where kept.keys is not null), '[]'::jsonb) end`;
+    return (await this.db.update(clips).set({...input,tracks,trackRevision:sql`${clips.trackRevision} + 1`,thumbnail:null})
       .where(and(eq(clips.id,clipId),inArray(clips.rigId,this.parent(owner,id)))).returning(clipFields))[0];
   }
   async removeClip(owner:string,id:string,clipId:string) {

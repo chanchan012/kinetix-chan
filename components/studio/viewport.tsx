@@ -3,11 +3,13 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 import { evaluateRig, rotatePoint } from "@/lib/rig/kinematics";
 import type { KinetixRigState, Point, VectorKnot, VectorPart } from "@/lib/rig/model";
-import { drawRigArtwork, inPartSpace, partSpace, tracePart } from "@/lib/rig/render";
+import { drawRigArtwork, inPartSpace, partSpace, traceMesh, tracePart } from "@/lib/rig/render";
+import { deformMesh, paintMesh } from "@/lib/rig/skinning";
 import type { RigCommand } from "@/lib/rig/commands";
 
 export type Selection = { kind: "bone" | "part"; id: string } | null;
 export type Tool = "select" | "bone" | "pen";
+export type Brush = { partId: string; boneId: string; radius: number; strength: number };
 type PointKind = keyof VectorKnot;
 type Gesture =
   | { type: "rotate"; id: string; origin: Point; start: number; rotation: number }
@@ -15,11 +17,14 @@ type Gesture =
   | { type: "bone"; start: Point }
   | { type: "pen"; start: Point }
   | { type: "move"; part: VectorPart; start: Point }
-  | { type: "knot"; part: VectorPart; index: number; handle: PointKind };
+  | { type: "knot"; part: VectorPart; index: number; handle: PointKind }
+  | { type: "paint"; part: VectorPart; last: Point; brush: Brush };
 
 type Props = {
   rig: KinetixRigState;
   phase: number;
+  ghosts: { rig: KinetixRigState; phase: number }[];
+  brush: Brush | null;
   selected: Selection;
   select: (value: Selection) => void;
   tool: Tool;
@@ -49,7 +54,7 @@ function circle(context: CanvasRenderingContext2D, point: Point, radius: number)
   context.stroke();
 }
 
-export function Viewport({rig, phase, selected, select, tool, reference, zoom, showBones, pen, addKnot, addBone, edit}: Props) {
+export function Viewport({rig, phase, ghosts, brush, selected, select, tool, reference, zoom, showBones, pen, addKnot, addBone, edit}: Props) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
   const [gesture, setGesture] = useState<Gesture | null>(null);
@@ -82,6 +87,8 @@ export function Viewport({rig, phase, selected, select, tool, reference, zoom, s
       }
       case "target":
         return { type: "ik.target", id: current.id, target: point };
+      case "paint":
+        return { type: "part.update", id: current.part.id, changes: { mesh: current.part.mesh } };
       case "move": {
         const start = partSpace(current.start, current.part, authoredPoses);
         const local = partSpace(point, current.part, authoredPoses);
@@ -132,6 +139,12 @@ export function Viewport({rig, phase, selected, select, tool, reference, zoom, s
       context.clearRect(0, 0, element.width, element.height);
       context.setTransform(scale * dpr, 0, 0, scale * dpr, camera.x * dpr, camera.y * dpr);
       const poses = preview === rig ? authoredPoses : evaluateRig(preview);
+      if (ghosts.length) {
+        context.save();
+        context.globalAlpha = 0.19;
+        for (const ghost of ghosts) drawRigArtwork(context, ghost.rig, evaluateRig(ghost.rig), ghost.phase, reference);
+        context.restore();
+      }
       drawRigArtwork(context, preview, poses, phase, reference);
       const pixel = 1 / scale;
       context.lineWidth = 1.5 * pixel;
@@ -153,7 +166,17 @@ export function Viewport({rig, phase, selected, select, tool, reference, zoom, s
         circle(context, constraint.target, 6 * pixel);
       }
       const part = selected?.kind === "part" ? preview.parts.find(item => item.id === selected.id) : undefined;
-      if (part) inPartSpace(context, part, poses, () => {
+      if (part?.mesh) {
+        const points = deformMesh(part, poses);
+        traceMesh(context, points, part.mesh.triangles);
+        context.strokeStyle = brush ? "#28566cb5" : "#534c43a6";
+        context.stroke();
+        if (brush) for (const [index, point] of points.entries()) {
+          const weight = part.mesh.vertices[index].weights.find(influence => influence.boneId === brush.boneId)?.weight ?? 0;
+          context.fillStyle = `hsl(${220 - 205 * weight} 78% 55%)`;
+          circle(context, point, 3 * pixel);
+        }
+      } else if (part) inPartSpace(context, part, poses, () => {
         context.strokeStyle = "#a93716";
         context.fillStyle = "#fffcef";
         tracePart(context, part);
@@ -179,6 +202,12 @@ export function Viewport({rig, phase, selected, select, tool, reference, zoom, s
         context.lineTo(cursor.x, cursor.y);
         context.stroke();
       }
+      if (brush && cursor) {
+        context.beginPath();
+        context.strokeStyle = "#164e6e";
+        context.arc(cursor.x, cursor.y, brush.radius, 0, Math.PI * 2);
+        context.stroke();
+      }
       const knots = gesture?.type === "pen" && cursor ? [...pen, penKnot(gesture.start, cursor, pixel)] : pen;
       if (knots.length) {
         tracePart(context, { id: "", name: "", parentId: null, offset: { x: 0, y: 0 }, knots, fill: "#f78355", closed: false });
@@ -187,18 +216,24 @@ export function Viewport({rig, phase, selected, select, tool, reference, zoom, s
       }
     });
     return () => cancelAnimationFrame(frame);
-  }, [scale, size, camera.x, camera.y, preview, rig, authoredPoses, phase, reference, selected, showBones, gesture, cursor, pen]);
+  }, [scale, size, camera.x, camera.y, preview, rig, authoredPoses, phase, reference, selected, showBones, gesture, cursor, pen, ghosts, brush]);
 
   function down(event: PointerEvent<HTMLCanvasElement>) {
     if (!scale || event.button !== 0 || !event.isPrimary) return;
     const point = worldPoint(event);
     const tolerance = (event.pointerType === "touch" ? 15 : 10) / scale;
     let next: Gesture | undefined;
-    if (tool === "bone" || tool === "pen") {
+    if (brush) {
+      const part = rig.parts.find(item => item.id === brush.partId);
+      if (!part?.mesh) return;
+      const mesh = paintMesh(part, authoredPoses, brush.boneId, point, brush.radius, brush.strength);
+      next = { type: "paint", part: { ...part, mesh }, last: point, brush };
+      setCursor(point);
+    } else if (tool === "bone" || tool === "pen") {
       next = { type: tool, start: point };
     } else {
       const part = selected?.kind === "part" ? rig.parts.find(item => item.id === selected.id) : undefined;
-      if (part) {
+      if (part && !part.mesh) {
         const local = partSpace(point, part, authoredPoses);
         for (const [index, knot] of part.knots.entries()) {
           const handle = (["point", "incoming", "outgoing"] as const).find(key => knot[key] && distance(local, knot[key]) < tolerance);
@@ -228,6 +263,10 @@ export function Viewport({rig, phase, selected, select, tool, reference, zoom, s
         context.resetTransform();
         context.lineWidth = 2 * tolerance;
         const hit = [...rig.parts].reverse().find(item => {
+          if (item.mesh) {
+            traceMesh(context, deformMesh(item, authoredPoses), item.mesh.triangles);
+            return context.isPointInPath(point.x, point.y);
+          }
           const local = partSpace(point, item, authoredPoses);
           tracePart(context, item);
           return item.closed ? context.isPointInPath(local.x, local.y) : context.isPointInStroke(local.x, local.y);
@@ -249,9 +288,10 @@ export function Viewport({rig, phase, selected, select, tool, reference, zoom, s
       if (distance(point, gesture.start) * scale > 4) addBone(gesture.start, point);
     } else if (gesture.type === "pen") {
       addKnot(penKnot(gesture.start, point, 1 / scale));
-    } else if (cursor) {
+    } else if (cursor || gesture.type === "paint") {
       const command = gestureCommand(gesture, point);
-      if (command) edit(gesture.type === "rotate" ? "Rotate bone" : gesture.type === "target" ? "Move IK target" : "Edit path", command);
+      if (command) edit(gesture.type === "rotate" ? "Rotate bone" : gesture.type === "target" ? "Move IK target" :
+        gesture.type === "paint" ? "Paint weights" : "Edit path", command);
     }
     clear();
   }
@@ -259,9 +299,16 @@ export function Viewport({rig, phase, selected, select, tool, reference, zoom, s
   function clear() { setGesture(null); setCursor(null); }
 
   return <canvas ref={canvas} className="studio-canvas" role="img" aria-label="Rig canvas"
-    data-tool={tool} onPointerDown={down} onPointerMove={event => {
-      if (gesture && event.isPrimary) setCursor(worldPoint(event));
-    }} onPointerUp={end} onPointerCancel={clear} onLostPointerCapture={clear}/>;
+    data-tool={brush ? "paint" : tool} onPointerDown={down} onPointerMove={event => {
+      if (!event.isPrimary || !scale || (!gesture && !brush)) return;
+      const point = worldPoint(event);
+      if (gesture?.type === "paint" && distance(point, gesture.last) > gesture.brush.radius * 0.2) {
+        const { part, brush: stroke } = gesture;
+        const mesh = paintMesh(part, authoredPoses, stroke.boneId, point, stroke.radius, stroke.strength);
+        setGesture({ ...gesture, last: point, part: { ...part, mesh } });
+      }
+      setCursor(point);
+    }} onPointerLeave={() => { if (!gesture) setCursor(null); }} onPointerUp={end} onPointerCancel={clear} onLostPointerCapture={clear}/>;
 }
 
 function penKnot(start: Point, end: Point, pixel: number): VectorKnot {

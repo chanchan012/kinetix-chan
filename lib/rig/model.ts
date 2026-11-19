@@ -4,6 +4,34 @@ import { studyFor } from "../studies";
 const coordinate = z.number().min(-1_000_000).max(1_000_000);
 export const pointSchema = z.strictObject({ x: coordinate, y: coordinate });
 const identifier = z.string().min(1).max(64).regex(/^[a-zA-Z0-9_-]+$/);
+const meshSchema = z.strictObject({
+  origin: pointSchema,
+  angle: coordinate,
+  offset: pointSchema,
+  bindings: z.array(z.strictObject({ id: identifier, origin: pointSchema, angle: coordinate })).min(1).max(512),
+  vertices: z.array(z.strictObject({
+    point: pointSchema,
+    weights: z.array(z.strictObject({ boneId: identifier, weight: z.number().gt(0).max(1) })).min(1).max(4),
+  })).min(3).max(4096),
+  triangles: z.array(z.tuple([z.int().min(0), z.int().min(0), z.int().min(0)])).min(1).max(8192),
+}).superRefine((mesh, context) => {
+  const bindingIds = new Set(mesh.bindings.map(binding => binding.id));
+  if (bindingIds.size !== mesh.bindings.length) context.addIssue({
+    code: "custom", path: ["bindings"], message: "Mesh bindings require unique bones.",
+  });
+  for (const [index, vertex] of mesh.vertices.entries()) {
+    const ids = new Set(vertex.weights.map(influence => influence.boneId));
+    const sum = vertex.weights.reduce((total, influence) => total + influence.weight, 0);
+    if (ids.size !== vertex.weights.length || [...ids].some(id => !bindingIds.has(id)) || Math.abs(sum - 1) > 1e-6) {
+      context.addIssue({ code: "custom", path: ["vertices", index], message: "Vertex weights must use unique bound bones and sum to one." });
+    }
+  }
+  for (const [index, triangle] of mesh.triangles.entries()) {
+    if (new Set(triangle).size !== 3 || triangle.some(vertex => vertex >= mesh.vertices.length)) {
+      context.addIssue({ code: "custom", path: ["triangles", index], message: "A triangle needs three valid vertices." });
+    }
+  }
+});
 export const boneSchema = z.strictObject({
   id: identifier,
   name: z.string().trim().min(1).max(120),
@@ -34,6 +62,7 @@ export const partSchema = z.strictObject({
   knots: z.array(knotSchema).min(2).max(256),
   fill: z.string().regex(/^#[a-fA-F0-9]{6}$/),
   closed: z.boolean(),
+  mesh: meshSchema.optional(),
 });
 
 export type Point = z.infer<typeof pointSchema>;
@@ -41,6 +70,7 @@ export type Bone = z.infer<typeof boneSchema>;
 export type IKConstraint = z.infer<typeof constraintSchema>;
 export type VectorPart = z.infer<typeof partSchema>;
 export type VectorKnot = z.infer<typeof knotSchema>;
+export type SkinMesh = z.infer<typeof meshSchema>;
 
 const documentSchema = z.strictObject({
   version: z.literal(1),
@@ -102,6 +132,9 @@ export const rigStateSchema = documentSchema.superRefine((rig, context) => {
   for (const [index, part] of rig.parts.entries()) {
     if (partIds.has(part.id) || (part.parentId !== null && !bones.has(part.parentId))) {
       context.addIssue({ code: "custom", path: ["parts", index], message: "Parts require unique IDs and an existing parent." });
+    }
+    if (part.mesh && (!part.closed || part.mesh.bindings.some(binding => !bones.has(binding.id)))) {
+      context.addIssue({ code: "custom", path: ["parts", index, "mesh"], message: "A mesh requires a closed path and existing bones." });
     }
     partIds.add(part.id);
   }

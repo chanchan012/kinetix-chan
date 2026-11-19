@@ -1,15 +1,18 @@
 "use client";
 
-import { useEffect, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import Link from "next/link";
 import { useStore } from "zustand";
 import { ArrowLeft, ArrowCounterClockwise, ArrowClockwise, Bone as BoneIcon, Cursor, FloppyDisk, PenNib } from "@phosphor-icons/react";
 import { createRigStore } from "@/lib/rig/store";
 import { evaluateRig, rotatePoint } from "@/lib/rig/kinematics";
 import { orderedBones, type Bone, type KinetixRigState, type Point, type VectorKnot, type VectorPart } from "@/lib/rig/model";
+import { sampleRig } from "@/lib/rig/animation";
+import { bindMesh } from "@/lib/rig/skinning";
+import { studyFor } from "@/lib/studies";
 import type { RigCommand } from "@/lib/rig/commands";
-import { Viewport, type Selection, type Tool } from "./viewport";
-import { Timeline, type ClipTiming } from "./timeline";
+import { Viewport, type Selection, type Tool, type Brush } from "./viewport";
+import { Timeline, type ClipTiming, type FramePreview } from "./timeline";
 
 type Props = {
   actorId: string; rigId: string; name: string; initial: KinetixRigState; revision: number; clips: ClipTiming[];
@@ -31,7 +34,9 @@ export function Studio({actorId, rigId, name, initial, revision: initialRevision
   const [showBones, setShowBones] = useState(true);
   const [reference, setReference] = useState(true);
   const [zoom, setZoom] = useState(1);
-  const [phase, setPhase] = useState(0);
+  const [animation, setAnimation] = useState<FramePreview>({ frame: 0, frames: studyFor(initial.study).frames, tracks: [], onion: false });
+  const [timelineDirty, setTimelineDirty] = useState(false);
+  const [brush, setBrush] = useState<Brush | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [conflict, setConflict] = useState(false);
@@ -39,6 +44,14 @@ export function Studio({actorId, rigId, name, initial, revision: initialRevision
   const dirty = saved !== rig;
   const bone = selected?.kind === "bone" ? rig.bones.find(item => item.id === selected.id) : undefined;
   const part = selected?.kind === "part" ? rig.parts.find(item => item.id === selected.id) : undefined;
+  const activeBrush = part && brush?.partId === part.id && part.mesh && tool === "select" &&
+    part.mesh.bindings.some(binding => binding.id === brush.boneId) ? brush : null;
+  const pose = useMemo(() => sampleRig(rig,animation.tracks,animation.frame), [rig,animation]);
+  const phase = animation.frame / animation.frames;
+  const ghosts = useMemo(() => !animation.onion ? [] : [-1,1].map(offset => {
+    const frame = Math.min(animation.frames - 1, Math.max(0, animation.frame + offset));
+    return { rig: sampleRig(rig,animation.tracks,frame), phase: frame / animation.frames, frame };
+  }).filter(ghost => ghost.frame !== animation.frame), [rig,animation]);
   const last = past.at(-1);
   const path = "/api/rigs/" + rigId + "/state";
 
@@ -87,11 +100,11 @@ export function Studio({actorId, rigId, name, initial, revision: initialRevision
   }
 
   useEffect(() => {
-    if (!dirty) return;
+    if (!dirty && !timelineDirty) return;
     function warn(event: BeforeUnloadEvent) { event.preventDefault(); }
     window.addEventListener("beforeunload", warn);
     return () => window.removeEventListener("beforeunload", warn);
-  }, [dirty]);
+  }, [dirty,timelineDirty]);
 
   function addBone(from: Point, to: Point) {
     const parent = bone ? evaluateRig(rig).get(bone.id) : undefined;
@@ -153,10 +166,10 @@ export function Studio({actorId, rigId, name, initial, revision: initialRevision
   return <main className="app-shell studio-shell" onKeyDown={keyDown}>
     <header className="studio-header">
       <Link href="/dashboard" className="studio-back" aria-label="Rig library" onClick={event => {
-        if (dirty && !window.confirm("Leave the studio with unsaved edits?")) event.preventDefault();
+        if ((dirty || timelineDirty) && !window.confirm("Leave the studio with unsaved edits?")) event.preventDefault();
       }}><ArrowLeft size={17}/><span>Library</span></Link>
       <h1>{name}</h1>
-      <span role="status" className="studio-save-status">{conflict ? "Save conflict" : saving ? "Saving…" : dirty ? "Unsaved" : "Saved"}</span>
+      <span role="status" className="studio-save-status">{conflict ? "Save conflict" : saving ? "Saving…" : dirty ? "Unsaved" : timelineDirty ? "Unsaved keys" : "Saved"}</span>
       <button className="studio-save" disabled={!dirty || saving || conflict} onClick={() => void save()}><FloppyDisk size={16}/>Save</button>
     </header>
 
@@ -186,7 +199,8 @@ export function Studio({actorId, rigId, name, initial, revision: initialRevision
             <button title="Redo" aria-label="Redo" disabled={!future.length} onClick={store.getState().redo}><ArrowClockwise size={17}/></button>
           </div>
         </div>
-        <div className="studio-artboard"><Viewport {...{ rig, phase, selected, select, tool, reference, zoom, showBones, pen, addBone, edit }}
+        <div className="studio-artboard"><Viewport rig={pose} brush={activeBrush} ghosts={ghosts}
+          {...{ phase, selected, select, tool, reference, zoom, showBones, pen, addBone, edit }}
           addKnot={knot => setPen(knots => knots.length < 256 ? [...knots, knot] : knots)}/></div>
         <div className="studio-stage-footer">
           {tool === "pen" ? <div className="studio-tool-group">
@@ -204,11 +218,67 @@ export function Studio({actorId, rigId, name, initial, revision: initialRevision
       <aside className="studio-inspector" aria-label="Inspector">
         <div className="studio-panel-title"><h2>Inspector</h2></div>
         <Inspector {...{ bone, part, rig, edit }} clear={() => select(null)}/>
+        {part?.closed && <WeightTools key={part.id} part={part} rig={rig} brush={activeBrush} setBrush={setBrush} edit={edit} report={setError}/>}
         {last && <p className="studio-history" role="status">{last.actor.kind === "ai" ? "AI" : "Human"} · {last.label}</p>}
       </aside>
-      <Timeline clips={clips} study={rig.study} setPhase={setPhase}/>
+      <Timeline {...{ clips, rigId, rig, selected, select }} preview={setAnimation} onDirty={setTimelineDirty}/>
     </div>
   </main>;
+}
+
+function WeightTools({part, rig, brush, setBrush, edit, report}: {
+  part: VectorPart; rig: KinetixRigState; brush: Brush | null; setBrush: (brush: Brush | null) => void;
+  edit: (label: string, ...commands: RigCommand[]) => boolean;
+  report: (message: string) => void;
+}) {
+  const [selectedBone, setSelectedBone] = useState(part.parentId ?? rig.bones[0]?.id ?? "");
+  const [radius, setRadius] = useState(34);
+  const [strength, setStrength] = useState(0.6);
+  const boneId = rig.bones.some(bone => bone.id === selectedBone) ? selectedBone : rig.bones[0]?.id;
+  const bound = part.mesh?.bindings.some(binding => binding.id === boneId);
+  return <section className="studio-weight">
+    <h3>Mesh weights</h3>
+    <label>Influence bone<select value={boneId ?? ""} onChange={event => {
+      setSelectedBone(event.target.value);
+      if (brush) setBrush({ ...brush, boneId: event.target.value });
+    }}>
+      {!rig.bones.length && <option value="">Add a bone</option>}
+      {rig.bones.map(bone => <option key={bone.id} value={bone.id}>{bone.name}</option>)}
+    </select></label>
+    {!part.mesh ? <button disabled={!boneId} onClick={() => {
+      if (!boneId) return;
+      try {
+        const mesh = bindMesh(part,evaluateRig(rig),boneId);
+        edit("Bind mesh", { type:"part.update", id:part.id, changes:{ mesh } });
+      } catch {
+        report("This path needs a filled area before it can be bound.");
+      }
+    }}>Bind mesh</button> : <>
+      <button aria-pressed={Boolean(brush)} disabled={!bound} onClick={() =>
+        setBrush(brush || !boneId ? null : { partId:part.id, boneId, radius, strength })}>Paint weights</button>
+      {brush && <>
+        <label>Brush radius<input type="range" min={6} max={100} value={radius} onChange={event => {
+          const value = event.target.valueAsNumber;
+          setRadius(value); setBrush({ ...brush, radius:value });
+        }}/></label>
+        <label>Brush strength<input type="range" min={0.05} max={1} step={0.05} value={strength} onChange={event => {
+          const value = event.target.valueAsNumber;
+          setStrength(value); setBrush({ ...brush, strength:value });
+        }}/></label>
+      </>}
+      {!bound && boneId && <button onClick={() => {
+        const bone = evaluateRig(rig).get(boneId)!;
+        const mesh = part.mesh!;
+        edit("Add mesh influence", { type:"part.update", id:part.id, changes:{
+          mesh:{ ...mesh, bindings:[...mesh.bindings, { id:boneId, origin:bone.origin, angle:bone.angle }] },
+        } });
+      }}>Add influence</button>}
+      <button onClick={() => {
+        setBrush(null);
+        edit("Unbind mesh", { type:"part.update", id:part.id, changes:{ mesh:undefined } });
+      }}>Unbind</button>
+    </>}
+  </section>;
 }
 
 function Hierarchy({rig, selected, select}: {rig: KinetixRigState; selected: Selection; select: (value: Selection) => void}) {

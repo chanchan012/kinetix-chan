@@ -6,6 +6,7 @@ import { createApi } from "../../lib/api";
 import { Library } from "../../db/library";
 import { processThumbnails } from "../../jobs/thumbnails";
 import { createRigState } from "../../lib/rig/model";
+import { setKey } from "../../lib/rig/animation";
 
 const pg = new PGlite();
 const library = new Library(drizzle(pg));
@@ -24,6 +25,22 @@ beforeAll(async () => {
 },30000);
 afterAll(() => pg.close());
 describe("saved library", () => {
+  it("persists typed keyframes, rejects stale and out-of-range writes, and clips keys on duration changes", async () => {
+    const rig = await (await call("animator","POST","",{ name:"Animation",study:"fox" })).json();
+    const clipTiming = { name:"Walk", fps:24, frameCount:24 };
+    const clip = await (await call("animator","POST",`/${rig.id}/clips`,clipTiming)).json();
+    const path = `/${rig.id}/clips/${clip.id}`;
+    const channel = { kind:"bone", id:"root", property:"rotation" } as const;
+    const tracks = setKey(setKey([],channel,3,0),channel,18,0.4);
+    expect((await call("other","GET",path+"/tracks")).status).toBe(404);
+    expect((await call("animator","PATCH",path+"/tracks",{trackRevision:0,tracks:setKey(tracks,channel,24,0)})).status).toBe(400);
+    expect((await call("animator","PATCH",path+"/tracks",{trackRevision:0,tracks})).status).toBe(200);
+    expect((await call("animator","PATCH",path+"/tracks",{trackRevision:0,tracks})).status).toBe(409);
+    expect((await call("animator","PATCH",path,{ ...clipTiming, frameCount:10 })).status).toBe(200);
+    const response = await call("animator","GET",path+"/tracks");
+    expect(await response.json()).toMatchObject({ trackRevision:2, frameCount:10, tracks:[{keys:[tracks[0].keys[0]]}] });
+    expect((await call("animator","DELETE",`/${rig.id}`)).status).toBe(204);
+  });
   it("reads legacy rig state and applies exactly one of two competing owner saves", async () => {
     const id = "e88df79a-62d6-4e08-91e8-9dc8ef2b7abc";
     await pg.query("insert into rigs (id,owner_id,name,state) values ($1,$2,$3,$4)", [id,"editor","Legacy",JSON.stringify({study:"heron"})]);
