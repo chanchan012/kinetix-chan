@@ -1,7 +1,8 @@
+import { auth } from "@clerk/nextjs/server";
 import { RigLibrary } from "@/components/rig-library";
-import { clerkEnabled } from "@/lib/config";
 import "./library.css";
-export const dynamic = "force-dynamic";
-export default function Dashboard() {
-  return <RigLibrary accounts={clerkEnabled()}/>;
+
+export default async function Dashboard() {
+  await auth.protect();
+  return <RigLibrary/>;
 }

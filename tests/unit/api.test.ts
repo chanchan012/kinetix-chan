@@ -1,8 +1,7 @@
 import { describe, expect, it, vi, afterEach } from "vitest";
 import { hc } from "hono/client";
 import { createApi, type AppType, type Services } from "../../lib/api";
-import { services, demoWindow } from "../../lib/services";
-import { clerkEnabled } from "../../lib/config";
+import { services } from "../../lib/services";
 
 function fixture(overrides: Partial<Services> = {}) {
   return createApi({
@@ -19,34 +18,30 @@ describe("Hono RPC", () => {
     const client = hc<AppType>("http://localhost", { fetch: app.request.bind(app) });
     expect(await (await client.api.health.$get()).json()).toEqual({ service:"kinetix", status:"ok" });
   });
-  it("keeps anonymous sessions read-only even with forged identity headers", async () => {
-    vi.stubEnv("KINETIX_DEMO_ONLY","1");
-    const app = fixture({ identify: services.identify });
-    const headers = { Authorization:"Bearer fake", "X-User-Id":"user_123" };
-    const r = await app.request("/api/session",{ headers });
-    expect(await r.json()).toEqual({ mode:"guest",canSave:false });
+  it("rejects unverified identity headers", async () => {
+    const app = fixture();
+    const r = await app.request("/api/session",{headers:{"X-User-Id":"user_123"}});
+    expect(r.status).toBe(401);
     expect(r.headers.get("cache-control")).toBe("private, no-store");
-    expect((await app.request("/api/account",{ headers })).status).toBe(401);
   });
   it("uses the identity supplied by the verification middleware", async () => {
     const app = fixture({ identify:async(c,next) => { c.set("userId","user_verified");await next(); } });
     expect(await (await app.request("/api/session")).json()).toEqual({ mode:"member",userId:"user_verified",canSave:true });
     expect(await (await app.request("/api/account")).json()).toEqual({ userId:"user_verified" });
   });
-  it("rejects a partial Clerk configuration", () => {
-    vi.stubEnv("KINETIX_DEMO_ONLY",""); vi.stubEnv("CLERK_SECRET_KEY","");
-    vi.stubEnv("NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY","pk_test");
-    expect(() => clerkEnabled()).toThrow("both Clerk keys");
+  it("fails closed when Clerk is unconfigured", async () => {
+    vi.stubEnv("CLERK_SECRET_KEY","");
+    expect((await fixture({identify:services.identify}).request("/api/session")).status).toBe(503);
   });
   it("rejects anonymous account access through the actual Clerk middleware", async () => {
-    vi.stubEnv("KINETIX_DEMO_ONLY","");
+
     vi.stubEnv("NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY","pk_test_" + Buffer.from("fixture.clerk.accounts.dev$").toString("base64"));
     vi.stubEnv("CLERK_SECRET_KEY","sk_test_fixture");
     const app = fixture({identify:services.identify});
     expect((await app.request("/api/account")).status).toBe(401);
   });
   it("requires shared rate limiting when accounts are enabled", async () => {
-    vi.stubEnv("KINETIX_DEMO_ONLY",""); vi.stubEnv("CLERK_SECRET_KEY","sk_test_fixture");
+     vi.stubEnv("CLERK_SECRET_KEY","sk_test_fixture");
     vi.stubEnv("NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY","pk_test_fixture");
     vi.stubEnv("UPSTASH_REDIS_REST_URL",""); vi.stubEnv("UPSTASH_REDIS_REST_TOKEN","");
     expect((await fixture({limit:services.limit}).request("/api/session")).status).toBe(503);
@@ -61,12 +56,5 @@ describe("Hono RPC", () => {
   it("fails closed when the distributed limiter is unavailable", async () => {
     const app = fixture({limit: async () => { throw Error("redis unavailable"); }});
     expect((await app.request("/api/session")).status).toBe(503);
-  });
-  it("expires demo requests at the sliding window boundary", () => {
-    let time = 0;
-    const attempt = demoWindow(() => time,2,1000);
-    expect(attempt().success).toBe(true); time=100; expect(attempt().success).toBe(true);
-    time=999; expect(attempt().success).toBe(false);
-    time=1000; expect(attempt().success).toBe(true); expect(attempt().success).toBe(false);
   });
 });
