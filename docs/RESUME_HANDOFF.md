@@ -69,3 +69,9 @@ Subgoal 2.1 adds no environment variables or SQL migrations. Its feature branch 
 Open a saved rig from the dashboard detail dialog with **Open studio**. The route lives at `app/studio/[id]/page.tsx`. Integrate animation sampling in `components/studio/timeline.tsx` and `components/studio/viewport.tsx`; reuse `lib/rig/render.ts` for path drawing and transform conventions. The inspector and canvas edit the same per-rig store. Click **Save** or use Ctrl/Cmd+S to persist the revision.
 
 Subgoal 2.2 adds no environment variables or SQL migrations. The live preview uses the scoped Neon role. Browser tests cover studio pointer gestures and persistent saves, with viewport screenshots in ignored `test-results/`. Track editing, onion skinning and mesh weight painting are the next subgoal.
+
+## Resume after 3.1
+
+The `0002_clip_track_revision.sql` migration is applied to the Kinetix Neon database. No extra environment variables were added. Run `npm test` for interpolation, revision conflicts, mesh deformation and prior behavior. Playwright expects the new migration and tests the animated studio at all four viewport sizes. Store rig edits with **Save** and clip edits with **Save keys**.
+
+For 3.2, reuse `lib/rig/animation.ts`, `lib/rig/kinematics.ts` and `lib/rig/render.ts` for deterministic sample frames. Export inputs should snapshot the rig and clip tracks at enqueue time. Inngest Cloud execution still depends on the owner-managed signing and event keys. Verify local render jobs separately from the hosted endpoint.

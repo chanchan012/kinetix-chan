@@ -16,7 +16,15 @@ Implemented the application shell, interactive guest playground, Clerk access ro
 
 ## Active subgoal and next exact step
 
-1.1, 1.2, the authenticated workspace release and both M2 subgoals are deployed. Next development subgoal is 3.1. Define typed clip tracks over the existing `clips.tracks` JSONB field, test cubic Bézier interpolation, and connect sampled poses to the studio timeline. Hosted thumbnail execution awaits owner-managed Inngest credentials and endpoint sync.
+1.1, 1.2, the authenticated workspace release, both M2 subgoals, and 3.1 are deployed. Next development subgoal is 3.2. Build an export job that snapshots the owner's rig and clip, samples each frame with `sampleRig`, and produces Lottie JSON, PNG sequence and spritesheet, MP4, and WebM outputs. Hosted execution awaits owner-managed Inngest credentials and endpoint sync.
+
+## Subgoal 3.1 release · November 20, 2026
+
+- **Brief and build** added typed clip tracks, playback sampling, a dope sheet and cubic Bézier editor, onion skins, mesh binding and weight painting. The track endpoint validates keys and checks the clip revision.
+- **Test** passed strict TypeScript, 25 Vitest tests and 36 authenticated Playwright cases. Four viewport profiles verified keyframe writes, easing, onion skins, mesh binding, weight painting and studio fit.
+- **Merge** published feature commit `91d97bf` and main merge `7587df8` to GitHub.
+- **Deploy** applied the additive clip revision migration to Neon and passed the local production build. Vercel marked the [feature preview](https://kinetix-chan-a7o0i3ksk-chanchans-projects-aada625f.vercel.app) and [production](https://kinetix-chan.vercel.app) ready. The live studio saved and read back a keyframe at revision 1. Temporary fixtures were removed.
+- **Document** records the keyframe convention, graph and mesh UI, migration and export integration points.
 
 ## Subgoal 2.2 release · November 20, 2026
 

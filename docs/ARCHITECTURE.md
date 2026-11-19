@@ -36,7 +36,7 @@ Vercel builds feature previews and production from the GitHub repository chancha
 
 ## Later milestones
 
-Keyframe editing, mesh skinning, exports, SSE and MCP resources and tools belong to subsequent subgoals.
+Exports, SSE and MCP resources and tools belong to subsequent subgoals.
 
 ## Subgoal 1.2
 
@@ -75,3 +75,16 @@ State saves keep the original study and update revision and updated_at in the sa
 `components/studio/viewport.tsx` uses a pixel-ratio-aware Canvas 2D renderer. Pointer gestures preview bone rotation, IK target movement and path edits, then commit one attributed command on release. Drawing a child near the parent's tip snaps it to the exact IK joint. The inspector exposes local bone transforms in degrees for display and world-space IK targets. Save persists the rig document with its revision. A stale save keeps the local edits and offers a confirmed reload.
 
 The version-1 document accepts `parts` and defaults older documents to an empty array. Parts store optional bone parents, translations, color, path closure, and anchors with cubic control handles. `lib/rig/render.ts` renders rigid bone attachments over the study artwork. The stock artwork provides a visual reference and follows the root transform. Timeline playback uses saved clip timing and the study loop. Editable keyframe sampling and weighted deformation begin in 3.1.
+
+## Subgoal 3.1
+
+`clips.tracks` stores typed channels for bone translation and rotation and for IK target position. Frame indexes start at zero. Rotation values use radians in storage and degrees in the studio. Keys hold their first and last values outside the keyed span. Between keys, `sampleRig` evaluates the outgoing cubic Bézier in time space and returns a sampled document for the shared rig renderer. The dope sheet edits individual keys and outgoing control points. Onion skinning draws neighboring frames behind the active frame. The Base pose toggle lets the artist inspect the authored rig while a keyed clip is open.
+
+| Resource | Methods | Contract |
+| --- | --- | --- |
+| /api/rigs/:id/clips/:clip/tracks | GET | Owner-scoped clip timing, tracks and trackRevision. |
+| /api/rigs/:id/clips/:clip/tracks | PATCH | Validated track document with expected trackRevision. Stale writes return 409. |
+
+Migration `0002_clip_track_revision.sql` initializes `clips.track_revision` for existing rows. Timing edits advance the same revision. Shortening a clip drops out-of-range keys within the timing update.
+
+Closed paths can store a triangulated mesh and bind transforms for the bones. Weight strokes modify up to four normalized influences per vertex. Deformation uses the weighted bone transforms at the sampled pose. Painting commits through the rig command store and is persisted with the rig's revision.
