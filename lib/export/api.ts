@@ -3,17 +3,9 @@ import { stream } from "hono/streaming";
 import { validator } from "hono/validator";
 import { z } from "zod";
 import type { Library } from "../../db/library";
-import { exportRequested, inngest } from "../../jobs/client";
 import type { IdentityEnv } from "../api";
-import { tracksSchema } from "../rig/animation";
-import { readRigState } from "../rig/model";
-import { studyFor } from "../studies";
-import { exportFormatSchema, exportSnapshotSchema, formats, supportedExport } from "./frames";
-
-export const exportRequest = z.strictObject({
-  id: z.uuid(), format: exportFormatSchema, clipId: z.uuid().optional(),
-  startFrame: z.int().min(0).optional(), endFrame: z.int().min(0).optional(),
-});
+import { formats } from "./frames";
+import { exportRequest, queueExport } from "./requests";
 const missing = {error:"not_found"} as const;
 
 export function exportApi(repository: () => Library) {
@@ -29,26 +21,8 @@ export function exportApi(repository: () => Library) {
       const rigId = c.req.param("id");
       const job = c.req.valid("json");
       const queue = repository().exports;
-      const input = await queue.inputs(owner,rigId,job.clipId);
-      if (!input) return c.json(missing,404);
-      const state = readRigState(input.state);
-      const study = studyFor(state.study);
-      const frameCount = input.clip?.frameCount ?? study.frames;
-      const snapshot = exportSnapshotSchema.safeParse({
-        name: input.clip?.name ?? input.name, rig:state, tracks:tracksSchema.parse(input.clip?.tracks ?? []),
-        fps:input.clip?.fps ?? 24, frameCount, startFrame:job.startFrame ?? 0, endFrame:job.endFrame ?? frameCount-1,
-      });
-      if (!snapshot.success || !supportedExport(job.format,snapshot.data)) return c.json({error:"unsupported_range"},400);
-      const queued = await queue.enqueue(owner,rigId,job.id,job.format,snapshot.data);
-      if (!queued) return c.json({error:"export_conflict"},409);
-      if (queued.status === "queued" && (process.env.INNGEST_EVENT_KEY || process.env.INNGEST_DEV === "1")) {
-        try {
-          await inngest.send({id:job.id,name:exportRequested,data:{jobId:job.id}});
-        } catch (error) {
-          console.error("Export event delivery failed. The schedule can pick up the stored job.",error);
-        }
-      }
-      return c.json(queued,202);
+      const result = await queueExport(queue,owner,rigId,job);
+      return "error" in result ? c.json({error:result.error},result.status) : c.json(result.job,202);
     })
     .get("/:id/exports/:job/download",async c => {
       const id = c.req.param("job");

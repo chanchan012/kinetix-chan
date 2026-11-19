@@ -4,6 +4,7 @@ import { libraryApi } from "./library-api";
 import { Library } from "../db/library";
 import { connectDatabase } from "../db/client";
 import type { RoomBus } from "./realtime/bus";
+import { mcpHttp } from "./mcp/http";
 
 export type IdentityEnv = { Variables: { userId: string | null } };
 export type LimitResult = { success: boolean; reset: number };
@@ -30,6 +31,7 @@ export function createApi(services: Services, repository = () => new Library(con
       await next();
     })
     .get("/health", c => c.json({ service: "kinetix", status: "ok" } as const))
+    .route("/mcp",mcpHttp(repository,services.rooms))
     .use("*", services.identify)
     .get("/session", c => {
       const userId = c.get("userId");

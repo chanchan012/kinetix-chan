@@ -3,6 +3,8 @@ import { rotatePoint, type BonePose } from "./kinematics";
 import { createRigState, type KinetixRigState, type Point, type VectorPart } from "./model";
 import { deformMesh } from "./skinning";
 
+export const viewportFrame = {x:-10,y:3,width:510,height:280};
+
 export type RigDrawingContext = Pick<CanvasRenderingContext2D,
   "arc" | "beginPath" | "bezierCurveTo" | "closePath" | "fill" | "lineTo" |
   "lineWidth" | "moveTo" | "restore" | "rotate" | "save" | "stroke" | "translate"

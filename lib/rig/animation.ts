@@ -13,7 +13,7 @@ export const linearEase: Ease = { x1: 0, y1: 0, x2: 1, y2: 1 };
 
 export const channelSchema = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("bone"), id: boneSchema.shape.id, property: z.enum(["rotation", "x", "y"]) }),
-  z.strictObject({ kind: z.literal("ik"), id: constraintSchema.shape.id, property: z.enum(["x", "y"]) }),
+  z.strictObject({ kind: z.literal("ik"), id: constraintSchema.shape.id, property: z.enum(["x", "y", "enabled"]) }),
 ]);
 export const keyframeSchema = z.strictObject({
   frame: z.int().min(0).max(35_999),
@@ -97,7 +97,9 @@ export function sampleRig(rig: KinetixRigState, tracks: readonly Track[], frame:
         else if (!connected.has(id)) bone.offset[property] = value;
       } else {
         const constraint = constraints.get(id);
-        if (constraint) constraint.target[property] = value;
+        if (!constraint) continue;
+        if (property === "enabled") constraint.enabled = value >= 0.5;
+        else constraint.target[property] = value;
       }
     }
   });

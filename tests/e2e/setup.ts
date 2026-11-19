@@ -1,6 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { createClerkClient } from "@clerk/backend";
 import { clerkSetup } from "@clerk/testing/playwright";
+import { eq } from "drizzle-orm";
+import { connectDatabase } from "../../db/client";
+import { rigs } from "../../db/schema";
 
 export default async function setup() {
   const secretKey = process.env.CLERK_SECRET_KEY;
@@ -13,5 +16,11 @@ export default async function setup() {
   const email = `kinetix-${randomUUID()}+clerk_test@example.com`;
   const user = await client.users.createUser({emailAddress:[email], skipPasswordRequirement:true});
   process.env.KINETIX_TEST_EMAIL = email;
-  return async () => { await client.users.deleteUser(user.id); };
+  return async () => {
+    try {
+      await connectDatabase().delete(rigs).where(eq(rigs.ownerId,user.id));
+    } finally {
+      await client.users.deleteUser(user.id);
+    }
+  };
 }

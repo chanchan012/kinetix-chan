@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 import { evaluateRig, rotatePoint } from "@/lib/rig/kinematics";
 import type { KinetixRigState, Point, VectorKnot, VectorPart } from "@/lib/rig/model";
-import { drawRigArtwork, inPartSpace, partSpace, traceMesh, tracePart } from "@/lib/rig/render";
+import { drawRigArtwork, inPartSpace, partSpace, traceMesh, tracePart, viewportFrame } from "@/lib/rig/render";
 import { deformMesh, paintMesh } from "@/lib/rig/skinning";
 import type { RigCommand } from "@/lib/rig/commands";
 
@@ -61,8 +61,11 @@ export function Viewport({rig, phase, ghosts, brush, remoteBones, selected, sele
   const [gesture, setGesture] = useState<Gesture | null>(null);
   const [cursor, setCursor] = useState<Point | null>(null);
   const authoredPoses = useMemo(() => evaluateRig(rig), [rig]);
-  const scale = Math.min(size.width / 510, size.height / 280) * zoom;
-  const camera = { x: size.width / 2 - 245 * scale, y: size.height / 2 - 143 * scale };
+  const scale = Math.min(size.width / viewportFrame.width, size.height / viewportFrame.height) * zoom;
+  const camera = {
+    x: size.width / 2 - (viewportFrame.x + viewportFrame.width / 2) * scale,
+    y: size.height / 2 - (viewportFrame.y + viewportFrame.height / 2) * scale,
+  };
 
   useEffect(() => {
     const element = canvas.current!;
@@ -163,6 +166,7 @@ export function Viewport({rig, phase, ghosts, brush, remoteBones, selected, sele
         circle(context, pose.tip, (active ? 6 : 3) * pixel);
       }
       if (showBones) for (const constraint of preview.constraints) {
+        if (constraint.enabled === false) continue;
         context.fillStyle = "#fffcef";
         context.strokeStyle = "#136e68";
         circle(context, constraint.target, 6 * pixel);

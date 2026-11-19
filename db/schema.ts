@@ -39,6 +39,15 @@ export const rigCollaborators = pgTable("rig_collaborators", {
   index("rig_collaborators_user_idx").on(t.userId,t.rigId),
 ]);
 
+export const rigTokens = pgTable("rig_tokens", {
+  id: uuid().defaultRandom().primaryKey(),
+  rigId: uuid("rig_id").notNull().references(() => rigs.id, { onDelete:"cascade" }),
+  label: text().notNull(),
+  digest: text().notNull().unique(),
+  createdAt: timestamp("created_at",{withTimezone:true}).defaultNow().notNull(),
+  expiresAt: timestamp("expires_at",{withTimezone:true}).notNull(),
+}, t => [index("rig_tokens_rig_idx").on(t.rigId,t.createdAt)]);
+
 export const exportJobs = pgTable("export_jobs", {
   id: uuid().primaryKey(),
   rigId: uuid("rig_id").notNull().references(() => rigs.id, { onDelete: "cascade" }),

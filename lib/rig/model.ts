@@ -47,6 +47,7 @@ export const constraintSchema = z.strictObject({
   lowerId: identifier,
   target: pointSchema,
   bend: z.union([z.literal(1), z.literal(-1)]),
+  enabled: z.boolean().optional(),
 });
 
 export const knotSchema = z.strictObject({

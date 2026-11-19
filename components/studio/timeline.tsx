@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { Diamond, Pause, Play } from "@phosphor-icons/react";
 import { studyFor } from "@/lib/studies";
 import { channelId, removeKey, setKey, setKeyEase, tracksSchema, type Channel, type Track } from "@/lib/rig/animation";
@@ -33,8 +33,11 @@ export function Timeline({clips, rigId, rig, selected, select, preview, onDirty,
   const [saving, setSaving] = useState(false);
   const locked = useRef(false);
   const valueInput = useRef<HTMLInputElement>(null);
-  const draft = drafts[clipId];
-  const clip = draft?.clip ?? clips.find(item => item.id === clipId);
+  const savedClip = clips.find(item => item.id === clipId);
+  const local = drafts[clipId];
+  const draft = local && (local.tracks !== local.clip.tracks ||
+    (savedClip && local.clip.trackRevision >= savedClip.trackRevision)) ? local : undefined;
+  const clip = draft?.clip ?? savedClip;
   const tracks = draft?.tracks ?? clip?.tracks ?? emptyTracks;
   const dirty = draft && draft.tracks !== draft.clip.tracks;
   const fps = clip?.fps ?? 24;
@@ -118,11 +121,18 @@ export function Timeline({clips, rigId, rig, selected, select, preview, onDirty,
     }
   }
 
+  const autosave = useEffectEvent(() => { void save(); });
+  useEffect(() => {
+    if (!dirty || saving || graphOpen || draft?.conflict) return;
+    const timer = setTimeout(autosave,error ? 7000 : 1100);
+    return () => clearTimeout(timer);
+  }, [dirty,saving,graphOpen,draft?.conflict,error,tracks]);
+
   const ticks = Array.from(new Set([1, Math.ceil(frames / 4), Math.ceil(frames / 2), Math.ceil(3 * frames / 4), frames]));
   return <section className="studio-timeline" aria-label="Timeline">
     <div className="studio-timeline-head">
       <h2>Timeline</h2>
-      <label><span className="sr-only">Animation clip</span><select value={clipId} onChange={event => {
+      <label><span className="sr-only">Animation clip</span><select value={clip ? clipId : ""} onChange={event => {
         setPlaying(false);
         setGraphOpen(false);
         setError("");

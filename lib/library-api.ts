@@ -8,6 +8,7 @@ import { tracksSchema } from "./rig/animation";
 import { exportApi } from "./export/api";
 import { realtimeApi } from "./realtime/api";
 import type { RoomBus } from "./realtime/bus";
+import { credentialApi } from "./mcp/credentials";
 
 const name = z.string().trim().min(1).max(120);
 const createRig = z.strictObject({name,study:z.enum(["fox","heron","fish"])});
@@ -80,6 +81,13 @@ export function libraryApi(repository:()=>Library,rooms?:()=>RoomBus) {
       const rows = await repository().listClips(c.get("userId")!,c.req.param("id"));
       return rows ? c.json(rows) : c.json(missing,404);
     })
+    .get("/:id/animation",async c => {
+      const library = repository();
+      const user = c.get("userId")!;
+      const id = c.req.param("id");
+      if (await library.rigRevision(user,id) === undefined) return c.json(missing,404);
+      return c.json((await library.listClipAnimation(user,id)).map(clip=>({...clip,tracks:tracksSchema.parse(clip.tracks)})));
+    })
     .get("/:id/clips/:clip/tracks",async c => {
       if (!z.uuid().safeParse(c.req.param("clip")).success) return c.json(missing,404);
       const row = await repository().getClipAnimation(c.get("userId")!,c.req.param("id"),c.req.param("clip"));
@@ -97,18 +105,34 @@ export function libraryApi(repository:()=>Library,rooms?:()=>RoomBus) {
       if (current.trackRevision !== trackRevision) return c.json({error:"track_conflict"},409);
       if (tracks.some(track => track.keys.at(-1)!.frame >= current.frameCount)) return c.json({error:"frame_out_of_range"},400);
       const saved = await library.saveClipTracks(owner,id,clipId,trackRevision,tracks);
+      if (saved && rooms) {
+        try { await rooms().timeline(id,clipId); } catch {}
+      }
       return saved ? c.json({ ...saved, tracks }) : c.json({error:"track_conflict"},409);
     })
     .post("/:id/clips",body(editClip),async c => {
       const row = await repository().addClip(c.get("userId")!,c.req.param("id"),c.req.valid("json"));
+      if (row && typeof row.id==="string" && rooms) {
+        try { await rooms().timeline(c.req.param("id"),row.id); } catch {}
+      }
       return row ? c.json(row,201) : c.json(missing,404);
     })
     .patch("/:id/clips/:clip",body(editClip),async c => {
       const row = await repository().editClip(c.get("userId")!,c.req.param("id"),c.req.param("clip"),c.req.valid("json"));
+      if (row && rooms) {
+        try { await rooms().timeline(c.req.param("id"),row.id); } catch {}
+      }
       return row ? c.json(row) : c.json(missing,404);
     })
-    .delete("/:id/clips/:clip",async c => await repository().removeClip(c.get("userId")!,c.req.param("id"),c.req.param("clip"))
-      ? c.body(null,204) : c.json(missing,404))
+    .delete("/:id/clips/:clip",async c => {
+      const row = await repository().removeClip(c.get("userId")!,c.req.param("id"),c.req.param("clip"));
+      if (!row) return c.json(missing,404);
+      if (rooms) {
+        try { await rooms().timeline(c.req.param("id"),row.id); } catch {}
+      }
+      return c.body(null,204);
+    })
     .route("/",exportApi(repository))
-    .route("/",realtimeApi(repository,rooms));
+    .route("/",realtimeApi(repository,rooms))
+    .route("/",credentialApi(repository));
 }

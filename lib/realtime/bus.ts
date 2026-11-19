@@ -14,6 +14,7 @@ export interface RoomBus {
   recent(id: string): Promise<RoomPresence[]>;
   revision(id: string): Promise<number>;
   changed(id: string, event: RevisionEvent, state: KinetixRigState): Promise<void>;
+  timeline(id: string, clipId: string): Promise<void>;
   revoke(id: string, userId: string): Promise<void>;
   subscribe(id: string, receive: (event: RoomEvent) => void, onError: () => void): () => void;
 }
@@ -69,6 +70,10 @@ export class RedisRooms implements RoomBus {
       end
       return redis.call("PUBLISH", KEYS[2], ARGV[2])
     `, [room.presence,room.channel], [userId + ":",JSON.stringify({type:"revoke",userId})]);
+  }
+
+  async timeline(id: string, clipId: string) {
+    await this.redis.publish(names(id).channel,JSON.stringify({type:"timeline",clipId}));
   }
 
   subscribe(id: string, receive: (event: RoomEvent) => void, onError: () => void) {
