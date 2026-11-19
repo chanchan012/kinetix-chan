@@ -36,7 +36,7 @@ Vercel builds feature previews and production from the GitHub repository chancha
 
 ## Later milestones
 
-Exports, SSE and MCP resources and tools belong to subsequent subgoals.
+SSE and MCP resources and tools belong to subsequent subgoals.
 
 ## Subgoal 1.2
 
@@ -88,3 +88,15 @@ The version-1 document accepts `parts` and defaults older documents to an empty 
 Migration `0002_clip_track_revision.sql` initializes `clips.track_revision` for existing rows. Timing edits advance the same revision. Shortening a clip drops out-of-range keys within the timing update.
 
 Closed paths can store a triangulated mesh and bind transforms for the bones. Weight strokes modify up to four normalized influences per vertex. Deformation uses the weighted bone transforms at the sampled pose. Painting commits through the rig command store and is persisted with the rig's revision.
+
+## Subgoal 3.2
+
+Export requests capture a point-in-time copy of the saved rig, clip timing, tracks and inclusive frame range. The renderer shares the studio sampler, FK/IK and skinning. Lottie keeps editable vector paths with sampled, held shape keys. Raster outputs use Canvas 2D at 512×320. PNG sequences include frame numbers and a timing manifest in the ZIP. FFmpeg pipes generated frames to H.264 MP4 or VP9 WebM.
+
+| Resource | Methods | Contract |
+| --- | --- | --- |
+| /api/rigs/:id/exports | POST | Queues a saved rig or clip snapshot. The client UUID makes retries idempotent. |
+| /api/rigs/:id/exports | GET | Returns recent jobs for the owner with queued, running, ready or failed status. |
+| /api/rigs/:id/exports/:job/download | GET | Streams the completed artifact as an owner-only attachment. |
+
+`0003_export_jobs.sql` adds jobs and private artifacts indexed by rig and status. Removing a rig cascades to its exports. Inngest job events request immediate rendering, and a minute schedule picks up queued work or expired leases. Workers commit bytes only while holding their lease. Artifacts are limited to 16 MiB. Frame caps per job are 180 for Lottie, 96 for spritesheets, 150 for ZIP and 240 for video, with a lower bound for dense meshes based on render complexity.

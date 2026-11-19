@@ -75,3 +75,11 @@ Subgoal 2.2 adds no environment variables or SQL migrations. The live preview us
 The `0002_clip_track_revision.sql` migration is applied to the Kinetix Neon database. No extra environment variables were added. Run `npm test` for interpolation, revision conflicts, mesh deformation and prior behavior. Playwright expects the new migration and tests the animated studio at all four viewport sizes. Store rig edits with **Save** and clip edits with **Save keys**.
 
 For 3.2, reuse `lib/rig/animation.ts`, `lib/rig/kinematics.ts` and `lib/rig/render.ts` for deterministic sample frames. Export inputs should snapshot the rig and clip tracks at enqueue time. Inngest Cloud execution still depends on the owner-managed signing and event keys. Verify local render jobs separately from the hosted endpoint.
+
+## Resume after 3.2
+
+The export queue migration is applied to Kinetix Neon. To verify local jobs, start `npx inngest-cli@latest dev --no-discovery -u http://localhost:3181/api/inngest` in one terminal. Set `INNGEST_DEV=1` and run `npm run test:e2e -- --grep "queues an export"` in another. For full regression use `npm test` and `npm run test:e2e`. The encoder is packaged for the host platform. `FFMPEG_PATH` can override it locally.
+
+In Vercel Production, the owner supplies `INNGEST_SIGNING_KEY` and `INNGEST_EVENT_KEY`. After redeploying, sync the existing `/api/inngest` endpoint in Inngest Cloud and verify that it lists `render-animation-thumbnails` and `render-animation-export`. Queue a production export and confirm the job reaches Ready and downloads successfully. Production queue persistence was verified before activation.
+
+Next, implement 4.1 around the existing owner-scoped rig state API and store. Neon is authoritative for revisions, with Upstash carrying presence and committed-change events to authenticated SSE subscribers.

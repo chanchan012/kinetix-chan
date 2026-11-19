@@ -16,7 +16,15 @@ Implemented the application shell, interactive guest playground, Clerk access ro
 
 ## Active subgoal and next exact step
 
-1.1, 1.2, the authenticated workspace release, both M2 subgoals, and 3.1 are deployed. Next development subgoal is 3.2. Build an export job that snapshots the owner's rig and clip, samples each frame with `sampleRig`, and produces Lottie JSON, PNG sequence and spritesheet, MP4, and WebM outputs. Hosted execution awaits owner-managed Inngest credentials and endpoint sync.
+1.1, 1.2, the authenticated workspace release, M2, and both M3 releases are deployed. Next development subgoal is 4.1. Add scoped rig presence and change events over Upstash Pub/Sub and Hono SSE, then connect the studio to revision-checked Neon autosave. Hosted export and thumbnail execution await owner-managed Inngest credentials and endpoint sync.
+
+## Subgoal 3.2 release · November 20, 2026
+
+- **Brief and build** added owner-scoped snapshots, an Inngest render queue and a studio export dialog for Lottie, PNG sequence, spritesheet, MP4 and WebM.
+- **Test** passed strict TypeScript, 30 Vitest tests and 40 Playwright cases with a local Inngest Dev Server. Four focused browser cases produced and downloaded all five formats. Tests cover immutable inputs, lease recovery, download ownership and artifact signatures.
+- **Merge** published feature commit `be2f29e` and main merge `8de7f3e` to GitHub.
+- **Deploy** applied migration `0003_export_jobs.sql` to Neon. The local production build passed and its Inngest function trace included FFmpeg. Vercel marked the [feature preview](https://kinetix-chan-gx58ofwx7-chanchans-projects-aada625f.vercel.app) and [production](https://kinetix-chan.vercel.app) ready. Production queued a Lottie job from the studio. The test rig and queued job were removed. Hosted rendering is pending the owner-managed keys and endpoint sync.
+- **Document** records the export lifecycle, limits and local worker test commands.
 
 ## Subgoal 3.1 release · November 20, 2026
 
