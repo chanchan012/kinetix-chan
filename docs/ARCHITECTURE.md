@@ -36,7 +36,7 @@ Vercel builds feature previews and production from the GitHub repository chancha
 
 ## Later milestones
 
-The editable viewport, timeline editing, exports, SSE and MCP resources and tools belong to subsequent subgoals.
+Keyframe editing, mesh skinning, exports, SSE and MCP resources and tools belong to subsequent subgoals.
 
 ## Subgoal 1.2
 
@@ -67,3 +67,11 @@ Migration `0001_clip_thumbnail.sql` adds nullable PNG data URLs to clips. A null
 | /api/rigs/:id/state | PATCH | Owner-scoped write using revision and full validated state. A conflicting revision returns 409 and the current revision. |
 
 State saves keep the original study and update revision and updated_at in the same conditional SQL statement. This release uses the existing database schema.
+
+## Subgoal 2.2
+
+`/studio/[id]` checks the Clerk session and reads the rig with the owner predicate before rendering. The dashboard opens the route from a rig's detail dialog. The server sends clip timing metadata without thumbnail data. The 100dvh studio lays out its hierarchy and inspector beside the canvas at wide sizes and below it on mobile, with internal panel scrolling.
+
+`components/studio/viewport.tsx` uses a pixel-ratio-aware Canvas 2D renderer. Pointer gestures preview bone rotation, IK target movement and path edits, then commit one attributed command on release. Drawing a child near the parent's tip snaps it to the exact IK joint. The inspector exposes local bone transforms in degrees for display and world-space IK targets. Save persists the rig document with its revision. A stale save keeps the local edits and offers a confirmed reload.
+
+The version-1 document accepts `parts` and defaults older documents to an empty array. Parts store optional bone parents, translations, color, path closure, and anchors with cubic control handles. `lib/rig/render.ts` renders rigid bone attachments over the study artwork. The stock artwork provides a visual reference and follows the root transform. Timeline playback uses saved clip timing and the study loop. Editable keyframe sampling and weighted deformation begin in 3.1.

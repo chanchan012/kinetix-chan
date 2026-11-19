@@ -16,7 +16,15 @@ Implemented the application shell, interactive guest playground, Clerk access ro
 
 ## Active subgoal and next exact step
 
-1.1, 1.2, the authenticated workspace release and 2.1 are deployed. Next development subgoal is 2.2. Add the Clerk-protected `/studio/[id]` page, load the owner's rig and clips on the server, and mount a per-rig command store in the viewport. Hosted thumbnail execution awaits owner-managed Inngest credentials and endpoint sync.
+1.1, 1.2, the authenticated workspace release and both M2 subgoals are deployed. Next development subgoal is 3.1. Define typed clip tracks over the existing `clips.tracks` JSONB field, test cubic Bézier interpolation, and connect sampled poses to the studio timeline. Hosted thumbnail execution awaits owner-managed Inngest credentials and endpoint sync.
+
+## Subgoal 2.2 release · November 20, 2026
+
+- **Brief and build** added the owner-protected saved-rig studio, hierarchy, inspector, canvas bone and Bézier tools, playback timeline, and manual revision-checked saves.
+- **Test** passed strict TypeScript, 20 Vitest tests and 32 authenticated Playwright cases. Studio checks cover rotation, undo and redo, child-bone snapping, Bézier handles, saves and viewport fit on four profiles. Desktop and phone screenshots were reviewed.
+- **Merge** published feature commit `05e3bcd` and main merge `2c38174` to GitHub.
+- **Deploy** passed the local production build. Vercel marked the [feature preview](https://kinetix-chan-phrlufdkg-chanchans-projects-aada625f.vercel.app) and [production](https://kinetix-chan.vercel.app) ready. Chrome at a phone viewport loaded a saved rig, edited a rotation, and confirmed persistence by reading its state. The temporary account and rig were removed.
+- **Document** records the renderer, vector data, studio controls and 3.1 integration points.
 
 ## Subgoal 2.1 release · November 20, 2026
 

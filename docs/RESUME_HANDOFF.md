@@ -63,3 +63,9 @@ For local background jobs, use `INNGEST_DEV=1` in .env.local, start Next, then r
 The rig engine is in `lib/rig/`. Use `readRigState` when loading existing JSONB documents and `createRigStore` for per-editor commands and history. `GET /api/rigs/:id/state` returns the revision and validated document. Pass that revision back with edits and handle 409 by offering to reload the latest saved state. Subgoal 2.2 starts with the authenticated studio route and a canvas driven by `evaluateRig`.
 
 Subgoal 2.1 adds no environment variables or SQL migrations. Its feature branch uses a scoped Neon preview variable in Vercel. Run `npm test -- tests/unit/rig.test.ts tests/unit/library.test.ts` for kinematics, history and revision conflicts. Playwright creates and removes a temporary Neon rig while exercising the signed-in state endpoint.
+
+## Resume after 2.2
+
+Open a saved rig from the dashboard detail dialog with **Open studio**. The route lives at `app/studio/[id]/page.tsx`. Integrate animation sampling in `components/studio/timeline.tsx` and `components/studio/viewport.tsx`; reuse `lib/rig/render.ts` for path drawing and transform conventions. The inspector and canvas edit the same per-rig store. Click **Save** or use Ctrl/Cmd+S to persist the revision.
+
+Subgoal 2.2 adds no environment variables or SQL migrations. The live preview uses the scoped Neon role. Browser tests cover studio pointer gestures and persistent saves, with viewport screenshots in ignored `test-results/`. Track editing, onion skinning and mesh weight painting are the next subgoal.
