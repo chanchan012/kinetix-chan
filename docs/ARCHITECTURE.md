@@ -31,7 +31,7 @@ The checked-in migration is `drizzle/0000_foundation.sql`. Rigs have UUID primar
 
 ## Release topology
 
-The GitHub repository is chanchan012/kinetix-chan. Vercel builds the Next.js app from this repository, with separate feature-branch preview and main production deployments. Both serve the guest shell without external state. Preview and production service credentials can be configured independently.
+The GitHub repository is chanchan012/kinetix-chan. Vercel builds the Next.js app from this repository, with separate feature-branch preview and main production deployments. The preview uses the Kinetix Clerk development instance. Both Vercel environments use the existing kinora Redis database. Production also has a pooled connection to the kinetix Neon database. Production currently serves guest access.
 
 ## Later milestones
 

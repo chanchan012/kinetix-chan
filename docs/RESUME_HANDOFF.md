@@ -9,7 +9,7 @@ npm ci
 npm run dev
 ```
 
-Open http://localhost:3000. The default is a self-contained guest playground. Select a study, play/pause, step with the focused frame slider, or toggle Bones. Sign-in and sign-up offer guest entry when Clerk is unconfigured.
+Open http://localhost:3000. The workspace's ignored .env.local is configured for the Kinetix Clerk development instance, Upstash and Neon. Use the .env.example template on fresh checkouts. With no variables configured, the app runs as a guest playground.
 
 ## Service configuration
 
@@ -25,7 +25,7 @@ Copy .env.example to .env.local for local development. Configure deployment vari
 | KINETIX_DEMO_ONLY | Test override. A value of 1 disables Clerk and Redis access for isolated browser runs. |
 | PLAYWRIGHT_CHANNEL | Optional browser channel; set to chrome to use installed Google Chrome |
 
-After selecting the intended Neon project and branch, run `npm run db:migrate`. Generate future schema migrations with `npm run db:generate`. No migrations run automatically at build time. Configure Clerk domains and both key pairs before exercising account mode. Redeploy after changing public keys.
+The initial migration has been applied to the `kinetix` database on the default branch of Neon project `still-bird-86777802`. Confirm the database and branch before running future migrations. Use the direct connection for `npm run db:migrate` and the pooled URL for Vercel. Generate future migrations with `npm run db:generate`. Redeploy Vercel after changing environment variables.
 
 ## Verification
 
@@ -41,9 +41,9 @@ Playwright starts and stops an isolated guest Next dev server on port 3181. On W
 
 ## Known caveats
 
-Production is https://kinetix-chan.vercel.app. The release uses guest mode. The initial migration is checked in and has not been applied to a live Neon branch. Live Clerk authentication and distributed Upstash throttling have not been exercised against provider accounts.
+Production is https://kinetix-chan.vercel.app. Redis and Neon are configured there. Production Clerk setup needs a custom domain controlled by the project owner and matching production keys. The feature preview uses Clerk development keys for testing.
 
-- The suite exercises actual Clerk anonymous rejection and injected authenticated identity. A live sign-in with the intended Clerk tenant requires its keys. The guest fallback cannot save.
-- The guest limiter is process-local without Redis. Use Upstash for shared limits across Vercel instances.
+- The suite exercises actual Clerk anonymous rejection and injected authenticated identity. The guest fallback cannot save.
+- The existing kinora Free Tier Redis database is shared with Kinetix. Kinetix rate-limit entries use the `kinetix:v1` prefix.
 - npm audit --omit=dev reported zero known runtime advisories at release verification. The development tree reported advisories in the Vitest/Vite glob tooling and Drizzle Kit's older esbuild dependency.
 - The fixed playback studies are demo data. Persistent dashboard CRUD, background jobs, IK and MCP parity have their own milestones.

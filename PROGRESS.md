@@ -16,4 +16,11 @@ Implemented the application shell, interactive guest playground, Clerk access ro
 
 ## Active subgoal and next exact step
 
-1.1 is released in guest mode. 1.2 is next and has not started. Begin its BRIEF on a feature branch from main. First write owner-isolation tests for listing and creating rigs using the Hono API factory, then implement Neon-backed rig CRUD, the dashboard grid and Inngest thumbnail generation. Run migrations against the intended Neon branch before live CRUD verification.
+1.1 is released. 1.2 is next and has not started. Begin its BRIEF on a feature branch from main. First write owner-isolation tests for listing and creating rigs using the Hono API factory, then implement Neon-backed rig CRUD, the dashboard grid and Inngest thumbnail generation.
+
+## Service configuration · November 19, 2026
+
+- Created the `kinetix` database in Neon project `still-bird-86777802` and applied the foundation migration. Verified the `rigs`, `clips` and Drizzle migration tables.
+- Reused the existing `kinora` Free Tier Redis database. The configured credentials returned PONG.
+- Created a dedicated Clerk application named Kinetix. Its development instance is configured locally and on the [Vercel preview](https://kinetix-chan-git-feature-11-4f5f92-chanchans-projects-aada625f.vercel.app).
+- Vercel Production has the pooled Neon URL and the Redis credentials. It serves guest access until a custom domain is linked and the Clerk production instance is configured.
