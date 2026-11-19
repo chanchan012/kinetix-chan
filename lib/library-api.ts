@@ -6,6 +6,8 @@ import type { Library } from "../db/library";
 import { readRigState, rigStateSchema } from "./rig/model";
 import { tracksSchema } from "./rig/animation";
 import { exportApi } from "./export/api";
+import { realtimeApi } from "./realtime/api";
+import type { RoomBus } from "./realtime/bus";
 
 const name = z.string().trim().min(1).max(120);
 const createRig = z.strictObject({name,study:z.enum(["fox","heron","fish"])});
@@ -20,7 +22,7 @@ function body<T extends z.ZodType>(schema:T) {
   });
 }
 const missing = {error:"not_found"} as const;
-export function libraryApi(repository:()=>Library) {
+export function libraryApi(repository:()=>Library,rooms?:()=>RoomBus) {
   return new Hono<IdentityEnv>()
     .use("*",async(c,next) => {
       if (!c.get("userId")) return c.json({error:"authentication_required"},401);
@@ -40,7 +42,7 @@ export function libraryApi(repository:()=>Library) {
       return c.json(await repository().create(c.get("userId")!,name,study),201);
     })
     .get("/:id",async c => {
-      const row = await repository().get(c.get("userId")!,c.req.param("id"));
+      const row = await repository().open(c.get("userId")!,c.req.param("id"));
       return row ? c.json(row) : c.json(missing,404);
     })
     .patch("/:id",body(renameRig),async c => {
@@ -49,7 +51,7 @@ export function libraryApi(repository:()=>Library) {
     })
     .delete("/:id",async c => await repository().remove(c.get("userId")!,c.req.param("id")) ? c.body(null,204) : c.json(missing,404))
     .get("/:id/state",async c => {
-      const row = await repository().get(c.get("userId")!,c.req.param("id"));
+      const row = await repository().open(c.get("userId")!,c.req.param("id"));
       return row ? c.json({ ...row, state:readRigState(row.state) }) : c.json(missing,404);
     })
     .patch("/:id/state",body(editRigState),async c => {
@@ -58,8 +60,18 @@ export function libraryApi(repository:()=>Library) {
       const {revision,state} = c.req.valid("json");
       const library = repository();
       const saved = await library.saveRigState(owner,id,revision,state);
-      if (saved) return c.json({ ...saved, state });
-      const current = await library.get(owner,id);
+      if (saved) {
+        if (rooms) {
+          const client = z.uuid().safeParse(c.req.header("x-kinetix-client"));
+          try {
+            await rooms().changed(id,{type:"revision",revision:saved.revision,userId:owner,kind:"human",clientId:client.data},state);
+          } catch {
+            // The committed revision is still recovered from Neon on stream reconnect.
+          }
+        }
+        return c.json({ ...saved, state });
+      }
+      const current = await library.open(owner,id);
       if (!current) return c.json(missing,404);
       if (current.revision !== revision) return c.json({error:"revision_conflict",revision:current.revision},409);
       return c.json({error:"study_mismatch"},400);
@@ -97,5 +109,6 @@ export function libraryApi(repository:()=>Library) {
     })
     .delete("/:id/clips/:clip",async c => await repository().removeClip(c.get("userId")!,c.req.param("id"),c.req.param("clip"))
       ? c.body(null,204) : c.json(missing,404))
-    .route("/",exportApi(repository));
+    .route("/",exportApi(repository))
+    .route("/",realtimeApi(repository,rooms));
 }

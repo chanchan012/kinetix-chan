@@ -29,6 +29,13 @@
       "when": 1795106667156,
       "tag": "0003_export_jobs",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1795107538596,
+      "tag": "0004_rig_collaborators",
+      "breakpoints": true
     }
   ]
 }

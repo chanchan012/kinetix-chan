@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { check, index, integer, jsonb, pgTable, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { check, index, integer, jsonb, pgTable, primaryKey, text, timestamp, uuid } from "drizzle-orm/pg-core";
 
 export const rigs = pgTable("rigs", {
   id: uuid().defaultRandom().primaryKey(),
@@ -28,6 +28,15 @@ export const clips = pgTable("clips", {
   index("clip_rig_idx").on(t.rigId),
   check("clip_time_valid", sql`${t.fps} between 1 and 120 and ${t.frameCount} > 0`),
   check("clip_track_revision_nonnegative", sql`${t.trackRevision} >= 0`)
+]);
+
+export const rigCollaborators = pgTable("rig_collaborators", {
+  rigId: uuid("rig_id").notNull().references(() => rigs.id, { onDelete:"cascade" }),
+  userId: text("user_id").notNull(),
+  email: text().notNull(),
+}, t => [
+  primaryKey({columns:[t.rigId,t.userId]}),
+  index("rig_collaborators_user_idx").on(t.userId,t.rigId),
 ]);
 
 export const exportJobs = pgTable("export_jobs", {

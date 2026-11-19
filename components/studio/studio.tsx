@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useEffect, useEffectEvent, useMemo, useRef, useState, type CSSProperties } from "react";
 import Link from "next/link";
 import { useStore } from "zustand";
 import { ArrowLeft, ArrowCounterClockwise, ArrowClockwise, Bone as BoneIcon, Cursor, FloppyDisk, PenNib } from "@phosphor-icons/react";
@@ -14,16 +14,19 @@ import type { RigCommand } from "@/lib/rig/commands";
 import { Viewport, type Selection, type Tool, type Brush } from "./viewport";
 import { Timeline, type ClipTiming, type FramePreview } from "./timeline";
 import { ExportDialog } from "./export-dialog";
+import { ShareDialog } from "./share-dialog";
+import { useRoom } from "./use-room";
 
 type Props = {
   actorId: string; rigId: string; name: string; initial: KinetixRigState; revision: number; clips: ClipTiming[];
   renderConfigured: boolean;
+  owned: boolean;
 };
 const degrees = 180 / Math.PI;
 const tools = [{ id: "select", label: "Select", icon: Cursor }, { id: "bone", label: "Draw bone", icon: BoneIcon },
   { id: "pen", label: "Pen", icon: PenNib }] as const;
 
-export function Studio({actorId, rigId, name, initial, revision: initialRevision, clips, renderConfigured}: Props) {
+export function Studio({actorId, rigId, name, initial, revision: initialRevision, clips, renderConfigured, owned}: Props) {
   const [store] = useState(() => createRigStore(initial));
   const rig = useStore(store, state => state.rig);
   const past = useStore(store, state => state.past);
@@ -40,10 +43,13 @@ export function Studio({actorId, rigId, name, initial, revision: initialRevision
   const [timelineDirty, setTimelineDirty] = useState(false);
   const [clip, setClip] = useState<ClipTiming | undefined>(clips[0]);
   const [exportOpen, setExportOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
   const [brush, setBrush] = useState<Brush | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [conflict, setConflict] = useState(false);
+  const room = useRoom(rigId,selected);
+  const remoteBones = new Set(room.presence.flatMap(entry => entry.selection?.kind === "bone" ? [entry.selection.id] : []));
   const pending = useRef(false);
   const dirty = saved !== rig;
   const bone = selected?.kind === "bone" ? rig.bones.find(item => item.id === selected.id) : undefined;
@@ -70,7 +76,7 @@ export function Studio({actorId, rigId, name, initial, revision: initialRevision
     }
   }
 
-  async function save(reload = false) {
+  async function save(reload = false, incoming = false) {
     if (pending.current) return;
     pending.current = true;
     setSaving(true);
@@ -78,7 +84,7 @@ export function Studio({actorId, rigId, name, initial, revision: initialRevision
     try {
       const response = await fetch(path, reload ? { cache: "no-store" } : {
         method: "PATCH",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...(room.clientId && {"X-Kinetix-Client":room.clientId}) },
         body: JSON.stringify({ revision, state: rig }),
       });
       if (response.status === 401) {
@@ -91,17 +97,39 @@ export function Studio({actorId, rigId, name, initial, revision: initialRevision
       }
       if (!response.ok) throw new Error("Save failed");
       const next: { revision: number; state: KinetixRigState } = await response.json();
+      if (reload && rig !== store.getState().rig) {
+        setConflict(true);
+        return;
+      }
       if (reload) store.getState().reset(next.state);
       setSaved(reload ? store.getState().rig : rig);
       setRevision(next.revision);
       setConflict(false);
     } catch {
-      setError(reload ? "Could not reload the saved rig." : "Could not save. Your edits are still in the studio.");
+      setError(incoming ? "Could not load the latest collaboration update." :
+        reload ? "Could not reload the saved rig." : "Could not save. Your edits are still in the studio.");
     } finally {
       pending.current = false;
       setSaving(false);
     }
   }
+
+  const autosave = useEffectEvent(() => { void save(); });
+  const reconcile = useEffectEvent(() => {
+    if (dirty) setConflict(true);
+    else void save(true,true);
+  });
+  useEffect(() => {
+    if (saving || conflict || room.revision <= revision) return;
+    const timer = setTimeout(reconcile,error ? 5000 : 120);
+    return () => clearTimeout(timer);
+  }, [room.revision,revision,saving,conflict,error]);
+
+  useEffect(() => {
+    if (!dirty || saving || conflict || room.revision > revision) return;
+    const timer = setTimeout(autosave,error ? 7000 : 850);
+    return () => clearTimeout(timer);
+  }, [dirty,rig,saving,conflict,error,room.revision,revision]);
 
   useEffect(() => {
     if (!dirty && !timelineDirty) return;
@@ -175,7 +203,8 @@ export function Studio({actorId, rigId, name, initial, revision: initialRevision
       <h1>{name}</h1>
       <span role="status" className="studio-save-status">{conflict ? "Save conflict" : saving ? "Saving…" : dirty ? "Unsaved" : timelineDirty ? "Unsaved keys" : "Saved"}</span>
       <button className="studio-save" disabled={!dirty || saving || conflict} onClick={() => void save()}><FloppyDisk size={16}/>Save</button>
-      <button className="studio-export-button" onClick={() => setExportOpen(true)}>Export</button>
+      {owned && <button className="studio-export-button" onClick={() => setExportOpen(true)}>Export</button>}
+      {owned && <button className="studio-export-button" onClick={() => setShareOpen(true)}>Share</button>}
     </header>
 
     {(error || conflict) && <aside className="studio-alert" role="alert">
@@ -188,6 +217,16 @@ export function Studio({actorId, rigId, name, initial, revision: initialRevision
       <aside className="studio-hierarchy" aria-label="Rig hierarchy">
         <div className="studio-panel-title"><h2>Hierarchy</h2><span>{rig.bones.length} bones</span></div>
         <Hierarchy rig={rig} selected={selected} select={select}/>
+        <section className="studio-presence" aria-label="Live collaborators">
+          <h3>{room.connected ? "Live collaborators" : "Connecting…"}</h3>
+          {room.presence.length > 0 && <ul>{room.presence.map(entry => {
+            const item = entry.selection?.kind === "bone" ? rig.bones.find(bone => bone.id === entry.selection?.id) :
+              rig.parts.find(part => part.id === entry.selection?.id);
+            return <li key={entry.userId + ":" + entry.clientId}>
+              <span>{entry.kind === "ai" ? "AI" : "Editor"}</span><span>{item?.name ?? "Viewing"}</span>
+            </li>;
+          })}</ul>}
+        </section>
       </aside>
       <section className="studio-stage" aria-label="Viewport">
         <div className="studio-tools">
@@ -204,7 +243,7 @@ export function Studio({actorId, rigId, name, initial, revision: initialRevision
             <button title="Redo" aria-label="Redo" disabled={!future.length} onClick={store.getState().redo}><ArrowClockwise size={17}/></button>
           </div>
         </div>
-        <div className="studio-artboard"><Viewport rig={pose} brush={activeBrush} ghosts={ghosts}
+        <div className="studio-artboard"><Viewport rig={pose} brush={activeBrush} ghosts={ghosts} remoteBones={remoteBones}
           {...{ phase, selected, select, tool, reference, zoom, showBones, pen, addBone, edit }}
           addKnot={knot => setPen(knots => knots.length < 256 ? [...knots, knot] : knots)}/></div>
         <div className="studio-stage-footer">
@@ -230,6 +269,7 @@ export function Studio({actorId, rigId, name, initial, revision: initialRevision
     </div>
     {exportOpen && <ExportDialog rigId={rigId} clip={clip} frameCount={studyFor(rig.study).frames}
       unsaved={dirty || timelineDirty} renderConfigured={renderConfigured} close={() => setExportOpen(false)}/>}
+    {shareOpen && <ShareDialog rigId={rigId} close={() => setShareOpen(false)}/>}
   </main>;
 }
 

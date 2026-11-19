@@ -26,6 +26,20 @@ beforeAll(async () => {
 },30000);
 afterAll(() => pg.close());
 describe("saved library", () => {
+  it("allows an authorized editor to modify the rig and its clips until access is revoked", async () => {
+    const rig = await library.create("owner","Shared","fox");
+    const path = "/"+rig.id;
+    expect((await call("editor","GET",path+"/state")).status).toBe(404);
+    await library.addCollaborator("owner",rig.id,"editor","editor@example.com");
+    expect((await (await call("editor","GET")).json())).toEqual([expect.objectContaining({id:rig.id,owned:false})]);
+    expect((await call("editor","POST",path+"/clips",{name:"Walk",fps:24,frameCount:36})).status).toBe(201);
+    expect((await call("editor","PATCH",path+"/state",{revision:0,state:createRigState("fox")})).status).toBe(200);
+    expect((await call("editor","GET",path+"/collaborators")).status).toBe(404);
+    expect((await call("editor","DELETE",path)).status).toBe(404);
+    expect((await call("owner","DELETE",path+"/collaborators/editor")).status).toBe(204);
+    expect((await call("editor","PATCH",path+"/state",{revision:1,state:createRigState("fox")})).status).toBe(404);
+    expect((await call("owner","DELETE",path)).status).toBe(204);
+  });
   it("stores an immutable export snapshot and hands completed bytes only to the owner", async () => {
     const rig = await (await call("artist","POST","",{name:"Export fixture",study:"fox"})).json();
     const id = "21dfd810-ec66-4c8e-8122-7140bbcaf6a2";

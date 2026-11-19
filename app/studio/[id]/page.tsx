@@ -13,10 +13,10 @@ export default async function StudioPage({ params }: PageProps<"/studio/[id]">) 
   const { id } = await params;
   if (!z.uuid().safeParse(id).success) notFound();
   const library = new Library(connectDatabase());
-  const row = await library.get(userId, id);
+  const row = await library.open(userId, id);
   if (!row) notFound();
   const clips = (await library.listClipAnimation(userId, id)).map(clip => ({...clip, tracks:tracksSchema.parse(clip.tracks)}));
   return <Studio key={id} actorId={userId} rigId={row.id} name={row.name}
-    initial={readRigState(row.state)} revision={row.revision} clips={clips}
+    initial={readRigState(row.state)} revision={row.revision} clips={clips} owned={row.owned}
     renderConfigured={Boolean(process.env.INNGEST_SIGNING_KEY || process.env.INNGEST_DEV === "1")}/>;
 }

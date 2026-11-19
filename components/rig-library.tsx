@@ -11,7 +11,7 @@ import { ArtCanvas } from "./art-canvas";
 import { studies, studyFor } from "@/lib/studies";
 import type { Study } from "@/lib/studies";
 
-type Rig = {id:string; name:string; state:{study?:string}};
+type Rig = {id:string; name:string; state:{study?:string}; owned?:boolean};
 type Clip = {id:string; name:string; fps:number; frameCount:number; thumbnail:string|null};
 async function request<T>(path:string,method="GET",body?:object):Promise<T> {
   const response = await fetch("/api/"+path,{method,cache:"no-store",headers:body?{"content-type":"application/json"}:undefined,body:body?JSON.stringify(body):undefined});
@@ -91,12 +91,13 @@ function RigDetail({rig,change,remove,close}:{rig:Rig;change:(r:Rig)=>void;remov
     });
   }
   return <Modal title={rig.name} close={close}>
+    {rig.owned === false ? <Link className="primary" href={"/studio/"+rig.id} prefetch={false}>Open studio</Link> :
     <form onSubmit={e=>{e.preventDefault();const name=new FormData(e.currentTarget).get("name");void run(async()=>change(await request<Rig>(path,"PATCH",{name})));}}>
       <label>Rig name<input name="name" defaultValue={rig.name} required maxLength={120}/></label>
       <div className="actions"><Link className="primary" href={"/studio/"+rig.id} prefetch={false}>Open studio</Link><button disabled={busy}>Save name</button><button type="button" disabled={busy} onClick={()=>{
         if(window.confirm("Delete this rig and all its animation clips?"))void run(async()=>{await request(path,"DELETE");remove();});
       }}>Delete rig</button></div>
-    </form>
+    </form>}
     <h3>Animation clips</h3>
     {loadError ? <p role="alert">{loadError} <button onClick={()=>setRetry(n=>n+1)}>Retry</button></p> :
       clips===null ? <p>Loading clips…</p> : clips.length===0 ? <p>Add your first animation clip below.</p> :

@@ -2,9 +2,11 @@ import { clerkMiddleware, getAuth } from "@hono/clerk-auth";
 import { Ratelimit } from "@upstash/ratelimit";
 import { Redis } from "@upstash/redis";
 import type { Services } from "./api";
+import { rooms } from "./realtime/bus";
 
 let distributed: Ratelimit | undefined;
 export const services: Services = {
+  rooms,
   identify: async (c, next) => {
     c.set("userId", null);
     if (!process.env.CLERK_SECRET_KEY || !process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY) {

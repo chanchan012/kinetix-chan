@@ -3,6 +3,7 @@ import { z } from "zod";
 import { libraryApi } from "./library-api";
 import { Library } from "../db/library";
 import { connectDatabase } from "../db/client";
+import type { RoomBus } from "./realtime/bus";
 
 export type IdentityEnv = { Variables: { userId: string | null } };
 export type LimitResult = { success: boolean; reset: number };
@@ -10,6 +11,7 @@ export interface Services {
   identify: MiddlewareHandler<IdentityEnv>;
   limit: (key: string) => Promise<LimitResult>;
   clientKey: (request: Request) => string;
+  rooms?: () => RoomBus;
 }
 export const sessionSchema = z.object({ mode: z.literal("member"), userId: z.string().min(1), canSave: z.literal(true) });
 export function createApi(services: Services, repository = () => new Library(connectDatabase())) {
@@ -36,6 +38,6 @@ export function createApi(services: Services, repository = () => new Library(con
     .get("/account", c => {
       const userId = c.get("userId");
       return userId ? c.json({ userId }, 200) : c.json({ error: "authentication_required" }, 401);
-    }).route("/rigs",libraryApi(repository));
+    }).route("/rigs",libraryApi(repository,services.rooms));
 }
 export type AppType = ReturnType<typeof createApi>;
