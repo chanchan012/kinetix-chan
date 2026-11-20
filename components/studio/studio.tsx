@@ -1,9 +1,9 @@
 "use client";
 
-import { useEffect, useEffectEvent, useMemo, useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState, type CSSProperties } from "react";
 import Link from "next/link";
 import { useStore } from "zustand";
-import { ArrowLeft, ArrowCounterClockwise, ArrowClockwise, Bone as BoneIcon, Cursor, FloppyDisk, PenNib } from "@phosphor-icons/react";
+import { ArrowLeft, ArrowCounterClockwise, ArrowClockwise, Bone as BoneIcon, Cursor, FloppyDisk, Keyboard, PenNib } from "@phosphor-icons/react";
 import { createRigStore } from "@/lib/rig/store";
 import { evaluateRig, rotatePoint } from "@/lib/rig/kinematics";
 import { orderedBones, type Bone, type KinetixRigState, type Point, type VectorKnot, type VectorPart } from "@/lib/rig/model";
@@ -17,6 +17,10 @@ import { ExportDialog } from "./export-dialog";
 import { ShareDialog } from "./share-dialog";
 import { McpDialog } from "./mcp-dialog";
 import { useRoom } from "./use-room";
+import { PanelHandle, usePanelLayout } from "./panel-layout";
+import { ShortcutsDialog, useStudioShortcuts } from "./shortcuts";
+import { Presence } from "./presence";
+import { ClipManager } from "./clip-manager";
 
 type Props = {
   actorId: string; rigId: string; name: string; initial: KinetixRigState; revision: number; clips: ClipTiming[];
@@ -24,8 +28,10 @@ type Props = {
   owned: boolean;
 };
 const degrees = 180 / Math.PI;
-const tools = [{ id: "select", label: "Select", icon: Cursor }, { id: "bone", label: "Draw bone", icon: BoneIcon },
-  { id: "pen", label: "Pen", icon: PenNib }] as const;
+const tools = [{ id: "select", label: "Select", icon: Cursor, key: "V" },
+  { id: "bone", label: "Draw bone", icon: BoneIcon, key: "B" },
+  { id: "pen", label: "Pen", icon: PenNib, key: "P" }] as const;
+const zoomLevels = [0.5, 0.75, 1, 1.25, 1.5, 2, 3];
 
 export function Studio({actorId, rigId, name, initial, revision: initialRevision, clips, renderConfigured, owned}: Props) {
   const [store] = useState(() => createRigStore(initial));
@@ -43,17 +49,22 @@ export function Studio({actorId, rigId, name, initial, revision: initialRevision
   const [animation, setAnimation] = useState<FramePreview>({ frame: 0, frames: studyFor(initial.study).frames, tracks: [], onion: false });
   const [timelineDirty, setTimelineDirty] = useState(false);
   const [clip, setClip] = useState<ClipTiming | undefined>(clips[0]);
+  const [clipId, selectClip] = useState(clips[0]?.id ?? "");
   const [liveClips, setLiveClips] = useState(clips);
   const [exportOpen, setExportOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
   const [mcpOpen, setMcpOpen] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [clipsOpen, setClipsOpen] = useState(false);
   const [brush, setBrush] = useState<Brush | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
   const [conflict, setConflict] = useState(false);
   const room = useRoom(rigId,selected,clips);
+  const layout = usePanelLayout(Boolean(clip));
   const remoteBones = new Set(room.presence.flatMap(entry => entry.selection?.kind === "bone" ? [entry.selection.id] : []));
   const pending = useRef(false);
+  const clipRefresh = useRef(0);
   const dirty = saved !== rig;
   const bone = selected?.kind === "bone" ? rig.bones.find(item => item.id === selected.id) : undefined;
   const part = selected?.kind === "part" ? rig.parts.find(item => item.id === selected.id) : undefined;
@@ -67,18 +78,35 @@ export function Studio({actorId, rigId, name, initial, revision: initialRevision
   }).filter(ghost => ghost.frame !== animation.frame), [rig,animation]);
   const last = past.at(-1);
   const path = "/api/rigs/" + rigId + "/state";
+
+  const refreshClips = useCallback(async (signal?: AbortSignal) => {
+    const sequence = ++clipRefresh.current;
+    const response = await fetch("/api/rigs/" + rigId + "/animation", {cache:"no-store", signal});
+    if (!response.ok) throw Error("Could not refresh animation clips.");
+    const rows: ClipTiming[] = await response.json();
+    if (!signal?.aborted && sequence === clipRefresh.current) {
+      setLiveClips(rows);
+      selectClip(current => current && !rows.some(row => row.id === current) ? "" : current);
+    }
+    return rows;
+  }, [rigId]);
+
   useEffect(() => {
     if (!room.timeline) return;
     const controller = new AbortController();
-    const timer = setTimeout(() => void fetch("/api/rigs/"+rigId+"/animation",{
-      cache:"no-store",signal:controller.signal,
-    }).then(async response => {
-      if (!response.ok) return;
-      const rows: ClipTiming[] = await response.json();
-      if (!controller.signal.aborted) setLiveClips(rows);
-    }).catch(()=>{}),180);
+    const timer = setTimeout(() => void refreshClips(controller.signal).catch(() => {}), 180);
     return () => { clearTimeout(timer); controller.abort(); };
-  },[room.timeline,rigId]);
+  },[room.timeline,refreshClips]);
+
+  function clipChanged(id: string, action: "create" | "update" | "delete") {
+    if (action === "delete") {
+      setLiveClips(rows => rows.filter(row => row.id !== id));
+      selectClip(current => current === id ? "" : current);
+    }
+    void refreshClips().then(rows => {
+      if (action === "create" && rows.some(row => row.id === id)) selectClip(id);
+    }).catch(() => setError("Clip changes were saved. Could not refresh the timeline."));
+  }
 
   function edit(label: string, ...commands: RigCommand[]) {
     try {
@@ -192,32 +220,60 @@ export function Studio({actorId, rigId, name, initial, revision: initialRevision
     }
   }
 
-  function keyDown(event: React.KeyboardEvent) {
-    const modifier = event.metaKey || event.ctrlKey;
-    if (modifier && event.key.toLowerCase() === "s") {
-      event.preventDefault();
-      if (dirty && !conflict) void save();
-    }
-    if ((event.target as HTMLElement).closest("input,textarea,select")) return;
-    if (modifier && event.key.toLowerCase() === "z") {
-      event.preventDefault();
-      if (event.shiftKey) store.getState().redo();
-      else store.getState().undo();
-    }
-    if (event.key === "Escape") {
-      setPen([]);
-      setTool("select");
-    }
+  function chooseTool(next: Tool) {
+    if (next !== "pen") setPen([]);
+    if (next === "bone") setShowBones(true);
+    if (next === "select") setBrush(null);
+    setTool(next);
   }
 
-  return <main className="app-shell studio-shell" onKeyDown={keyDown}>
+  useStudioShortcuts(event => {
+    if (event.altKey) return;
+    const modifier = event.metaKey || event.ctrlKey;
+    const key = event.key.toLowerCase();
+    if (modifier && key === "s") {
+      event.preventDefault();
+      if (!event.repeat && dirty && !conflict) void save();
+    } else if (modifier && (key === "z" || key === "y")) {
+      event.preventDefault();
+      if (key === "y" || event.shiftKey) store.getState().redo();
+      else store.getState().undo();
+    } else if (!modifier) {
+      const next = tools.find(item => item.key.toLowerCase() === key);
+      if (next && !event.repeat) {
+        event.preventDefault();
+        chooseTool(next.id);
+      } else if (key === "escape") chooseTool("select");
+      else if (key === "enter" && tool === "pen" && !event.repeat &&
+        !(event.target instanceof HTMLElement && event.target.closest("button, a, summary"))) {
+        event.preventDefault();
+        finishPath(event.shiftKey);
+      } else if (key === "h" && !event.repeat) {
+        event.preventDefault();
+        setShowBones(value => !value);
+      } else if (key === "?" && !event.repeat) {
+        event.preventDefault();
+        setShortcutsOpen(true);
+      } else if (["+","=","-","0"].includes(key)) {
+        event.preventDefault();
+        setZoom(value => key === "0" ? 1 :
+          zoomLevels[Math.max(0, Math.min(zoomLevels.length-1, zoomLevels.indexOf(value) + (key === "-" ? -1 : 1)))]);
+      }
+    }
+  });
+
+  return <main className="app-shell studio-shell">
     <header className="studio-header">
       <Link href="/dashboard" className="studio-back" aria-label="Rig library" onClick={event => {
         if ((dirty || timelineDirty) && !window.confirm("Leave the studio with unsaved edits?")) event.preventDefault();
       }}><ArrowLeft size={17}/><span>Library</span></Link>
-      <h1>{name}</h1>
+      <h1 title={name}>{name}</h1>
       <span role="status" className="studio-save-status">{conflict ? "Save conflict" : saving ? "Saving…" : dirty ? "Unsaved" : timelineDirty ? "Unsaved keys" : "Saved"}</span>
-      <button className="studio-save" disabled={!dirty || saving || conflict} onClick={() => void save()}><FloppyDisk size={16}/>Save</button>
+      <button className="studio-save studio-header-save" aria-label="Save" title="Save rig (Ctrl or ⌘ + S)"
+        disabled={!dirty || saving || conflict} onClick={() => void save()}><FloppyDisk size={17}/></button>
+      <Presence connected={room.connected} entries={room.presence} rig={rig}/>
+      <button className="studio-header-icon" aria-label="Keyboard shortcuts" title="Keyboard shortcuts (?)"
+        onClick={() => setShortcutsOpen(true)}><Keyboard size={19}/></button>
       {owned && <nav className="studio-owner-actions" aria-label="Rig actions">
         <button className="studio-export-button" onClick={() => setExportOpen(true)}>Export</button>
         <button className="studio-export-button" onClick={() => setShareOpen(true)}>Share</button>
@@ -231,35 +287,24 @@ export function Studio({actorId, rigId, name, initial, revision: initialRevision
       }}>Reload saved rig</button></> : error}
     </aside>}
 
-    <div className="studio-grid">
-      <aside className="studio-hierarchy" aria-label="Rig hierarchy">
+    <div className="studio-grid" ref={layout.ref} style={layout.style}>
+      <aside className="studio-hierarchy" id="studio-hierarchy" aria-label="Rig hierarchy">
         <div className="studio-panel-title"><h2>Hierarchy</h2><span>{rig.bones.length} bones</span></div>
         <Hierarchy rig={rig} selected={selected} select={select}/>
-        <section className="studio-presence" aria-label="Live collaborators">
-          <h3>{room.connected ? "Live collaborators" : "Connecting…"}</h3>
-          {room.presence.length > 0 && <ul>{room.presence.map(entry => {
-            const item = entry.selection?.kind === "bone" ? rig.bones.find(bone => bone.id === entry.selection?.id) :
-              rig.parts.find(part => part.id === entry.selection?.id);
-            return <li key={entry.userId + ":" + entry.clientId}>
-              <span>{entry.kind === "ai" ? "AI" : "Editor"}</span><span>{item?.name ?? "Viewing"}</span>
-            </li>;
-          })}</ul>}
-        </section>
       </aside>
+      <PanelHandle panel="hierarchy" size={layout.panels.hierarchy} label="Resize hierarchy" controls="studio-hierarchy"/>
+      <PanelHandle panel="split" size={layout.panels.split} label="Resize side panels" controls="studio-hierarchy studio-inspector"/>
       <section className="studio-stage" aria-label="Viewport">
-        <div className="studio-tools">
-          <div className="studio-tool-group" aria-label="Canvas tools">
-            {tools.map(({id, label, icon: Icon}) => <button key={id} aria-label={label} title={label}
-              aria-pressed={tool === id} onClick={() => {
-                if (id !== "pen") setPen([]);
-                if (id === "bone") setShowBones(true);
-                setTool(id);
-              }}><Icon size={16}/><span>{label}</span></button>)}
-          </div>
-          <div className="studio-tool-group" aria-label="Command history">
-            <button title="Undo" aria-label="Undo" disabled={!past.length} onClick={store.getState().undo}><ArrowCounterClockwise size={17}/></button>
-            <button title="Redo" aria-label="Redo" disabled={!future.length} onClick={store.getState().redo}><ArrowClockwise size={17}/></button>
-          </div>
+        <div className="studio-tool-group studio-tools" role="group" aria-label="Canvas tools">
+          {tools.map(({id, label, icon: Icon, key}) => <button key={id} aria-label={label} title={label + " (" + key + ")"}
+            aria-keyshortcuts={key} aria-pressed={tool === id} onClick={() => chooseTool(id)}><Icon size={19}/></button>)}
+        </div>
+        <div className="studio-tool-group studio-viewport-actions" role="group" aria-label="Command history and zoom">
+          <button title="Undo (Ctrl or ⌘ + Z)" aria-label="Undo" disabled={!past.length} onClick={store.getState().undo}><ArrowCounterClockwise size={17}/></button>
+          <button title="Redo (Ctrl or ⌘ + Shift + Z)" aria-label="Redo" disabled={!future.length} onClick={store.getState().redo}><ArrowClockwise size={17}/></button>
+          <label className="studio-zoom"><span className="sr-only">Zoom</span><select value={zoom} onChange={event => setZoom(Number(event.target.value))}>
+            {zoomLevels.map(level => <option key={level} value={level}>{level === 1 ? "Fit" : level * 100 + "%"}</option>)}
+          </select></label>
         </div>
         <div className="studio-artboard"><Viewport rig={pose} brush={activeBrush} ghosts={ghosts} remoteBones={remoteBones}
           {...{ phase, selected, select, tool, reference, zoom, showBones, pen, addBone, edit }}
@@ -269,27 +314,30 @@ export function Studio({actorId, rigId, name, initial, revision: initialRevision
             <button disabled={pen.length < 2} onClick={() => finishPath(false)}>Finish path</button>
             <button disabled={pen.length < 3} onClick={() => finishPath(true)}>Close shape</button>
           </div> : <div className="studio-tool-group">
-            <button aria-pressed={showBones} onClick={() => setShowBones(value => !value)}>Bones</button>
+            <button title="Show or hide bones (H)" aria-pressed={showBones} onClick={() => setShowBones(value => !value)}>Bones</button>
             <button aria-pressed={reference} onClick={() => setReference(value => !value)}>Artwork</button>
           </div>}
-          <label className="studio-zoom"><span className="sr-only">Zoom</span><select value={zoom} onChange={event => setZoom(Number(event.target.value))}>
-            <option value={0.75}>75%</option><option value={1}>Fit</option><option value={1.25}>125%</option><option value={1.5}>150%</option>
-          </select></label>
         </div>
       </section>
-      <aside className="studio-inspector" aria-label="Inspector">
+      <PanelHandle panel="inspector" size={layout.panels.inspector} label="Resize inspector" controls="studio-inspector" direction={-1}/>
+      <aside className="studio-inspector" id="studio-inspector" aria-label="Inspector">
         <div className="studio-panel-title"><h2>Inspector</h2></div>
         <Inspector {...{ bone, part, rig, edit }} clear={() => select(null)}/>
         {part?.closed && <WeightTools key={part.id} part={part} rig={rig} brush={activeBrush} setBrush={setBrush} edit={edit} report={setError}/>}
         {last && <p className="studio-history" role="status">{last.actor.kind === "ai" ? "AI" : "Human"} · {last.label}</p>}
         {!last && room.lastEdit?.kind === "ai" && <p className="studio-history" role="status">AI · {room.lastEdit.label ?? "Edit rig"}</p>}
       </aside>
-      <Timeline {...{ rigId, rig, selected, select }} clips={liveClips} preview={setAnimation} onDirty={setTimelineDirty} onClip={setClip}/>
+      <PanelHandle panel="timeline" orientation="horizontal" size={layout.panels.timeline} label="Resize timeline"
+        controls="studio-timeline" direction={-1}/>
+      <Timeline {...{ rigId, rig, selected, select, clipId, selectClip }} clips={liveClips}
+        manageClips={() => setClipsOpen(true)} preview={setAnimation} onDirty={setTimelineDirty} onClip={setClip}/>
     </div>
     {exportOpen && <ExportDialog rigId={rigId} clip={clip} frameCount={studyFor(rig.study).frames}
       unsaved={dirty || timelineDirty} renderConfigured={renderConfigured} close={() => setExportOpen(false)}/>}
     {shareOpen && <ShareDialog rigId={rigId} close={() => setShareOpen(false)}/>}
     {mcpOpen && <McpDialog rigId={rigId} close={() => setMcpOpen(false)}/>}
+    {shortcutsOpen && <ShortcutsDialog close={() => setShortcutsOpen(false)}/>}
+    {clipsOpen && <ClipManager rigId={rigId} close={() => setClipsOpen(false)} changed={clipChanged}/>}
   </main>;
 }
 

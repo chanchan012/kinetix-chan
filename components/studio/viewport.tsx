@@ -304,7 +304,7 @@ export function Viewport({rig, phase, ghosts, brush, remoteBones, selected, sele
 
   function clear() { setGesture(null); setCursor(null); }
 
-  return <canvas ref={canvas} className="studio-canvas" role="img" aria-label="Rig canvas"
+  return <canvas ref={canvas} className="studio-canvas" role="img" aria-label="Rig canvas" tabIndex={0}
     data-tool={brush ? "paint" : tool} onPointerDown={down} onPointerMove={event => {
       if (!event.isPrimary || !scale || (!gesture && !brush)) return;
       const point = worldPoint(event);

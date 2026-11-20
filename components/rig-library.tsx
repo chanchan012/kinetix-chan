@@ -1,150 +1,172 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useRef, useState } from "react";
-import type { FormEvent, ReactNode } from "react";
-import { ArrowUpRightIcon } from "@phosphor-icons/react/dist/ssr/ArrowUpRight";
-import { PlusIcon } from "@phosphor-icons/react/dist/ssr/Plus";
+import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
+import { ArrowUpRight, DotsThree, FilmSlate, Plus } from "@phosphor-icons/react";
 import { UserButton } from "@clerk/nextjs";
 import { Brand } from "./brand";
 import { ArtCanvas } from "./art-canvas";
-import { studies, studyFor } from "@/lib/studies";
-import type { Study } from "@/lib/studies";
+import { Dialog } from "./dialog";
+import { studies, studyFor, type Study } from "@/lib/studies";
 
-type Rig = {id:string; name:string; state:{study?:string}; owned?:boolean};
-type Clip = {id:string; name:string; fps:number; frameCount:number; thumbnail:string|null};
-async function request<T>(path:string,method="GET",body?:object):Promise<T> {
-  const response = await fetch("/api/"+path,{method,cache:"no-store",headers:body?{"content-type":"application/json"}:undefined,body:body?JSON.stringify(body):undefined});
+type Rig = { id: string; name: string; state: {study?: string}; owned?: boolean };
+type LibraryDialog = "create" | "studies" | { action: "rename" | "delete"; rig: Rig } | null;
+
+async function request<T>(path: string, method = "GET", body?: object): Promise<T> {
+  const response = await fetch("/api/" + path, {
+    method, cache: "no-store", headers: body ? {"Content-Type":"application/json"} : undefined,
+    body: body ? JSON.stringify(body) : undefined,
+  });
   if (!response.ok) {
-    if(response.status === 401) {
+    if (response.status === 401) {
       window.location.replace("/sign-in?redirect_url=%2Fdashboard");
       throw Error("Your session has expired.");
     }
-    if(response.status === 404) throw Error("This item no longer exists. Refresh your library.");
-    if(response.status === 429) throw Error("Too many requests. Try again in a moment.");
-    throw Error("The library could not complete this request. Please try again.");
+    if (response.status === 404) throw Error("This rig no longer exists. Refresh your library.");
+    if (response.status === 429) throw Error("Too many requests. Try again in a moment.");
+    throw Error("The library could not complete this request. Try again.");
   }
-  return response.status===204 ? undefined as T : response.json();
+  return response.status === 204 ? undefined as T : response.json();
 }
-function Modal({title,close,children}:{title:string;close:()=>void;children:ReactNode}) {
-  const ref=useRef<HTMLDialogElement>(null);
-  useEffect(()=>{const el=ref.current!;el.showModal();return ()=>el.close();},[]);
-  return <dialog className="library-modal" ref={ref} onCancel={close} aria-label={title}>
-    <header><h2>{title}</h2><button aria-label="Close dialog" onClick={close}>×</button></header>{children}</dialog>;
-}
-function Art({study}:{study:Study}) {
+
+function Art({study}: {study: Study}) {
   return <span className="library-art" style={{backgroundColor:study.wash}}><ArtCanvas study={study} mini/></span>;
 }
-function useAction() {
-  const [error,setError]=useState("");
-  const [busy,setBusy]=useState(false);
-  const locked=useRef(false);
-  async function run(fn:()=>Promise<void>) {
-    if(locked.current) return;
-    locked.current=true;setBusy(true);setError("");
-    try {await fn();} catch(e) {setError(e instanceof Error?e.message:"Request failed.");}
-    finally {locked.current=false;setBusy(false);}
-  }
-  return {error,busy,run};
-}
-function CreateRig({created,close}:{created:(rig:Rig)=>void;close:()=>void}) {
-  const {error,busy,run}=useAction();
-  function submit(e:FormEvent<HTMLFormElement>) {
-    e.preventDefault();
-    const fields=new FormData(e.currentTarget);
-    void run(async()=>created(await request<Rig>("rigs","POST",{name:fields.get("name"),study:fields.get("study")})));
-  }
-  return <Modal title="New rig" close={close}><form onSubmit={submit}>
-    <label>Rig name<input name="name" required maxLength={120} autoFocus/></label>
-    <label>Character<select name="study">{studies.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</select></label>
-    {error && <p role="alert">{error}</p>}<button className="primary" disabled={busy}>Create rig</button>
-  </form></Modal>;
-}
-function RigDetail({rig,change,remove,close}:{rig:Rig;change:(r:Rig)=>void;remove:()=>void;close:()=>void}) {
-  const [clips,setClips]=useState<Clip[]|null>(null);
-  const [loadError,setLoadError]=useState("");
-  const [editing,setEditing]=useState<Clip|null>(null);
-  const [retry,setRetry]=useState(0);
-  const path="rigs/"+rig.id;
-  const {error,busy,run}=useAction();
-  useEffect(()=>{
-    let alive=true;
-    let timer:ReturnType<typeof setTimeout>;
-    async function refresh() {
-      try {
-        const rows=await request<Clip[]>(path+"/clips");
-        if(!alive)return;
-        setClips(rows);setLoadError("");
-        if(rows.some(c=>!c.thumbnail))timer=setTimeout(refresh,30000);
-      } catch {if(alive)setLoadError("Could not load clips.");}
+
+function RigActions({rig, choose}: {rig: Rig; choose: (action: "rename" | "delete") => void}) {
+  const [open, setOpen] = useState(false);
+  const menu = useRef<HTMLDivElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    function closeOutside(event: PointerEvent | FocusEvent) {
+      if (!menu.current?.contains(event.target as Node)) setOpen(false);
     }
-    void refresh();
-    return ()=>{alive=false;clearTimeout(timer);};
-  },[path,retry]);
-  function saveClip(e:FormEvent<HTMLFormElement>) {
-    e.preventDefault();const form=e.currentTarget;const fields=new FormData(form);
-    void run(async()=>{
-      await request(path+"/clips"+(editing?"/"+editing.id:""),editing?"PATCH":"POST",{
-        name:fields.get("name"),fps:Number(fields.get("fps")),frameCount:Number(fields.get("frames"))
-      });
-      setEditing(null);form.reset();setRetry(n=>n+1);
-    });
-  }
-  return <Modal title={rig.name} close={close}>
-    {rig.owned === false ? <Link className="primary" href={"/studio/"+rig.id} prefetch={false}>Open studio</Link> :
-    <form onSubmit={e=>{e.preventDefault();const name=new FormData(e.currentTarget).get("name");void run(async()=>change(await request<Rig>(path,"PATCH",{name})));}}>
-      <label>Rig name<input name="name" defaultValue={rig.name} required maxLength={120}/></label>
-      <div className="actions"><Link className="primary" href={"/studio/"+rig.id} prefetch={false}>Open studio</Link><button disabled={busy}>Save name</button><button type="button" disabled={busy} onClick={()=>{
-        if(window.confirm("Delete this rig and all its animation clips?"))void run(async()=>{await request(path,"DELETE");remove();});
-      }}>Delete rig</button></div>
-    </form>}
-    <h3>Animation clips</h3>
-    {loadError ? <p role="alert">{loadError} <button onClick={()=>setRetry(n=>n+1)}>Retry</button></p> :
-      clips===null ? <p>Loading clips…</p> : clips.length===0 ? <p>Add your first animation clip below.</p> :
-      <ul>{clips.map(c=><li key={c.id}>{c.thumbnail && <img src={c.thumbnail} alt="" width="56" height="32"/>}
-        <span><strong>{c.name}</strong><small>{c.frameCount} frames · {c.fps} fps</small></span>
-        <button disabled={busy} onClick={()=>setEditing(c)} aria-label={"Edit "+c.name}>Edit</button>
-        <button disabled={busy} aria-label={"Delete "+c.name} onClick={()=>{
-          if(window.confirm("Delete this animation clip?"))void run(async()=>{await request(path+"/clips/"+c.id,"DELETE");if(editing?.id===c.id)setEditing(null);setRetry(n=>n+1);});
-        }}>Delete</button></li>)}</ul>}
-    <form key={editing?.id??"new"} onSubmit={saveClip}>
-      <label>Clip name<input name="name" required maxLength={120} defaultValue={editing?.name??""}/></label>
-      <div className="clip-timing"><label>Frames<input type="number" name="frames" required min="1" max="36000" defaultValue={editing?.frameCount??24}/></label>
-      <label>FPS<input type="number" name="fps" required min="1" max="120" defaultValue={editing?.fps??24}/></label></div>
-      <div className="actions"><button className="primary" disabled={busy}>{editing?"Save clip":"Add clip"}</button>
-      {editing&&<button type="button" onClick={()=>setEditing(null)}>Cancel edit</button>}</div>
-    </form>{error&&<p role="alert">{error}</p>}
-  </Modal>;
+    window.addEventListener("pointerdown", closeOutside);
+    window.addEventListener("focusin", closeOutside);
+    return () => {
+      window.removeEventListener("pointerdown", closeOutside);
+      window.removeEventListener("focusin", closeOutside);
+    };
+  }, [open]);
+
+  return <div ref={menu} className="rig-actions" onKeyDown={event => {
+    if (open && event.key === "Escape") {
+      event.preventDefault();
+      setOpen(false);
+      trigger.current?.focus();
+    }
+  }}>
+    <button ref={trigger} className="rig-actions-trigger" type="button" aria-label={"Actions for " + rig.name}
+      aria-expanded={open} onClick={() => setOpen(value => !value)}><DotsThree size={22} weight="bold"/></button>
+    {open && <div className="rig-actions-list">
+      <button type="button" onClick={() => { trigger.current?.focus(); setOpen(false); choose("rename"); }}>Rename rig</button>
+      <button type="button" onClick={() => { trigger.current?.focus(); setOpen(false); choose("delete"); }}>Delete rig</button>
+    </div>}
+  </div>;
 }
+
 export function RigLibrary() {
-  const [loading,setLoading]=useState(true);
-  const [rigs,setRigs]=useState<Rig[]>([]);
-  const [error,setError]=useState("");
-  const [selected,setSelected]=useState<string|null>(null);
-  const [creating,setCreating]=useState(false);
-  const selectedRig=rigs.find(r=>r.id===selected);
-  const refresh=useCallback(async()=>{
+  const router = useRouter();
+  const [loading, setLoading] = useState(true);
+  const [rigs, setRigs] = useState<Rig[]>([]);
+  const [error, setError] = useState("");
+  const [dialog, setDialog] = useState<LibraryDialog>(null);
+  const [actionError, setActionError] = useState("");
+  const [busy, setBusy] = useState(false);
+  const pending = useRef(false);
+  const refresh = useCallback(async () => {
     setError("");
     try {
       setRigs(await request<Rig[]>("rigs"));
       setLoading(false);
-    } catch(e){setError(e instanceof Error?e.message:"Could not load library.");}
-  },[]);
-  useEffect(()=>{void refresh();},[refresh]);
-  return <div className="app-shell"><header className="topbar"><Brand/><span className="brand-divider"/><span className="studio-name">Motion Studio</span>
-    <nav aria-label="Account"><UserButton/></nav></header>
-    <main className="dashboard"><div className="dashboard-content"><div className="library-heading"><div><h1>Rig library</h1>
-      <p>Manage your character rigs and animation clips.</p></div>
-      <button className="primary" onClick={()=>setCreating(true)}><PlusIcon/>New rig</button></div>
-      {error&&<p role="alert">{error} <button onClick={()=>void refresh()}>Retry</button></p>}
-      {loading&&!error&&<p role="status">Loading library…</p>}
-      {!loading&&<section><h2>Your rigs</h2>{rigs.length===0?<p className="empty-library">Create a rig to start your collection.</p>:<div className="rig-grid">
-        {rigs.map(r=><button className="rig-card" key={r.id} onClick={()=>setSelected(r.id)}><Art study={studyFor(r.state.study)}/><span><strong>{r.name}</strong><small>Manage rig and clips</small></span></button>)}</div>}</section>}
-      <section><h2>Motion studies</h2><div className="rig-grid">{studies.map(s=><Link key={s.id} href={"/studio/studies/"+s.id} className="rig-card">
-        <Art study={s}/><span><strong>{s.name}</strong><small>{s.clip} · {s.frames} frames</small><ArrowUpRightIcon/></span></Link>)}</div></section>
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Could not load the rig library.");
+    }
+  }, []);
+  useEffect(() => { void refresh(); }, [refresh]);
+
+  function show(next: LibraryDialog) {
+    setActionError("");
+    setDialog(next);
+  }
+
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (pending.current || !dialog || dialog === "studies") return;
+    const values = new FormData(event.currentTarget);
+    pending.current = true;
+    setBusy(true);
+    setActionError("");
+    try {
+      if (dialog === "create") {
+        const rig = await request<Rig>("rigs", "POST", {name: values.get("name"), study: values.get("study")});
+        setRigs(rows => [rig, ...rows]);
+        router.push("/studio/" + rig.id);
+      } else if (dialog.action === "rename") {
+        const renamed = await request<Rig>("rigs/" + dialog.rig.id, "PATCH", {name: values.get("name")});
+        setRigs(rows => rows.map(rig => rig.id === renamed.id ? {...rig, ...renamed} : rig));
+      } else {
+        await request("rigs/" + dialog.rig.id, "DELETE");
+        setRigs(rows => rows.filter(rig => rig.id !== dialog.rig.id));
+      }
+      setDialog(null);
+    } catch (error) {
+      setActionError(error instanceof Error ? error.message : "Could not save the rig.");
+    } finally {
+      pending.current = false;
+      setBusy(false);
+    }
+  }
+
+  const action = typeof dialog === "object" ? dialog : null;
+  const title = dialog === "create" ? "New rig" : action?.action === "rename" ? "Rename rig" : "Delete rig";
+
+  return <div className="app-shell">
+    <header className="topbar"><Brand/><span className="brand-divider"/><span className="studio-name">Motion Studio</span>
+      <nav aria-label="Account"><UserButton/></nav>
+    </header>
+    <main className="dashboard"><div className="dashboard-content">
+      <div className="library-heading"><div><h1>Rig library</h1><p>Open a rig to work on its animation in Studio.</p></div>
+        <div className="library-heading-actions">
+          <button className="library-secondary" onClick={() => show("studies")}><FilmSlate size={17}/>Motion studies</button>
+          <button className="primary" onClick={() => show("create")}><Plus size={17}/>New rig</button>
+        </div>
+      </div>
+      {error && <p role="alert">{error} <button onClick={() => void refresh()}>Retry</button></p>}
+      {loading && !error && <p role="status">Loading library…</p>}
+      {!loading && <section aria-label="Your rigs">
+        <h2>Your rigs</h2>
+        {rigs.length === 0 ? <p className="empty-library">Create a rig to start your collection.</p> :
+          <div className="rig-grid">{rigs.map(rig => <article className="rig-card-shell" key={rig.id}>
+            <Link className="rig-card" prefetch={false} href={"/studio/" + rig.id}>
+              <Art study={studyFor(rig.state.study)}/>
+              <span><strong>{rig.name}</strong>{rig.owned === false && <small>Shared rig</small>}<ArrowUpRight size={16}/></span>
+            </Link>
+            {rig.owned !== false && <RigActions rig={rig} choose={action => show({action, rig})}/>}
+          </article>)}</div>}
+      </section>}
     </div></main>
-    {creating&&<CreateRig close={()=>setCreating(false)} created={r=>{setRigs(rows=>[r,...rows]);setCreating(false);setSelected(r.id);}}/>}
-    {selectedRig&&<RigDetail key={selectedRig.id} rig={selectedRig} close={()=>setSelected(null)} change={r=>setRigs(rows=>[r,...rows.filter(row=>row.id!==r.id)])}
-      remove={()=>{setRigs(rows=>rows.filter(row=>row.id!==selected));setSelected(null);}}/>}
+    {dialog === "studies" && <Dialog title="Motion studies" className="library-modal library-studies" onClose={() => show(null)}>
+      <div className="rig-grid">{studies.map(study => <Link key={study.id} href={"/studio/studies/" + study.id}
+        className="rig-card" onClick={() => show(null)} prefetch={false}>
+        <Art study={study}/><span><strong>{study.name}</strong><small>{study.clip} · {study.frames} frames</small><ArrowUpRight size={16}/></span>
+      </Link>)}</div>
+    </Dialog>}
+    {(dialog === "create" || action) && <Dialog title={title} className="library-modal" onClose={() => { if (!pending.current) show(null); }}>
+      <form onSubmit={submit}>
+        {action?.action === "delete" ?
+          <p>Delete <strong>{action.rig.name}</strong> and all its animation clips?</p> :
+          <label>Rig name<input name="name" defaultValue={action?.rig.name ?? ""} required maxLength={120} autoFocus/></label>}
+        {dialog === "create" && <label>Character<select name="study">
+          {studies.map(study => <option key={study.id} value={study.id}>{study.name}</option>)}
+        </select></label>}
+        {actionError && <p role="alert">{actionError}</p>}
+        <button className={action?.action === "delete" ? "primary library-delete" : "primary"} disabled={busy}>
+          {dialog === "create" ? "Create rig" : action?.action === "rename" ? "Save name" : "Delete rig"}
+        </button>
+      </form>
+    </Dialog>}
   </div>;
 }

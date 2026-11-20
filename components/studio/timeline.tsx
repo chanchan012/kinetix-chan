@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useEffectEvent, useRef, useState } from "react";
-import { Diamond, Pause, Play } from "@phosphor-icons/react";
+import { Diamond, FilmSlate, Pause, Play } from "@phosphor-icons/react";
 import { studyFor } from "@/lib/studies";
 import { channelId, removeKey, setKey, setKeyEase, tracksSchema, type Channel, type Track } from "@/lib/rig/animation";
 import type { KinetixRigState } from "@/lib/rig/model";
 import { EasingGraph } from "./easing-graph";
 import type { Selection } from "./viewport";
+import { useStudioShortcuts } from "./shortcuts";
 
 export type ClipTiming = { id: string; name: string; fps: number; frameCount: number; tracks: Track[]; trackRevision: number };
 export type FramePreview = { frame: number; frames: number; tracks: readonly Track[]; onion: boolean };
@@ -14,14 +15,15 @@ type Draft = { clip: ClipTiming; tracks: Track[]; conflict: boolean };
 const emptyTracks: Track[] = [];
 const degrees = 180 / Math.PI;
 
-export function Timeline({clips, rigId, rig, selected, select, preview, onDirty, onClip}: {
+export function Timeline({clips, clipId, selectClip, manageClips, rigId, rig, selected, select, preview, onDirty, onClip}: {
   clips: ClipTiming[]; rigId: string; rig: KinetixRigState; selected: Selection;
+  clipId: string; selectClip: (id: string) => void; manageClips: () => void;
   select: (selection: Selection) => void;
   preview: (frame: FramePreview) => void; onDirty: (value: boolean) => void;
   onClip: (clip: ClipTiming | undefined) => void;
 }) {
   const source = studyFor(rig.study);
-  const [clipId, setClipId] = useState(clips[0]?.id ?? "");
+  const [previousClipId, setPreviousClipId] = useState(clipId);
   const [frame, setFrame] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [onion, setOnion] = useState(false);
@@ -31,6 +33,13 @@ export function Timeline({clips, rigId, rig, selected, select, preview, onDirty,
   const [graphOpen, setGraphOpen] = useState(false);
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  if (clipId !== previousClipId) {
+    setPreviousClipId(clipId);
+    setPlaying(false);
+    setGraphOpen(false);
+    setError("");
+    setFrame(0);
+  }
   const locked = useRef(false);
   const valueInput = useRef<HTMLInputElement>(null);
   const savedClip = clips.find(item => item.id === clipId);
@@ -128,26 +137,50 @@ export function Timeline({clips, rigId, rig, selected, select, preview, onDirty,
     return () => clearTimeout(timer);
   }, [dirty,saving,graphOpen,draft?.conflict,error,tracks]);
 
+  function insertKey() {
+    const value = (valueInput.current?.valueAsNumber ?? NaN) / units;
+    if (active && Number.isFinite(value) && Math.abs(value) <= 1_000_000) {
+      setPlaying(false);
+      setBasePose(false);
+      change(setKey(tracks,active.channel,current,value));
+    }
+  }
+
+  useStudioShortcuts(event => {
+    if (event.altKey || event.metaKey || event.ctrlKey) return;
+    if (event.code === "Space" &&
+        !(event.target instanceof HTMLElement && event.target.closest("button, a, summary"))) {
+      event.preventDefault();
+      if (!event.repeat) setPlaying(value => !value);
+    } else if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
+      event.preventDefault();
+      setPlaying(false);
+      setFrame(frame => Math.max(0, Math.min(frames - 1, frame + (event.key === "ArrowRight" ? 1 : -1) * (event.shiftKey ? 5 : 1))));
+    } else if (!event.repeat && event.key.toLowerCase() === "o") {
+      event.preventDefault();
+      setOnion(value => !value);
+    } else if (!event.repeat && event.key.toLowerCase() === "k" && clip && active) {
+      event.preventDefault();
+      insertKey();
+    }
+  });
+
   const ticks = Array.from(new Set([1, Math.ceil(frames / 4), Math.ceil(frames / 2), Math.ceil(3 * frames / 4), frames]));
-  return <section className="studio-timeline" aria-label="Timeline">
+  return <section className="studio-timeline" id="studio-timeline" aria-label="Timeline">
     <div className="studio-timeline-head">
       <h2>Timeline</h2>
-      <label><span className="sr-only">Animation clip</span><select value={clip ? clipId : ""} onChange={event => {
-        setPlaying(false);
-        setGraphOpen(false);
-        setError("");
-        setFrame(0);
-        setClipId(event.target.value);
-      }}>
+      <label><span className="sr-only">Animation clip</span><select value={clip ? clipId : ""} onChange={event => selectClip(event.target.value)}>
         <option value="">{source.clip} · Study</option>
         {clips.map(item => <option value={item.id} key={item.id}>{item.name}</option>)}
       </select></label>
-      <button className="studio-toggle" aria-pressed={onion} onClick={() => setOnion(value => !value)}>Onion skin</button>
+      <button className="studio-toggle studio-manage-clips" onClick={manageClips} disabled={hasDrafts || saving}
+        aria-label="Manage clips" title={hasDrafts ? "Save keyframe changes to manage clips" : "Manage clips"}><FilmSlate size={16}/><span>Manage clips</span></button>
+      <button className="studio-toggle" title="Onion skin (O)" aria-pressed={onion} onClick={() => setOnion(value => !value)}>Onion skin</button>
       {clip && <button className="studio-toggle" aria-pressed={basePose} onClick={() => setBasePose(value => !value)}>Base pose</button>}
       <span className="studio-fps">{fps} fps</span>
     </div>
     <div className="studio-transport">
-      <button aria-label={playing ? "Pause timeline" : "Play timeline"} onClick={() => setPlaying(value => !value)}>
+      <button aria-label={playing ? "Pause timeline" : "Play timeline"} title="Play or pause (Space)" onClick={() => setPlaying(value => !value)}>
         {playing ? <Pause weight="fill" size={14}/> : <Play weight="fill" size={14}/>}
       </button>
       <output aria-label="Current frame">{current + 1} / {frames}</output>
@@ -173,14 +206,7 @@ export function Timeline({clips, rigId, rig, selected, select, preview, onDirty,
               event.currentTarget.value = String(Number((keyValue! * units).toFixed(3)));
             } else if (key && Math.abs(value - key.value) > 0.001 / units) change(setKey(tracks,active.channel,current,value));
           }}/></label>}
-        <button title="Insert keyframe" aria-label="Insert keyframe" disabled={!active} onClick={() => {
-          const value = (valueInput.current?.valueAsNumber ?? NaN) / units;
-          if (active && Number.isFinite(value) && Math.abs(value) <= 1_000_000) {
-            setPlaying(false);
-            setBasePose(false);
-            change(setKey(tracks,active.channel,current,value));
-          }
-        }}><Diamond size={15}/>Key</button>
+        <button title="Insert keyframe (K)" aria-label="Insert keyframe" disabled={!active} onClick={insertKey}><Diamond size={15}/>Key</button>
         <button disabled={!key} onClick={() => { setPlaying(false); setGraphOpen(true); }}>Easing</button>
         <button disabled={!key} onClick={() => { if (active) change(removeKey(tracks,active.channel,current)); }}>Delete key</button>
         <button className="studio-key-save" disabled={!dirty || saving || draft.conflict} onClick={() => void save()}>Save keys</button>
