@@ -125,8 +125,9 @@ test("a member can open, manipulate, and save a studio rig", async ({page}, info
     expect((await page.request.patch(path + "/state", { data: { revision, state } })).status()).toBe(409);
 
     await page.goto("/dashboard");
-    await page.getByRole("button",{name:new RegExp(name)}).click();
-    await page.getByRole("link",{name:"Open studio"}).click();
+    await page.getByRole("link",{name,exact:true}).click();
+    await expect(page).toHaveURL("/studio/" + id);
+    await expect(page.getByRole("dialog")).toHaveCount(0);
     await expect(page.getByRole("heading",{name,exact:true})).toBeVisible();
     await page.getByRole("button",{name:"Foreleg",exact:true}).click();
     const rotation = page.getByLabel("Rotation (°)");
@@ -184,6 +185,38 @@ test("a member can open, manipulate, and save a studio rig", async ({page}, info
     expect(edited.parts[0].knots[0].outgoing).toBeDefined();
     expect(edited.bones[1].rotation).not.toBe(state.bones[1].rotation);
     expect(edited.bones[3]).toMatchObject({parentId:"upper",offset:{x:state.bones[1].length,y:0}});
+    const panel = info.project.name === "mobile" ? "Resize side panels" : "Resize hierarchy";
+    const separator = page.getByRole("separator",{name:panel,exact:true});
+    const size = Number(await separator.getAttribute("aria-valuenow"));
+    await separator.press("ArrowRight");
+    await expect(separator).toHaveAttribute("aria-valuenow", String(size + 8));
+    if (info.project.name !== "mobile") {
+      const inspector = page.getByRole("separator",{name:"Resize inspector",exact:true});
+      const rightSize = Number(await inspector.getAttribute("aria-valuenow"));
+      await inspector.press("ArrowLeft");
+      await expect(inspector).toHaveAttribute("aria-valuenow", String(rightSize + 8));
+    }
+    const timeline = page.getByRole("separator",{name:"Resize timeline"});
+    const handle = (await timeline.boundingBox())!;
+    const timelineSize = Number(await timeline.getAttribute("aria-valuenow"));
+    await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(handle.x + handle.width / 2, handle.y + handle.height / 2 - 18);
+    await page.mouse.up();
+    await expect(timeline).toHaveAttribute("aria-valuenow", String(timelineSize + 18));
+    await canvas.focus();
+    await page.keyboard.press("P");
+    await expect(page.getByRole("button",{name:"Pen",exact:true})).toHaveAttribute("aria-pressed","true");
+    await page.keyboard.press("Escape");
+    await expect(page.getByRole("button",{name:"Select",exact:true})).toHaveAttribute("aria-pressed","true");
+    await page.keyboard.press("ArrowRight");
+    await expect(page.getByRole("slider",{name:"Timeline frame"})).toHaveValue("1");
+    await page.keyboard.press("Space");
+    await expect(page.getByRole("button",{name:"Pause timeline"})).toBeVisible();
+    await page.keyboard.press("Space");
+    await page.keyboard.press("?");
+    await expect(page.getByRole("dialog",{name:"Keyboard shortcuts"})).toBeVisible();
+    await page.keyboard.press("Escape");
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth &&
       document.documentElement.scrollHeight <= innerHeight &&
       Math.abs(document.querySelector(".studio-shell")!.getBoundingClientRect().height - innerHeight) < 1)).toBe(true);
@@ -196,14 +229,14 @@ test("a member can open, manipulate, and save a studio rig", async ({page}, info
 test("member library fits the viewport and opens the chosen study",async({page},info)=>{
   await page.getByRole("link",{name:"Rig library"}).click();
   await expect(page.getByRole("heading",{name:"Rig library"})).toBeVisible();
-  const cards=page.locator("a.rig-card");
-  await expect(cards).toHaveCount(3);
+  await expect(page.getByRole("link",{name:/Blue heron/})).toHaveCount(0);
   await expect(page.getByRole("button",{name:"New rig"})).toBeVisible();
-  const columns=await cards.evaluateAll(elements=>new Set(elements.map(el=>el.getBoundingClientRect().left)).size);
-  expect(columns).toBe(({desktop:3,tablet:2,mobile:1,landscape:2})[info.project.name as "desktop"|"tablet"|"mobile"|"landscape"]);
   expect(await page.evaluate(()=>document.documentElement.scrollHeight<=innerHeight && document.documentElement.scrollWidth<=innerWidth)).toBe(true);
   await page.screenshot({path:info.outputPath("dashboard.png")});
-  await page.getByRole("link",{name:/Blue heron/}).click();
+  await page.getByRole("button",{name:"Motion studies"}).click();
+  const studies = page.getByRole("dialog",{name:"Motion studies"});
+  await expect(studies.getByRole("link")).toHaveCount(3);
+  await studies.getByRole("link",{name:/Blue heron/}).click();
   await expect(page.getByRole("img",{name:/Blue heron/})).toBeVisible();
   await page.getByRole("button",{name:"Play clip"}).click();
   await expect(page.getByRole("slider")).not.toHaveValue("1");
@@ -221,29 +254,40 @@ test("member library fits the viewport and opens the chosen study",async({page},
   expect((await session.json()).mode).toBe("member");
 });
 
-test("member manages a rig and clip from the grid",async({page})=>{
-  const rig={id:"d1ee7943-212b-45e4-ac00-43dc6d230eed",name:"Library fox",state:{study:"fox"}};
-  let rows:object[]=[];
-  let clips:object[]=[];
-  await page.route("**/api/rigs**",async r=>{
-    const method=r.request().method();
-    if(r.request().url().includes("/clips")){
-      if(method==="POST")clips=[{...r.request().postDataJSON(),id:"clip",thumbnail:null}];
-      return r.fulfill({json:method==="GET"?clips:clips[0]});
-    }
-    if(method==="POST"){rows=[rig];return r.fulfill({status:201,json:rig});}
-    if(method==="DELETE"){rows=[];return r.fulfill({status:204});}
-    return r.fulfill({json:rows});
-  });
+test("member manages clips in the studio and renames or deletes a rig from its card",async({page},info)=>{
+  const name = "Library " + info.project.name + " fox";
   await page.goto("/dashboard");
   await page.getByRole("button",{name:"New rig"}).click();
-  await page.getByLabel("Rig name").fill(rig.name);
+  await page.getByLabel("Rig name").fill(name);
   await page.getByRole("button",{name:"Create rig"}).click();
-  const detail=page.getByRole("dialog",{name:rig.name});
+  await expect(page.getByRole("heading",{name,exact:true})).toBeVisible();
+  await page.getByRole("button",{name:"Manage clips"}).click();
+  const detail = page.getByRole("dialog",{name:"Animation clips"});
+  await detail.getByRole("button",{name:"New clip"}).click();
   await detail.getByLabel("Clip name").fill("Walk");
   await detail.getByRole("button",{name:"Add clip"}).click();
-  await expect(detail.getByText("Walk",{exact:true})).toBeVisible();
-  page.once("dialog",d=>d.accept());
-  await detail.getByRole("button",{name:"Delete rig"}).click();
-  await expect(page.getByText("Create a rig to start your collection.")).toBeVisible();
+  await detail.getByRole("button",{name:"Edit Walk"}).click();
+  await detail.getByLabel("Clip name").fill("Walk loop");
+  await detail.getByRole("button",{name:"Save clip"}).click();
+  await expect(detail.getByText("Walk loop",{exact:true})).toBeVisible();
+  await detail.getByRole("button",{name:"Close dialog"}).click();
+  const picker = page.getByRole("combobox", {name:"Animation clip", exact:true});
+  await expect(picker.locator("option:checked")).toHaveText("Walk loop");
+  await page.getByRole("button",{name:"Manage clips"}).click();
+  await detail.getByRole("button",{name:"Delete Walk loop"}).click();
+  await detail.getByRole("button",{name:"Delete clip",exact:true}).click();
+  await expect(detail.getByText("No saved clips yet.")).toBeVisible();
+  await detail.getByRole("button",{name:"Close dialog"}).click();
+  await expect(picker.locator("option:checked")).toHaveText(/Study/);
+  await page.getByRole("link",{name:"Rig library"}).click();
+  await page.getByRole("button",{name:"Actions for " + name}).click();
+  await page.getByRole("button",{name:"Rename rig"}).click();
+  const renamed = name + " renamed";
+  await page.getByLabel("Rig name").fill(renamed);
+  await page.getByRole("button",{name:"Save name"}).click();
+  await expect(page.getByRole("link",{name:renamed,exact:true})).toBeVisible();
+  await page.getByRole("button",{name:"Actions for " + renamed}).click();
+  await page.getByRole("button",{name:"Delete rig"}).click();
+  await page.getByRole("dialog",{name:"Delete rig"}).getByRole("button",{name:"Delete rig"}).click();
+  await expect(page.getByRole("link",{name:renamed,exact:true})).toHaveCount(0);
 });

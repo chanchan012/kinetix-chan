@@ -33,8 +33,8 @@ test("an MCP agent rigs a character and a walk cycle appears in the live studio"
       data:{name:"Outside the rig",fps:24,frameCount:24},
     })).json();
     await page.goto("/studio/"+id);
-    const room = page.getByRole("region",{name:"Live collaborators"});
-    await expect(room.getByRole("heading",{name:"Live collaborators"})).toBeVisible();
+    const room = page.getByRole("group",{name:"Collaborators"});
+    await expect(room.getByRole("status",{name:"Collaboration connected"})).toBeVisible();
     await page.getByRole("button",{name:"MCP",exact:true}).click();
     const setup = page.getByRole("dialog",{name:"MCP setup"});
     await setup.getByLabel("Credential name").fill("Walk agent");
@@ -62,7 +62,7 @@ test("an MCP agent rigs a character and a walk cycle appears in the live studio"
       knots:[{point:{x:0,y:-5}},{point:{x:32,y:-4}},{point:{x:31,y:5}},{point:{x:0,y:6}}]}});
     await call("bind_mesh_weights",{partId:"agent-leg",boneId:"agent-thigh"});
     await expect(page.getByRole("button",{name:"Agent thigh",exact:true})).toBeVisible({timeout:9000});
-    await expect(room.getByText("AI",{exact:true})).toBeVisible({timeout:9000});
+    await expect(room.getByRole("img",{name:/^AI ·/})).toBeVisible({timeout:9000});
     const clip = await call("create_animation_clip",{name:"Agent walk",fps:24,frameCount:24});
     const target = {kind:"ik",id:"agent-foot",property:"x"};
     await call("insert_keyframe",{clipId:clip.id,channel:target,frame:0,value:290});

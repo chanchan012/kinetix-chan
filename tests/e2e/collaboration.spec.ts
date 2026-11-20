@@ -31,10 +31,10 @@ test("an owner shares a rig and sees another account's selection and autosave", 
     await editor.goto("/studio/"+id);
     await expect(editor.getByRole("heading",{name:"Collaboration fixture",exact:true})).toBeVisible();
     await expect(editor.getByRole("button",{name:"Share",exact:true})).toHaveCount(0);
-    const collaborators = page.getByRole("region",{name:"Live collaborators"});
-    await expect(collaborators.getByRole("heading",{name:"Live collaborators"})).toBeVisible();
+    const collaborators = page.getByRole("group",{name:"Collaborators"});
+    await expect(collaborators.getByRole("status",{name:"Collaboration connected"})).toBeVisible();
     await editor.getByRole("button",{name:"Foreleg",exact:true}).click();
-    await expect(collaborators.getByText("Foreleg",{exact:true})).toBeVisible({timeout:9000});
+    await expect(collaborators.getByRole("img",{name:"Editor · Foreleg"})).toBeVisible({timeout:9000});
     await page.getByRole("button",{name:"Foreleg",exact:true}).click();
     const value = editor.getByLabel("Rotation (°)");
     await value.fill("67");
