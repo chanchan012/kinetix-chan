@@ -14,6 +14,7 @@ import { evaluateRig } from "../../lib/rig/kinematics";
 import { readRigState } from "../../lib/rig/model";
 import { strFromU8, unzipSync } from "fflate";
 import { createCanvas, loadImage } from "@napi-rs/canvas";
+import { spriteBundleRequest } from "../../lib/export/sprite-bundle-options";
 
 const pg = new PGlite();
 const library = new Library(drizzle(pg));
@@ -119,6 +120,18 @@ describe("saved library", () => {
     expect(packageBytes.headers.get("content-type")).toBe("application/zip");
     const agentPackage = await agent.exportSpritePackage({...parameters,preflight:false});
     expect(Buffer.from(await packageBytes.arrayBuffer()).toString("base64")).toBe(agentPackage.base64);
+    const bundleRequest=spriteBundleRequest.parse({revision:rig.revision+1,layout:"packed",clips:[{
+      id:clip.id,trackRevision:2,startFrame:0,endFrame:4,direction:"east",frames:[{frame:1,durationTicks:4}],
+    }]});
+    expect((await call("other","POST",path+"/sprite-bundle",bundleRequest)).status).toBe(404);
+    expect((await call("owner","POST",path+"/sprite-bundle",{...bundleRequest,clips:[{
+      ...bundleRequest.clips[0],trackRevision:1,
+    }]})).status).toBe(409);
+    const bundle=await call("owner","POST",path+"/sprite-bundle",bundleRequest);
+    expect(bundle.headers.get("content-type")).toBe("application/zip");
+    expect(Buffer.from(await bundle.arrayBuffer()).toString("base64")).toBe(
+      (await agent.exportSpriteBundle(bundleRequest)).base64,
+    );
     expect((await call("other","GET",path+"/artboard.png")).status).toBe(404);
     const exported = await call("owner","GET",path+"/artboard.png");
     expect(exported.headers.get("content-type")).toBe("image/png");

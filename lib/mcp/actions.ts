@@ -3,6 +3,8 @@ import type { Library } from "../../db/library";
 import { queueExport } from "../export/requests";
 import { prepareSpritePackage } from "../export/sprite-package";
 import { spritePackageRequest } from "../export/sprite-package-options";
+import { spriteBundleRequest } from "../export/sprite-bundle-options";
+import { prepareSpriteBundle } from "../export/sprite-bundle";
 import type { RoomBus } from "../realtime/bus";
 import type { RoomPresence } from "../realtime/protocol";
 import { channelSchema, easeSchema, sampleRig, setKey, setKeyEase, tracksSchema, type Channel, type Track } from "../rig/animation";
@@ -52,6 +54,7 @@ export const inputs = {
   bake_ik_to_keyframes:z.strictObject({clipId,constraintId:constraintSchema.shape.id,startFrame:frame.optional(),endFrame:frame.optional()}),
   trigger_lottie_export:z.strictObject({clipId:clipId.optional(),startFrame:frame.optional(),endFrame:frame.optional(),requestId:z.uuid().optional()}),
   export_sprite_package:spritePackageRequest,
+  export_sprite_bundle:spriteBundleRequest,
 };
 export type ToolName = keyof typeof inputs;
 
@@ -309,6 +312,15 @@ export class RigAgent {
       manifest:result.manifest,
       ...(result.bytes && { filename:"kinetix-" + input.clipId + ".zip",mimeType:"application/zip",
         base64:Buffer.from(result.bytes).toString("base64") }),
+    };
+  }
+  async exportSpriteBundle(input:z.output<typeof spriteBundleRequest>) {
+    const result=await prepareSpriteBundle(this.library.exports,this.userId,this.rigId,input);
+    if ("error" in result && result.error) throw new Error("Sprite bundle export failed: "+result.error);
+    return {
+      manifest:result.manifest,
+      ...(result.bytes && {filename:"kinetix-"+this.rigId+"-sprites.zip",mimeType:"application/zip",
+        base64:Buffer.from(result.bytes).toString("base64")}),
     };
   }
 }

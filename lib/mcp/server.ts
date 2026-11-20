@@ -20,14 +20,15 @@ export function createStudioMcp(agent:RigAgent) {
     name:ToolName, description:string, schema:Schema, run:(input:z.output<Schema>)=>Promise<object>,
   ) {
     const inputSchema:StandardSchemaWithJSON = schema;
+    const spriteExport=name==="export_sprite_package" || name==="export_sprite_bundle";
     server.registerTool(name,{description,inputSchema,annotations:{
-      readOnlyHint:name==="export_sprite_package" || name==="read_drawing_cel",
+      readOnlyHint:spriteExport || name==="read_drawing_cel",
       destructiveHint:["edit_document","bind_mesh_weights","generate_procedural_cycle","bake_ik_to_keyframes"].includes(name),
-      idempotentHint:name==="export_sprite_package" || name==="read_drawing_cel",openWorldHint:false,
+      idempotentHint:spriteExport || name==="read_drawing_cel",openWorldHint:false,
     }},async (raw:unknown):Promise<CallToolResult> => {
       try {
         const data = await run(schema.parse(raw));
-        const message = name==="export_sprite_package" && "base64" in data ?
+        const message = spriteExport && "base64" in data ?
           "Sprite package ready. Decode structuredContent.base64 to save the ZIP." : JSON.stringify(data);
         return {content:[{type:"text" as const,text:message}],structuredContent:{...data}};
       } catch (error) {
@@ -52,5 +53,6 @@ export function createStudioMcp(agent:RigAgent) {
   tool("bake_ik_to_keyframes","Sample IK into bone rotation keys and disable the constraint in the baked clip range.",inputs.bake_ik_to_keyframes,input=>agent.bakeIK(input));
   tool("trigger_lottie_export","Queue a Lottie snapshot for the selected clip or the rig's study animation.",inputs.trigger_lottie_export,input=>agent.triggerLottie(input));
   tool("export_sprite_package","Preflight or render a fixed-grid sprite ZIP from a saved clip at the specified revisions.",inputs.export_sprite_package,input=>agent.exportSpritePackage(input));
+  tool("export_sprite_bundle","Preflight or render an owner-scoped, revision-pinned multi-clip ZIP with loose frames, fixed grids or packed atlas pages.",inputs.export_sprite_bundle,input=>agent.exportSpriteBundle(input));
   return server;
 }
