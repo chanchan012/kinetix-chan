@@ -54,12 +54,17 @@ export const knotSchema = z.strictObject({
   point: pointSchema,
   incoming: pointSchema.optional(),
   outgoing: pointSchema.optional(),
+  mode: z.enum(["corner","smooth"]).optional(),
 });
+const scaleComponent = z.number().min(-100).max(100).refine(value => Math.abs(value) >= 0.01);
 export const partSchema = z.strictObject({
   id: identifier,
   name: z.string().trim().min(1).max(120),
   parentId: identifier.nullable(),
   offset: pointSchema,
+  rotation: coordinate.optional(),
+  scale: z.strictObject({ x: scaleComponent, y: scaleComponent }).optional(),
+  pivot: pointSchema.optional(),
   knots: z.array(knotSchema).min(2).max(256),
   fill: z.string().regex(/^#[a-fA-F0-9]{6}$/),
   closed: z.boolean(),
@@ -82,6 +87,7 @@ export const artboardSchema = z.strictObject({
 });
 export type Artboard = z.infer<typeof artboardSchema>;
 export const defaultArtboard: Artboard = { name: "Artboard", width: 512, height: 320, background: null };
+export const guideSchema = z.strictObject({axis:z.enum(["x","y"]),position:coordinate});
 
 const documentContents = {
   bones: z.array(boneSchema).max(512),
@@ -90,7 +96,8 @@ const documentContents = {
 };
 const documentSchema = z.discriminatedUnion("version", [
   z.strictObject({ version: z.literal(1), study: studyIdSchema, ...documentContents }),
-  z.strictObject({ version: z.literal(2), study: z.null(), artboard: artboardSchema, ...documentContents }),
+  z.strictObject({ version: z.literal(2), study: z.null(), artboard: artboardSchema,
+    guides:z.array(guideSchema).max(64).optional(),...documentContents }),
 ]);
 export type KinetixRigState = z.infer<typeof documentSchema>;
 export const artboardFor = (rig: KinetixRigState) => rig.version === 2 ? rig.artboard : defaultArtboard;

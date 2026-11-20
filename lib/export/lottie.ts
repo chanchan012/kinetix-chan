@@ -49,16 +49,18 @@ class VectorCapture implements RigDrawingContext {
     this.lineWidth = state.width;
   }
   translate(x: number, y: number) {
+    this.transform(1,0,0,1,x,y);
+  }
+  transform(aa:number,bb:number,cc:number,dd:number,ee:number,ff:number) {
     const [a, b, c, d, e, f] = this.matrix;
-    this.matrix = [a, b, c, d, x * a + y * c + e, x * b + y * d + f];
+    this.matrix = [
+      aa*a+bb*c,aa*b+bb*d,cc*a+dd*c,cc*b+dd*d,ee*a+ff*c+e,ee*b+ff*d+f,
+    ];
   }
   rotate(angle: number) {
-    const [a, b, c, d, e, f] = this.matrix;
     const sine = Math.sin(angle);
     const cosine = Math.cos(angle);
-    this.matrix = [
-      a * cosine + c * sine, b * cosine + d * sine, c * cosine - a * sine, d * cosine - b * sine, e, f,
-    ];
+    this.transform(cosine,sine,-sine,cosine,0,0);
   }
   beginPath() {
     this.paths = [];

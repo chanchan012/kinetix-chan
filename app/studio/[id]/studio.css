@@ -70,7 +70,8 @@
   padding:4px;border:1px solid #d7d4c6;border-radius:9px;background:#fffdf4eb;
   box-shadow:0 3px 12px #382c171a;backdrop-filter:blur(8px);
 }
-.studio-tools { left:12px;top:50%;transform:translateY(-50%);flex-direction:column }
+.studio-tools { left:12px;top:50%;transform:translateY(-50%);flex-direction:column;max-height:calc(100% - 16px);overflow:auto;scrollbar-width:thin }
+.studio-tools button { flex-shrink:0 }
 .studio-viewport-actions { right:12px;top:12px }
 .studio-stage-footer { left:50%;bottom:12px;transform:translateX(-50%) }
 .studio-tool-group { display:flex;align-items:center;gap:3px;min-width:0 }
