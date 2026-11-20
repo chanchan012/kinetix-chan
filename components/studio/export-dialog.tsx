@@ -7,8 +7,8 @@ import type { ClipTiming } from "./timeline";
 type Job = { id: string; format: ExportFormat; status: "queued" | "running" | "ready" | "failed"; byteCount: number | null };
 const statusLabel = { queued:"Queued", running:"Rendering", ready:"Ready", failed:"Failed" } as const;
 
-export function ExportDialog({rigId, clip, frameCount, unsaved, renderConfigured, close}: {
-  rigId: string; clip?: ClipTiming; frameCount: number; unsaved: boolean; renderConfigured: boolean; close: () => void;
+export function ExportDialog({rigId, clip, frameCount, unsaved, hasArtboard, renderConfigured, close}: {
+  rigId: string; clip?: ClipTiming; frameCount: number; unsaved: boolean; hasArtboard: boolean; renderConfigured: boolean; close: () => void;
 }) {
   const [format, setFormat] = useState<ExportFormat>("lottie");
   const [jobs, setJobs] = useState<Job[]>([]);
@@ -84,6 +84,7 @@ export function ExportDialog({rigId, clip, frameCount, unsaved, renderConfigured
   return <dialog ref={dialog} className="studio-easing studio-export" aria-label="Export animation" onCancel={close}>
     <header><h2>Export animation</h2><button onClick={close}>Close</button></header>
     {unsaved && <p className="studio-export-note">The export uses your saved rig and keyframes.</p>}
+    {hasArtboard && <a href={"/api/rigs/" + rigId + "/artboard.png"}>Download saved artboard PNG</a>}
     {!renderConfigured && <p className="studio-export-note">Exports will run when the render service is connected.</p>}
     <form onSubmit={enqueue}>
       <label>Format<select value={format} onChange={event => setFormat(event.target.value as ExportFormat)}>

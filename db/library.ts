@@ -2,7 +2,7 @@ import { and, asc, desc, eq, exists, inArray, isNull, or, sql } from "drizzle-or
 import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 import { clips, rigCollaborators, rigs } from "./schema";
 import type { Study } from "../lib/studies";
-import { createRigState, type KinetixRigState } from "../lib/rig/model";
+import { createBlankRig, createRigState, type Artboard, type KinetixRigState } from "../lib/rig/model";
 import type { Track } from "../lib/rig/animation";
 import { ExportQueue } from "./exports";
 import { RigTokens } from "./tokens";
@@ -63,15 +63,17 @@ export class Library {
       .where(and(inArray(rigCollaborators.rigId,owned),eq(rigCollaborators.userId,user)))
       .returning({userId:rigCollaborators.userId}))[0];
   }
-  async create(owner:string,name:string,study:Study["id"]) {
-    return (await this.db.insert(rigs).values({ownerId:owner,name,state:createRigState(study)}).returning(rigFields))[0];
+  async create(owner:string,name:string,source:Study["id"] | Artboard) {
+    const state = typeof source === "string" ? createRigState(source) : createBlankRig(source);
+    return (await this.db.insert(rigs).values({ownerId:owner,name,state}).returning(rigFields))[0];
   }
   async saveRigState(owner:string,id:string,revision:number,state:KinetixRigState) {
-    const study = sql`case when ${rigs.state}->>'study' in ('fox','heron','fish')
+    const study = sql`case when ${rigs.state}->>'version' = '2' then 'blank'
+      when ${rigs.state}->>'study' in ('fox','heron','fish')
       then ${rigs.state}->>'study' else 'fox' end`;
     const [saved] = await this.db.update(rigs).set({
       state, updatedAt:new Date(), revision:sql`${rigs.revision} + 1`,
-    }).where(and(eq(rigs.id,id),this.canEdit(owner),eq(rigs.revision,revision),sql`${study} = ${state.study}`))
+    }).where(and(eq(rigs.id,id),this.canEdit(owner),eq(rigs.revision,revision),sql`${study} = ${state.study ?? "blank"}`))
       .returning(rigFields);
     return saved;
   }

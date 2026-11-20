@@ -3,15 +3,17 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
-import { ArrowUpRight, DotsThree, FilmSlate, Plus } from "@phosphor-icons/react";
+import { ArrowUpRight, DotsThree, FilmSlate, Polygon, Plus } from "@phosphor-icons/react";
 import { UserButton } from "@clerk/nextjs";
 import { Brand } from "./brand";
 import { ArtCanvas } from "./art-canvas";
 import { Dialog } from "./dialog";
+import { ArtboardFields, readArtboardFields } from "./artboard-fields";
+import { defaultArtboard } from "@/lib/rig/model";
 import { studies, studyFor, type Study } from "@/lib/studies";
 
-type Rig = { id: string; name: string; state: {study?: string}; owned?: boolean };
-type LibraryDialog = "create" | "studies" | { action: "rename" | "delete"; rig: Rig } | null;
+type Rig = { id: string; name: string; state: {study?: string | null}; owned?: boolean };
+type LibraryDialog = "create" | "design" | "studies" | { action: "rename" | "delete"; rig: Rig } | null;
 
 async function request<T>(path: string, method = "GET", body?: object): Promise<T> {
   const response = await fetch("/api/" + path, {
@@ -100,8 +102,9 @@ export function RigLibrary() {
     setBusy(true);
     setActionError("");
     try {
-      if (dialog === "create") {
-        const rig = await request<Rig>("rigs", "POST", {name: values.get("name"), study: values.get("study")});
+      if (dialog === "create" || dialog === "design") {
+        const source = dialog === "design" ? { artboard: readArtboardFields(values) } : { study: values.get("study") };
+        const rig = await request<Rig>("rigs", "POST", {name: values.get("name"), ...source});
         setRigs(rows => [rig, ...rows]);
         router.push("/studio/" + rig.id);
       } else if (dialog.action === "rename") {
@@ -121,7 +124,7 @@ export function RigLibrary() {
   }
 
   const action = typeof dialog === "object" ? dialog : null;
-  const title = dialog === "create" ? "New rig" : action?.action === "rename" ? "Rename rig" : "Delete rig";
+  const title = dialog === "design" ? "New design" : dialog === "create" ? "New rig" : action?.action === "rename" ? "Rename rig" : "Delete rig";
 
   return <div className="app-shell">
     <header className="topbar"><Brand/><span className="brand-divider"/><span className="studio-name">Motion Studio</span>
@@ -131,7 +134,8 @@ export function RigLibrary() {
       <div className="library-heading"><div><h1>Rig library</h1><p>Open a rig to work on its animation in Studio.</p></div>
         <div className="library-heading-actions">
           <button className="library-secondary" onClick={() => show("studies")}><FilmSlate size={17}/>Motion studies</button>
-          <button className="primary" onClick={() => show("create")}><Plus size={17}/>New rig</button>
+          <button className="library-secondary" onClick={() => show("create")}><Plus size={17}/>New rig</button>
+          <button className="primary" onClick={() => show("design")}><Polygon size={17}/>New design</button>
         </div>
       </div>
       {error && <p role="alert">{error} <button onClick={() => void refresh()}>Retry</button></p>}
@@ -141,7 +145,8 @@ export function RigLibrary() {
         {rigs.length === 0 ? <p className="empty-library">Create a rig to start your collection.</p> :
           <div className="rig-grid">{rigs.map(rig => <article className="rig-card-shell" key={rig.id}>
             <Link className="rig-card" prefetch={false} href={"/studio/" + rig.id}>
-              <Art study={studyFor(rig.state.study)}/>
+              {rig.state.study === null ? <span className="library-art library-design-art"><Polygon size={42}/></span> :
+                <Art study={studyFor(rig.state.study)}/>}
               <span><strong>{rig.name}</strong>{rig.owned === false && <small>Shared rig</small>}<ArrowUpRight size={16}/></span>
             </Link>
             {rig.owned !== false && <RigActions rig={rig} choose={action => show({action, rig})}/>}
@@ -154,17 +159,18 @@ export function RigLibrary() {
         <Art study={study}/><span><strong>{study.name}</strong><small>{study.clip} · {study.frames} frames</small><ArrowUpRight size={16}/></span>
       </Link>)}</div>
     </Dialog>}
-    {(dialog === "create" || action) && <Dialog title={title} className="library-modal" onClose={() => { if (!pending.current) show(null); }}>
+    {(dialog === "create" || dialog === "design" || action) && <Dialog title={title} className="library-modal" onClose={() => { if (!pending.current) show(null); }}>
       <form onSubmit={submit}>
         {action?.action === "delete" ?
           <p>Delete <strong>{action.rig.name}</strong> and all its animation clips?</p> :
-          <label>Rig name<input name="name" defaultValue={action?.rig.name ?? ""} required maxLength={120} autoFocus/></label>}
+          <label>{dialog === "design" ? "Design name" : "Rig name"}<input name="name" defaultValue={action?.rig.name ?? ""} required maxLength={120} autoFocus/></label>}
+        {dialog === "design" && <ArtboardFields artboard={defaultArtboard}/>}
         {dialog === "create" && <label>Character<select name="study">
           {studies.map(study => <option key={study.id} value={study.id}>{study.name}</option>)}
         </select></label>}
         {actionError && <p role="alert">{actionError}</p>}
         <button className={action?.action === "delete" ? "primary library-delete" : "primary"} disabled={busy}>
-          {dialog === "create" ? "Create rig" : action?.action === "rename" ? "Save name" : "Delete rig"}
+          {dialog === "design" ? "Create design" : dialog === "create" ? "Create rig" : action?.action === "rename" ? "Save name" : "Delete rig"}
         </button>
       </form>
     </Dialog>}

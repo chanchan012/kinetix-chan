@@ -6,10 +6,22 @@ import type { Library } from "../../db/library";
 import type { IdentityEnv } from "../api";
 import { formats } from "./frames";
 import { exportRequest, queueExport } from "./requests";
+import { readRigState, referenceFrameCount } from "../rig/model";
+import { renderPngFrame } from "./raster";
 const missing = {error:"not_found"} as const;
 
 export function exportApi(repository: () => Library) {
   return new Hono<IdentityEnv>()
+    .get("/:id/artboard.png",async c => {
+      const row = await repository().open(c.get("userId")!,c.req.param("id"));
+      if (!row) return c.json(missing,404);
+      const rig = readRigState(row.state);
+      const png = renderPngFrame({rig,name:row.name,tracks:[],fps:24,frameCount:referenceFrameCount(rig),startFrame:0,endFrame:0});
+      c.header("Content-Type","image/png");
+      c.header("Content-Disposition",'attachment; filename="kinetix-artboard.png"');
+      c.header("Cache-Control","private, no-store");
+      return c.body(new Uint8Array(png));
+    })
     .get("/:id/exports",async c => {
       return c.json(await repository().exports.list(c.get("userId")!,c.req.param("id")));
     })

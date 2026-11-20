@@ -1,15 +1,14 @@
 import { z } from "zod";
 import type { Library } from "../../db/library";
-import { artboard } from "../export/frames";
 import { queueExport } from "../export/requests";
 import type { RoomBus } from "../realtime/bus";
 import type { RoomPresence } from "../realtime/protocol";
 import { channelSchema, easeSchema, sampleRig, setKey, setKeyEase, tracksSchema, type Channel, type Track } from "../rig/animation";
-import { editRig, type RigCommand } from "../rig/commands";
+import { editRig, rigCommandSchema, type RigCommand } from "../rig/commands";
 import { evaluateRig } from "../rig/kinematics";
-import { boneSchema, constraintSchema, partSchema, readRigState, type KinetixRigState } from "../rig/model";
+import { artboardFor, boneSchema, constraintSchema, partSchema, readRigState, type KinetixRigState } from "../rig/model";
 import { bindMesh } from "../rig/skinning";
-import { viewportFrame } from "../rig/render";
+import { viewportFrameFor } from "../rig/render";
 
 const frame = z.int().min(0).max(35_999);
 const clipId = z.uuid();
@@ -21,6 +20,10 @@ export const inputs = {
   create_bone:z.strictObject({bone:boneSchema}),
   attach_ik_constraint:z.strictObject({constraint:constraintSchema}),
   draw_vector_part:z.strictObject({part:partSchema.omit({mesh:true})}),
+  edit_document:z.strictObject({
+    revision:z.int().min(0).max(2_147_483_646),
+    commands:z.array(rigCommandSchema).min(1).max(100),
+  }),
   bind_mesh_weights:z.strictObject({
     partId:partSchema.shape.id, boneId,
     vertices:z.array(z.strictObject({
@@ -66,11 +69,14 @@ export class RigAgent {
     }));
   }
 
-  private async changeRig(label:string, build:(state:KinetixRigState)=>RigCommand, selection:Selection) {
+  private async changeRig(label:string, build:(state:KinetixRigState)=>RigCommand | RigCommand[], selection:Selection, expectedRevision?:number) {
     for (let attempt=0; attempt<3; attempt++) {
       const current = await this.snapshot();
+      if (expectedRevision !== undefined && current.revision !== expectedRevision) {
+        throw new Error("The document has changed. Read its current revision before retrying.");
+      }
       const command = build(current.state);
-      const [state] = editRig(current.state,[command]);
+      const [state] = editRig(current.state,Array.isArray(command) ? command : [command]);
       const saved = await this.library.saveRigState(this.userId,this.rigId,current.revision,state);
       if (saved) {
         await this.live(bus=>bus.changed(this.rigId,{
@@ -104,6 +110,7 @@ export class RigAgent {
     return {
       rigId:id,name,revision,bones:state.bones,ikConstraints:state.constraints,
       slots:state.parts.map(part=>({id:part.id,name:part.name,parentId:part.parentId,vertices:part.mesh?.vertices.length ?? 0})),
+      parts:state.parts,
     };
   }
 
@@ -112,8 +119,11 @@ export class RigAgent {
     return {rigId:this.rigId,clips:clips.map(clip=>({...clip,tracks:tracksSchema.parse(clip.tracks)}))};
   }
 
-  viewportBounds() {
-    return {rigId:this.rigId,...viewportFrame,exportArtboard:{x:0,y:0,...artboard},unit:"px",yAxis:"down"};
+  async viewportBounds() {
+    const {state} = await this.snapshot();
+    const {width,height} = artboardFor(state);
+    return {rigId:this.rigId,...viewportFrameFor(state),exportArtboard:{x:0,y:0,width,height},
+      ...(state.version === 2 && {artboard:state.artboard}),unit:"px",yAxis:"down"};
   }
 
   createBone({bone}:z.infer<typeof inputs.create_bone>) {
@@ -124,6 +134,9 @@ export class RigAgent {
   }
   drawVector({part}:z.infer<typeof inputs.draw_vector_part>) {
     return this.changeRig("Draw vector part",()=>({type:"part.create",part}),{kind:"part",id:part.id});
+  }
+  editDocument(input:z.infer<typeof inputs.edit_document>) {
+    return this.changeRig("Edit document",()=>input.commands,null,input.revision);
   }
   bindWeights(input:z.infer<typeof inputs.bind_mesh_weights>) {
     return this.changeRig("Bind mesh weights",state=>{

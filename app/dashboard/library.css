@@ -21,6 +21,7 @@
 .rig-actions-list button:hover,.rig-actions-list button:focus-visible { background:#f1ede2 }
 .rig-actions-list button:last-child { color:#8d361c }
 .library-art { display:block;height:clamp(100px,16vw,220px);background-image:radial-gradient(#68625633 .8px,transparent .9px);background-size:15px 15px }
+.library-design-art { display:grid;place-items:center;background-color:#f0e8d9;color:#9f492c }
 .rig-card>span:last-child { display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;padding:15px 18px }
 .rig-card strong { overflow-wrap:anywhere }
 .rig-card small { display:block;color:var(--muted);grid-row:2 }

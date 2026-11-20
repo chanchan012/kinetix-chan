@@ -4,11 +4,26 @@ import { createRigState, type KinetixRigState, type Point, type VectorPart } fro
 import { deformMesh } from "./skinning";
 
 export const viewportFrame = {x:-10,y:3,width:510,height:280};
+export const viewportFrameFor = (rig: KinetixRigState) => rig.version === 1 ? viewportFrame :
+  { x: 0, y: 0, width: rig.artboard.width, height: rig.artboard.height };
 
 export type RigDrawingContext = Pick<CanvasRenderingContext2D,
   "arc" | "beginPath" | "bezierCurveTo" | "closePath" | "fill" | "lineTo" |
   "lineWidth" | "moveTo" | "restore" | "rotate" | "save" | "stroke" | "translate"
 > & { fillStyle: unknown; strokeStyle: unknown };
+
+export function drawArtboardBackground(context: RigDrawingContext, rig: KinetixRigState) {
+  if (rig.version !== 2 || !rig.artboard.background) return;
+  const { width, height, background } = rig.artboard;
+  context.beginPath();
+  context.moveTo(0, 0);
+  context.lineTo(width, 0);
+  context.lineTo(width, height);
+  context.lineTo(0, height);
+  context.closePath();
+  context.fillStyle = background;
+  context.fill();
+}
 
 export function partSpace(point: Point, part: VectorPart, poses: Map<string, BonePose>): Point {
   const parent = part.parentId === null ? undefined : poses.get(part.parentId);
@@ -63,7 +78,7 @@ export function drawRigArtwork(
   context: RigDrawingContext, rig: KinetixRigState, poses: Map<string, BonePose>, phase: number,
   reference = true,
 ) {
-  if (reference) {
+  if (reference && rig.study) {
     const root = poses.get("root");
     const rest = createRigState(rig.study).bones[0].offset;
     context.save();

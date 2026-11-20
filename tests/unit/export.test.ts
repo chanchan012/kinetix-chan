@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { unzipSync, strFromU8 } from "fflate";
 import { z } from "zod";
+import { createCanvas, loadImage } from "@napi-rs/canvas";
 import { compileLottie } from "../../lib/export/lottie";
-import { renderPngSequence, renderSpritesheet, renderVideo } from "../../lib/export/raster";
-import { createRigState } from "../../lib/rig/model";
+import { renderPngFrame, renderPngSequence, renderSpritesheet, renderVideo } from "../../lib/export/raster";
+import { createBlankRig, createRigState, readRigState } from "../../lib/rig/model";
+import { editRig } from "../../lib/rig/commands";
 import { setKey } from "../../lib/rig/animation";
 import type { ExportSnapshot } from "../../lib/export/frames";
 
@@ -35,6 +37,32 @@ const lottie = z.object({
 });
 
 describe("animation export formats", () => {
+  it("preserves blank artboard dimensions, transparency, geometry and stacking across export formats", async () => {
+    const artboard = { name:"Portrait", width:96, height:151, background:null };
+    const triangle = {
+      id:"base", name:"Head", parentId:null, offset:{x:0,y:0}, closed:true, fill:"#ff1100",
+      knots:[{point:{x:16,y:16}},{point:{x:72,y:16}},{point:{x:44,y:90}}],
+    };
+    const blank = createBlankRig(artboard);
+    const [rig] = editRig(blank,[
+      {type:"part.create",part:triangle},
+      {type:"part.create",part:{...triangle,id:"top",fill:"#0055ff"}},
+      {type:"part.reorder",id:"base",direction:"forward"},
+      {type:"part.splitEdge",id:"base",edge:0},
+    ]);
+    expect(rig.parts[1].knots[1].point).toEqual({x:44,y:16});
+    expect(readRigState(JSON.parse(JSON.stringify(rig)))).toEqual(rig);
+    const input = {...snapshot(),rig,frameCount:1,endFrame:0,tracks:[]};
+    const image = await loadImage(renderPngFrame(input));
+    const ctx = createCanvas(image.width,image.height).getContext("2d");
+    ctx.drawImage(image,0,0);
+    expect([image.width,image.height]).toEqual([96,151]);
+    expect(ctx.getImageData(1,1,1,1).data[3]).toBe(0);
+    expect(Array.from(ctx.getImageData(44,24,1,1).data)).toEqual([255,17,0,255]);
+    expect(compileLottie(input)).toMatchObject({w:96,h:151,op:1});
+    expect(compileLottie(snapshot())).toMatchObject({w:512,h:320});
+  });
+
   it("produces deterministic Lottie shape layers and animated control points", () => {
     const input = snapshot();
     input.rig.parts.push({

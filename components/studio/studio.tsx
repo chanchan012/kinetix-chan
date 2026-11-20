@@ -3,13 +3,12 @@
 import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState, type CSSProperties } from "react";
 import Link from "next/link";
 import { useStore } from "zustand";
-import { ArrowLeft, ArrowCounterClockwise, ArrowClockwise, Bone as BoneIcon, Cursor, FloppyDisk, Keyboard, PenNib } from "@phosphor-icons/react";
+import { ArrowLeft, ArrowCounterClockwise, ArrowClockwise, Bone as BoneIcon, Cursor, FloppyDisk, Keyboard, PenNib, Polygon } from "@phosphor-icons/react";
 import { createRigStore } from "@/lib/rig/store";
 import { evaluateRig, rotatePoint } from "@/lib/rig/kinematics";
-import { orderedBones, type Bone, type KinetixRigState, type Point, type VectorKnot, type VectorPart } from "@/lib/rig/model";
+import { orderedBones, referenceFrameCount, type Bone, type KinetixRigState, type Point, type VectorKnot, type VectorPart } from "@/lib/rig/model";
 import { sampleRig } from "@/lib/rig/animation";
 import { bindMesh } from "@/lib/rig/skinning";
-import { studyFor } from "@/lib/studies";
 import type { RigCommand } from "@/lib/rig/commands";
 import { Viewport, type Selection, type Tool, type Brush } from "./viewport";
 import { Timeline, type ClipTiming, type FramePreview } from "./timeline";
@@ -21,6 +20,8 @@ import { PanelHandle, usePanelLayout } from "./panel-layout";
 import { ShortcutsDialog, useStudioShortcuts } from "./shortcuts";
 import { Presence } from "./presence";
 import { ClipManager } from "./clip-manager";
+import { ArtboardFields, readArtboardFields } from "../artboard-fields";
+import { Dialog } from "../dialog";
 
 type Props = {
   actorId: string; rigId: string; name: string; initial: KinetixRigState; revision: number; clips: ClipTiming[];
@@ -30,7 +31,8 @@ type Props = {
 const degrees = 180 / Math.PI;
 const tools = [{ id: "select", label: "Select", icon: Cursor, key: "V" },
   { id: "bone", label: "Draw bone", icon: BoneIcon, key: "B" },
-  { id: "pen", label: "Pen", icon: PenNib, key: "P" }] as const;
+  { id: "pen", label: "Pen", icon: PenNib, key: "P" },
+  { id: "polygon", label: "Polygon", icon: Polygon, key: "G" }] as const;
 const zoomLevels = [0.5, 0.75, 1, 1.25, 1.5, 2, 3];
 
 export function Studio({actorId, rigId, name, initial, revision: initialRevision, clips, renderConfigured, owned}: Props) {
@@ -41,12 +43,13 @@ export function Studio({actorId, rigId, name, initial, revision: initialRevision
   const [saved, setSaved] = useState(rig);
   const [revision, setRevision] = useState(initialRevision);
   const [selected, select] = useState<Selection>(rig.bones[0] ? { kind: "bone", id: rig.bones[0].id } : null);
+  const [edgeSelection, setEdgeSelection] = useState<{partId:string; index:number} | null>(null);
   const [tool, setTool] = useState<Tool>("select");
   const [pen, setPen] = useState<VectorKnot[]>([]);
   const [showBones, setShowBones] = useState(true);
   const [reference, setReference] = useState(true);
   const [zoom, setZoom] = useState(1);
-  const [animation, setAnimation] = useState<FramePreview>({ frame: 0, frames: studyFor(initial.study).frames, tracks: [], onion: false });
+  const [animation, setAnimation] = useState<FramePreview>({ frame: 0, frames: referenceFrameCount(initial), tracks: [], onion: false });
   const [timelineDirty, setTimelineDirty] = useState(false);
   const [clip, setClip] = useState<ClipTiming | undefined>(clips[0]);
   const [clipId, selectClip] = useState(clips[0]?.id ?? "");
@@ -56,6 +59,7 @@ export function Studio({actorId, rigId, name, initial, revision: initialRevision
   const [mcpOpen, setMcpOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [clipsOpen, setClipsOpen] = useState(false);
+  const [artboardOpen, setArtboardOpen] = useState(false);
   const [brush, setBrush] = useState<Brush | null>(null);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -68,6 +72,8 @@ export function Studio({actorId, rigId, name, initial, revision: initialRevision
   const dirty = saved !== rig;
   const bone = selected?.kind === "bone" ? rig.bones.find(item => item.id === selected.id) : undefined;
   const part = selected?.kind === "part" ? rig.parts.find(item => item.id === selected.id) : undefined;
+  const selectedEdge = edgeSelection && edgeSelection.partId === part?.id ? edgeSelection.index : -1;
+  const setEdge = (index:number) => setEdgeSelection(part && index >= 0 ? {partId:part.id,index} : null);
   const activeBrush = part && brush?.partId === part.id && part.mesh && tool === "select" &&
     part.mesh.bindings.some(binding => binding.id === brush.boneId) ? brush : null;
   const pose = useMemo(() => sampleRig(rig,animation.tracks,animation.frame), [rig,animation]);
@@ -210,8 +216,9 @@ export function Studio({actorId, rigId, name, initial, revision: initialRevision
       incoming: knot.incoming && toLocal(knot.incoming),
       outgoing: knot.outgoing && toLocal(knot.outgoing),
     }));
-    if (edit("Draw path", { type: "part.create", part: {
-      id, parentId: bone?.id ?? null, name: "Path " + (rig.parts.length + 1), offset: { x: 0, y: 0 },
+    const kind = tool === "polygon" ? "Polygon" : "Path";
+    if (edit("Draw " + kind.toLowerCase(), { type: "part.create", part: {
+      id, parentId: bone?.id ?? null, name: kind + " " + (rig.parts.length + 1), offset: { x: 0, y: 0 },
       knots, fill: "#b54b2b", closed,
     } })) {
       select({ kind: "part", id });
@@ -221,7 +228,7 @@ export function Studio({actorId, rigId, name, initial, revision: initialRevision
   }
 
   function chooseTool(next: Tool) {
-    if (next !== "pen") setPen([]);
+    if (next !== tool) setPen([]);
     if (next === "bone") setShowBones(true);
     if (next === "select") setBrush(null);
     setTool(next);
@@ -244,10 +251,10 @@ export function Studio({actorId, rigId, name, initial, revision: initialRevision
         event.preventDefault();
         chooseTool(next.id);
       } else if (key === "escape") chooseTool("select");
-      else if (key === "enter" && tool === "pen" && !event.repeat &&
+      else if (key === "enter" && (tool === "pen" || tool === "polygon") && !event.repeat &&
         !(event.target instanceof HTMLElement && event.target.closest("button, a, summary"))) {
         event.preventDefault();
-        finishPath(event.shiftKey);
+        finishPath(tool === "polygon" || event.shiftKey);
       } else if (key === "h" && !event.repeat) {
         event.preventDefault();
         setShowBones(value => !value);
@@ -307,22 +314,24 @@ export function Studio({actorId, rigId, name, initial, revision: initialRevision
           </select></label>
         </div>
         <div className="studio-artboard"><Viewport rig={pose} brush={activeBrush} ghosts={ghosts} remoteBones={remoteBones}
-          {...{ phase, selected, select, tool, reference, zoom, showBones, pen, addBone, edit }}
+          {...{ phase, selected, selectedEdge, select, tool, reference, zoom, showBones, pen, addBone, edit }}
+          closePolygon={() => finishPath(true)}
           addKnot={knot => setPen(knots => knots.length < 256 ? [...knots, knot] : knots)}/></div>
         <div className="studio-stage-footer">
-          {tool === "pen" ? <div className="studio-tool-group">
-            <button disabled={pen.length < 2} onClick={() => finishPath(false)}>Finish path</button>
-            <button disabled={pen.length < 3} onClick={() => finishPath(true)}>Close shape</button>
+          {tool === "pen" || tool === "polygon" ? <div className="studio-tool-group">
+            {tool === "pen" && <button disabled={pen.length < 2} onClick={() => finishPath(false)}>Finish path</button>}
+            <button disabled={pen.length < 3} onClick={() => finishPath(true)}>{tool === "polygon" ? "Close polygon" : "Close shape"}</button>
           </div> : <div className="studio-tool-group">
             <button title="Show or hide bones (H)" aria-pressed={showBones} onClick={() => setShowBones(value => !value)}>Bones</button>
-            <button aria-pressed={reference} onClick={() => setReference(value => !value)}>Artwork</button>
+            {rig.study && <button aria-pressed={reference} onClick={() => setReference(value => !value)}>Artwork</button>}
+            {rig.version === 2 && <button onClick={() => setArtboardOpen(true)}>Artboard</button>}
           </div>}
         </div>
       </section>
       <PanelHandle panel="inspector" size={layout.panels.inspector} label="Resize inspector" controls="studio-inspector" direction={-1}/>
       <aside className="studio-inspector" id="studio-inspector" aria-label="Inspector">
         <div className="studio-panel-title"><h2>Inspector</h2></div>
-        <Inspector {...{ bone, part, rig, edit }} clear={() => select(null)}/>
+        <Inspector {...{ bone, part, rig, edit, selectedEdge, setEdge }} clear={() => select(null)}/>
         {part?.closed && <WeightTools key={part.id} part={part} rig={rig} brush={activeBrush} setBrush={setBrush} edit={edit} report={setError}/>}
         {last && <p className="studio-history" role="status">{last.actor.kind === "ai" ? "AI" : "Human"} · {last.label}</p>}
         {!last && room.lastEdit?.kind === "ai" && <p className="studio-history" role="status">AI · {room.lastEdit.label ?? "Edit rig"}</p>}
@@ -332,12 +341,22 @@ export function Studio({actorId, rigId, name, initial, revision: initialRevision
       <Timeline {...{ rigId, rig, selected, select, clipId, selectClip }} clips={liveClips}
         manageClips={() => setClipsOpen(true)} preview={setAnimation} onDirty={setTimelineDirty} onClip={setClip}/>
     </div>
-    {exportOpen && <ExportDialog rigId={rigId} clip={clip} frameCount={studyFor(rig.study).frames}
-      unsaved={dirty || timelineDirty} renderConfigured={renderConfigured} close={() => setExportOpen(false)}/>}
+    {exportOpen && <ExportDialog rigId={rigId} clip={clip} frameCount={referenceFrameCount(rig)}
+      unsaved={dirty || timelineDirty} hasArtboard={rig.version === 2} renderConfigured={renderConfigured} close={() => setExportOpen(false)}/>}
     {shareOpen && <ShareDialog rigId={rigId} close={() => setShareOpen(false)}/>}
     {mcpOpen && <McpDialog rigId={rigId} close={() => setMcpOpen(false)}/>}
     {shortcutsOpen && <ShortcutsDialog close={() => setShortcutsOpen(false)}/>}
     {clipsOpen && <ClipManager rigId={rigId} close={() => setClipsOpen(false)} changed={clipChanged}/>}
+    {artboardOpen && rig.version === 2 && <Dialog title="Artboard settings" className="studio-easing studio-export" onClose={() => setArtboardOpen(false)}>
+      <form onSubmit={event => {
+        event.preventDefault();
+        const artboard = readArtboardFields(new FormData(event.currentTarget));
+        if (edit("Edit artboard", { type: "artboard.update", artboard })) setArtboardOpen(false);
+      }}>
+        <ArtboardFields artboard={rig.artboard}/>
+        <button className="studio-save">Apply artboard settings</button>
+      </form>
+    </Dialog>}
   </main>;
 }
 
@@ -413,9 +432,9 @@ function Hierarchy({rig, selected, select}: {rig: KinetixRigState; selected: Sel
   </div>;
 }
 
-function Inspector({bone, part, rig, edit, clear}: {
+function Inspector({bone, part, rig, edit, clear, selectedEdge, setEdge}: {
   bone?: Bone; part?: VectorPart; rig: KinetixRigState; edit: (label: string, ...commands: RigCommand[]) => boolean;
-  clear: () => void;
+  clear: () => void; selectedEdge:number; setEdge:(index:number)=>void;
 }) {
   if (bone) {
     const constraint = rig.constraints.find(ik => [ik.upperId, ik.lowerId].includes(bone.id));
@@ -457,7 +476,20 @@ function Inspector({bone, part, rig, edit, clear}: {
       }}>Delete bone</button>
     </div>;
   }
-  if (part) return <div className="studio-properties" key={part.id}>
+  if (part) return <PathProperties key={part.id} {...{ part, rig, edit, clear, selectedEdge, setEdge }}/>;
+  return <p className="studio-empty">Select a bone or path to edit it.</p>;
+}
+
+function PathProperties({part, rig, edit, clear, selectedEdge:edge, setEdge}: {
+  part: VectorPart; rig: KinetixRigState; edit: (label: string, ...commands: RigCommand[]) => boolean; clear: () => void;
+  selectedEdge:number; setEdge:(index:number)=>void;
+}) {
+  const order = rig.parts.indexOf(part);
+  const straightEdges = part.knots.flatMap((start, index) => {
+    const end = part.knots[index + 1] ?? (part.closed ? part.knots[0] : undefined);
+    return end && !start.outgoing && !end.incoming ? [index] : [];
+  });
+  return <div className="studio-properties">
     <label>Name<input key={part.name} defaultValue={part.name} maxLength={120} onBlur={event => {
       if (!event.currentTarget.value.trim() || !edit("Rename path", { type: "part.update", id: part.id,
         changes: { name: event.currentTarget.value } })) event.currentTarget.value = part.name;
@@ -466,11 +498,28 @@ function Inspector({bone, part, rig, edit, clear}: {
       edit("Set path color", { type: "part.update", id: part.id, changes: { fill: event.target.value } })}/></label>
     <label className="studio-check"><input type="checkbox" checked={part.closed} onChange={event =>
       edit("Set path closure", { type: "part.update", id: part.id, changes: { closed: event.target.checked } })}/>Closed path</label>
+    <div className="studio-field-pair">
+      <button disabled={order >= rig.parts.length - 1} onClick={() =>
+        edit("Bring forward", { type: "part.reorder", id: part.id, direction: "forward" })}>Bring forward</button>
+      <button disabled={order <= 0} onClick={() =>
+        edit("Send backward", { type: "part.reorder", id: part.id, direction: "backward" })}>Send backward</button>
+    </div>
+    {straightEdges.length > 0 && <div className="studio-field-pair">
+      <label>Edge<select value={straightEdges.includes(edge) ? edge : -1} onChange={event => setEdge(Number(event.target.value))}>
+        <option value={-1}>Choose edge</option>
+        {straightEdges.map(index => <option key={index} value={index}>
+          {index + 1} to {(index + 1) % part.knots.length + 1}
+        </option>)}
+      </select></label>
+      <button disabled={!straightEdges.includes(edge) || part.knots.length >= 256} onClick={() => {
+        if (part.mesh && !window.confirm("Insert the vertex and remove this path’s mesh binding?")) return;
+        if (edit("Split edge", { type: "part.splitEdge", id: part.id, edge })) setEdge(-1);
+      }}>Split edge</button>
+    </div>}
     <button className="studio-danger" onClick={() => {
       if (edit("Delete path", { type: "part.remove", id: part.id })) clear();
     }}>Delete path</button>
   </div>;
-  return <p className="studio-empty">Select a bone or path to edit it.</p>;
 }
 
 function Numeric({label, value, min, disabled, onCommit}: {

@@ -3,19 +3,19 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 import { evaluateRig, rotatePoint } from "@/lib/rig/kinematics";
 import type { KinetixRigState, Point, VectorKnot, VectorPart } from "@/lib/rig/model";
-import { drawRigArtwork, inPartSpace, partSpace, traceMesh, tracePart, viewportFrame } from "@/lib/rig/render";
+import { drawArtboardBackground, drawRigArtwork, inPartSpace, partSpace, traceMesh, tracePart, viewportFrameFor } from "@/lib/rig/render";
 import { deformMesh, paintMesh } from "@/lib/rig/skinning";
 import type { RigCommand } from "@/lib/rig/commands";
 
 export type Selection = { kind: "bone" | "part"; id: string } | null;
-export type Tool = "select" | "bone" | "pen";
+export type Tool = "select" | "bone" | "pen" | "polygon";
 export type Brush = { partId: string; boneId: string; radius: number; strength: number };
 type PointKind = keyof VectorKnot;
 type Gesture =
   | { type: "rotate"; id: string; origin: Point; start: number; rotation: number }
   | { type: "target"; id: string }
   | { type: "bone"; start: Point }
-  | { type: "pen"; start: Point }
+  | { type: "pen" | "polygon"; start: Point }
   | { type: "move"; part: VectorPart; start: Point }
   | { type: "knot"; part: VectorPart; index: number; handle: PointKind }
   | { type: "paint"; part: VectorPart; last: Point; brush: Brush };
@@ -27,6 +27,7 @@ type Props = {
   brush: Brush | null;
   remoteBones: ReadonlySet<string>;
   selected: Selection;
+  selectedEdge: number;
   select: (value: Selection) => void;
   tool: Tool;
   reference: boolean;
@@ -34,6 +35,7 @@ type Props = {
   showBones: boolean;
   pen: VectorKnot[];
   addKnot: (knot: VectorKnot) => void;
+  closePolygon: () => void;
   addBone: (from: Point, to: Point) => void;
   edit: (label: string, command: RigCommand) => void;
 };
@@ -55,12 +57,13 @@ function circle(context: CanvasRenderingContext2D, point: Point, radius: number)
   context.stroke();
 }
 
-export function Viewport({rig, phase, ghosts, brush, remoteBones, selected, select, tool, reference, zoom, showBones, pen, addKnot, addBone, edit}: Props) {
+export function Viewport({rig, phase, ghosts, brush, remoteBones, selected, selectedEdge, select, tool, reference, zoom, showBones, pen, addKnot, closePolygon, addBone, edit}: Props) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
   const [gesture, setGesture] = useState<Gesture | null>(null);
   const [cursor, setCursor] = useState<Point | null>(null);
   const authoredPoses = useMemo(() => evaluateRig(rig), [rig]);
+  const viewportFrame = viewportFrameFor(rig);
   const scale = Math.min(size.width / viewportFrame.width, size.height / viewportFrame.height) * zoom;
   const camera = {
     x: size.width / 2 - (viewportFrame.x + viewportFrame.width / 2) * scale,
@@ -143,6 +146,17 @@ export function Viewport({rig, phase, ghosts, brush, remoteBones, selected, sele
       context.clearRect(0, 0, element.width, element.height);
       context.setTransform(scale * dpr, 0, 0, scale * dpr, camera.x * dpr, camera.y * dpr);
       const poses = preview === rig ? authoredPoses : evaluateRig(preview);
+      context.save();
+      if (rig.version === 2) {
+        const {width, height} = rig.artboard;
+        context.strokeStyle = "#726d638f";
+        context.lineWidth = 1 / scale;
+        context.strokeRect(0, 0, width, height);
+        context.beginPath();
+        context.rect(0, 0, width, height);
+        context.clip();
+        drawArtboardBackground(context, rig);
+      }
       if (ghosts.length) {
         context.save();
         context.globalAlpha = 0.19;
@@ -150,6 +164,7 @@ export function Viewport({rig, phase, ghosts, brush, remoteBones, selected, sele
         context.restore();
       }
       drawRigArtwork(context, preview, poses, phase, reference);
+      context.restore();
       const pixel = 1 / scale;
       context.lineWidth = 1.5 * pixel;
 
@@ -187,6 +202,18 @@ export function Viewport({rig, phase, ghosts, brush, remoteBones, selected, sele
         context.fillStyle = "#fffcef";
         tracePart(context, part);
         context.stroke();
+        const edge = part.knots[selectedEdge];
+        const end = part.knots[(selectedEdge + 1) % part.knots.length];
+        if (edge && !edge.outgoing && !end.incoming) {
+          context.save();
+          context.strokeStyle = "#216885";
+          context.lineWidth = 3 * pixel;
+          context.beginPath();
+          context.moveTo(edge.point.x, edge.point.y);
+          context.lineTo(end.point.x, end.point.y);
+          context.stroke();
+          context.restore();
+        }
         for (const knot of part.knots) {
           for (const handle of [knot.incoming, knot.outgoing]) {
             if (!handle) continue;
@@ -222,7 +249,7 @@ export function Viewport({rig, phase, ghosts, brush, remoteBones, selected, sele
       }
     });
     return () => cancelAnimationFrame(frame);
-  }, [scale, size, camera.x, camera.y, preview, rig, authoredPoses, phase, reference, selected, showBones, gesture, cursor, pen, ghosts, brush, remoteBones]);
+  }, [scale, size, camera.x, camera.y, preview, rig, authoredPoses, phase, reference, selected, selectedEdge, showBones, gesture, cursor, pen, ghosts, brush, remoteBones]);
 
   function down(event: PointerEvent<HTMLCanvasElement>) {
     if (!scale || event.button !== 0 || !event.isPrimary) return;
@@ -235,7 +262,7 @@ export function Viewport({rig, phase, ghosts, brush, remoteBones, selected, sele
       const mesh = paintMesh(part, authoredPoses, brush.boneId, point, brush.radius, brush.strength);
       next = { type: "paint", part: { ...part, mesh }, last: point, brush };
       setCursor(point);
-    } else if (tool === "bone" || tool === "pen") {
+    } else if (tool === "bone" || tool === "pen" || tool === "polygon") {
       next = { type: tool, start: point };
     } else {
       const part = selected?.kind === "part" ? rig.parts.find(item => item.id === selected.id) : undefined;
@@ -294,6 +321,11 @@ export function Viewport({rig, phase, ghosts, brush, remoteBones, selected, sele
       if (distance(point, gesture.start) * scale > 4) addBone(gesture.start, point);
     } else if (gesture.type === "pen") {
       addKnot(penKnot(gesture.start, point, 1 / scale));
+    } else if (gesture.type === "polygon") {
+      const first = pen[0]?.point;
+      const last = pen.at(-1)?.point;
+      if (first && pen.length >= 3 && distance(gesture.start, first) * scale <= 9) closePolygon();
+      else if (!last || distance(gesture.start, last) * scale > 1) addKnot({ point: gesture.start });
     } else if (cursor || gesture.type === "paint") {
       const command = gestureCommand(gesture, point);
       if (command) edit(gesture.type === "rotate" ? "Rotate bone" : gesture.type === "target" ? "Move IK target" :

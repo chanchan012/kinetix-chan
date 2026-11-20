@@ -18,7 +18,7 @@ export function useStudioShortcuts(handle: (event: KeyboardEvent) => void) {
 }
 
 const shortcuts = [
-  ["Select / Draw bone / Pen", "V / B / P"],
+  ["Select / Draw bone / Pen / Polygon", "V / B / P / G"],
   ["Finish path / Close shape", "Enter / Shift + Enter"],
   ["Cancel tool or stroke setup", "Esc"],
   ["Toggle bones / Onion skin", "H / O"],

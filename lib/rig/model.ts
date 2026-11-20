@@ -73,14 +73,28 @@ export type VectorPart = z.infer<typeof partSchema>;
 export type VectorKnot = z.infer<typeof knotSchema>;
 export type SkinMesh = z.infer<typeof meshSchema>;
 
-const documentSchema = z.strictObject({
-  version: z.literal(1),
-  study: z.enum(["fox", "heron", "fish"]),
+export const studyIdSchema = z.enum(["fox", "heron", "fish"]);
+export const artboardSchema = z.strictObject({
+  name: z.string().trim().min(1).max(120),
+  width: z.int().min(16).max(4096),
+  height: z.int().min(16).max(4096),
+  background: z.string().regex(/^#[a-fA-F0-9]{6}$/).nullable(),
+});
+export type Artboard = z.infer<typeof artboardSchema>;
+export const defaultArtboard: Artboard = { name: "Artboard", width: 512, height: 320, background: null };
+
+const documentContents = {
   bones: z.array(boneSchema).max(512),
   constraints: z.array(constraintSchema).max(128),
   parts: z.array(partSchema).max(128).default([]),
-});
+};
+const documentSchema = z.discriminatedUnion("version", [
+  z.strictObject({ version: z.literal(1), study: studyIdSchema, ...documentContents }),
+  z.strictObject({ version: z.literal(2), study: z.null(), artboard: artboardSchema, ...documentContents }),
+]);
 export type KinetixRigState = z.infer<typeof documentSchema>;
+export const artboardFor = (rig: KinetixRigState) => rig.version === 2 ? rig.artboard : defaultArtboard;
+export const referenceFrameCount = (rig: KinetixRigState) => rig.study ? studyFor(rig.study).frames : 1;
 
 /** Parent-first traversal with stable sibling order, independent of authoring order. */
 export function orderedBones(bones: readonly Bone[]): Bone[] {
@@ -148,7 +162,11 @@ const starter = {
 };
 const limbAngles = { fox: 1.3, heron: -2.6, fish: 2.3 };
 
-export function createRigState(study: KinetixRigState["study"]): KinetixRigState {
+export function createBlankRig(artboard: Artboard): KinetixRigState {
+  return { version: 2, study: null, artboard: artboardSchema.parse(artboard), bones: [], constraints: [], parts: [] };
+}
+
+export function createRigState(study: z.infer<typeof studyIdSchema>): KinetixRigState {
   const { x, y, length, name, joint, upper, lower } = starter[study];
   return {
     version: 1, study, constraints: [], parts: [],
