@@ -16,11 +16,19 @@ Implemented the application shell, interactive guest playground, Clerk access ro
 
 ## Active subgoal and next exact step
 
-The active implementation goal covers all 23 subgoals in [the production studio roadmap](docs/PRODUCTION_STUDIO_ROADMAP.md). M5.1 through M5.5 and the first playable asset workflow are deployed. The first playable asset workflow delivers part position channels from 7.1, fixed-grid packages from 9.1, and the Godot sprite adapter from 9.3. Those three subgoals have further acceptance criteria in the roadmap.
+The active implementation goal covers all 23 subgoals in [the production studio roadmap](docs/PRODUCTION_STUDIO_ROADMAP.md). M5.1 through M5.5 and M9.1 are deployed. The first playable asset workflow also delivered part position channels from M7.1 and the version 1 Godot sprite adapter from M9.3. Those subgoals have further acceptance criteria in the roadmap.
 
-The next exact step is to extend M9.1 portable sprite delivery. Extract shared timing, pivot and frame geometry from the fixed-grid package in `lib/export/sprite-package.ts`. Implement revision-bound loose frames and packed atlas layouts, then compare the same pixel-flame clip across all three layouts in a reference player.
+The next exact step is the multi-clip Godot adapter within M9.3. Start with `integrations/godot/import_sprite_package.gd` and the version 2 schema. Add a version-aware loader, verify PNG digests and restore rotated and trimmed frames with individual pivots. Preserve the generated asset paths and game-authored wrapper on reimport. Then verify variable holds, direction names and a blank frame in a clean Godot project across all three portable layouts.
 
 Owner-managed Inngest Cloud activation is still open. After the signing and event keys are present in Vercel, redeploy, sync the existing endpoint, and verify a hosted thumbnail and animation export run. Saved still PNGs are served directly.
+
+## M9.1 portable sprite delivery · November 21, 2026
+
+- **Brief and build** added version 2 loose PNGs, fixed grids and packed atlas pages with revision-pinned clips, directions, variable holds, texture settings and frame metadata. The reference player validates PNG digests and restores trimmed and rotated frames. A published JSON Schema describes the bundle fields.
+- **Test** passed 68 Vitest cases with the existing Godot integration enabled and 78 Playwright cases, with six expected skips. The browser compared all three layouts at 1.25×, including a transparent blank. A six-pose fixture covered packed page limits and pivot scaling at 1× and 3×. An additional geometry check verified 500 deterministic atlases for page bounds and gutter separation.
+- **Merge** published feature commit `21b45f4` and merged it as `9eaacda` on `main`.
+- **Deploy** the local Webpack build and Vercel Turbopack build passed. The [feature preview](https://kinetix-chan-gxobvl56g-chanchans-projects-aada625f.vercel.app) and [production](https://kinetix-chan.vercel.app) are ready. The hosted smoke clicked the phone preflight control, compared byte-identical REST and MCP ZIPs, and loaded rotated and blank frames in the player. The test account and rig were removed.
+- **Document** records the version 2 contract and the next native Godot step. The verified Godot importer currently reads the version 1 fixed-grid profile.
 
 ## M5.5 drawn cels and pixel art · November 21, 2026
 

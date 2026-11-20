@@ -14,7 +14,7 @@ The M5–M9 roadmap covers three complete production workflows. An illustrator o
 
 ### Verified starting point
 
-Blank custom artboards, precision paths, shared polygon facets, nested layers and vector appearance are deployed alongside indexed and RGBA cels, basic rigging, mesh weights, clip editing and scoped MCP. A saved clip with vector motion or held cel exposures can be exported as a single fixed-grid sprite ZIP. Godot 4.5.1 verifies playback and repeat import, including the six-pose cel fixture at 1× and 3×. Hosted Inngest rendering still needs verification after the production keys are present. See [implementation progress](../PROGRESS.md) and the [working Godot handoff](ENGINE_EXPORT.md).
+Blank custom artboards, precision paths, shared polygon facets, nested layers and vector appearance are deployed alongside indexed and RGBA cels, basic rigging, mesh weights, clip editing and scoped MCP. Version 2 bundles export multiple clips as loose PNGs, fixed grids or packed atlas pages. The browser player verifies placement and timing across those layouts. Godot 4.5.1 verifies playback and reimport of the single-clip version 1 fixed grid, including the six-pose cel fixture at 1× and 3×. Hosted Inngest rendering still needs verification after the production keys are present. See [implementation progress](../PROGRESS.md) and the [sprite export contract](ENGINE_EXPORT.md).
 
 ## M5 · Draw original artwork
 
@@ -133,7 +133,7 @@ Add a searchable command palette, discoverable and remappable shortcuts, numeric
 ## Release order
 
 1. **First playable asset · verified.** Basic artboards and timing from 5.1 and 7.1, a fixed-grid profile from 9.1, and a Godot 4.5.1 adapter from 9.3. The revision-bound preflight and repeat import are the baseline for later profiles.
-2. **Illustration and sprite production · active.** The layered badge and the drawn cel workflow are verified. Cels render to PNG frames and fixed-grid sheets at integer scale. Extend the portable package to loose frames and packed atlases. Add editable SVG exchange and a multi-clip Godot fixture before certifying Unity and web sprite profiles.
+2. **Illustration and sprite production · active.** The layered badge, drawn cels and version 2 portable layouts are verified. Extend the Godot profile to multi-clip bundles and add editable SVG exchange before certifying Unity and web sprite profiles.
 3. **Runtime characters.** Finish M6 and expanded clip authoring from 7.1, ship named shared-rig versions, and connect the 7.6 player to the 9.2 runtime contract. Certify sprite and runtime profiles independently with the playable character fixture.
 4. **Full animation production.** Finish M7 and M8. Connect storyboards, dialogue, compositing and take review to approved master delivery. Verify hosted rendering, audio sync, alpha and portable project recovery.
 5. **Broader engine coverage.** Finish 9.3 and 9.4 with Unreal and GameMaker sprite importers, a custom-engine conformance kit, certified version ranges and automated reimport fixtures. Publish the versioned coverage matrix with each release.
