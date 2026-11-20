@@ -452,7 +452,7 @@ export function Studio({actorId, rigId, name, initial, revision: initialRevision
       <Timeline {...{ rigId, rig, selected, select, clipId, selectClip }} clips={liveClips}
         manageClips={() => setClipsOpen(true)} preview={setAnimation} onDirty={setTimelineDirty} onClip={setClip}/>
     </div>
-    {exportOpen && <ExportDialog rigId={rigId} revision={revision} clip={clip} frameCount={referenceFrameCount(rig)} artboard={artboardFor(rig)}
+    {exportOpen && <ExportDialog rigId={rigId} revision={revision} clip={clip} clips={liveClips} frameCount={referenceFrameCount(rig)} artboard={artboardFor(rig)}
       unsaved={dirty || timelineDirty} hasArtboard={rig.version === 2} renderConfigured={renderConfigured} close={() => setExportOpen(false)}/>}
     {shareOpen && <ShareDialog rigId={rigId} close={() => setShareOpen(false)}/>}
     {mcpOpen && <McpDialog rigId={rigId} close={() => setMcpOpen(false)}/>}

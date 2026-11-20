@@ -34,6 +34,18 @@ export function renderPngFrame(snapshot: ExportSnapshot) {
   return canvas.toBuffer("image/png");
 }
 
+/** Read sequential RGBA frames through the same drawing path as the raster deliverables. */
+export function* sampleRgbaFrames(snapshot:ExportSnapshot) {
+  const {width,height}=exportDimensions(snapshot);
+  const canvas=createCanvas(width,height);
+  const context=canvas.getContext("2d");
+  let sourceFrame=snapshot.startFrame;
+  for (const frame of sampleExportFrames(snapshot)) {
+    drawFrame(canvas,frame,false,snapshot.scale);
+    yield {sourceFrame:sourceFrame++,rgba:context.getImageData(0,0,width,height).data};
+  }
+}
+
 export function renderSpritesheet(snapshot: ExportSnapshot) {
   const artboard = exportDimensions(snapshot);
   const frames = snapshot.endFrame - snapshot.startFrame + 1;
