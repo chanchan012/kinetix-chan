@@ -3,11 +3,12 @@ import type { ExportQueue } from "../../db/exports";
 import { exportRequested, inngest } from "../../jobs/client";
 import { tracksSchema } from "../rig/animation";
 import { readRigState, referenceFrameCount } from "../rig/model";
-import { exportFormatSchema, exportSnapshotSchema, supportedExport } from "./frames";
+import { containsRasterCels, exportFormatSchema, exportSnapshotSchema, rasterScaleSchema, supportedExport } from "./frames";
 
 export const exportRequest = z.strictObject({
   id:z.uuid(),format:exportFormatSchema,clipId:z.uuid().optional(),
   startFrame:z.int().min(0).optional(),endFrame:z.int().min(0).optional(),
+  scale:rasterScaleSchema.optional(),
 });
 
 export async function queueExport(queue:ExportQueue, owner:string, rigId:string, job:z.infer<typeof exportRequest>) {
@@ -17,8 +18,12 @@ export async function queueExport(queue:ExportQueue, owner:string, rigId:string,
   const frameCount = input.clip?.frameCount ?? referenceFrameCount(state);
   const snapshot = exportSnapshotSchema.safeParse({
     name:input.clip?.name ?? input.name,rig:state,tracks:tracksSchema.parse(input.clip?.tracks ?? []),
+    clipId:input.clip?.id,scale:job.scale,
     fps:input.clip?.fps ?? 24,frameCount,startFrame:job.startFrame ?? 0,endFrame:job.endFrame ?? frameCount-1,
   });
+  if (snapshot.success && job.format==="lottie" && containsRasterCels(snapshot.data)) {
+    return {error:"raster_cels_require_a_raster_export",status:400} as const;
+  }
   if (!snapshot.success || !supportedExport(job.format,snapshot.data)) return {error:"unsupported_range",status:400} as const;
   const queued = await queue.enqueue(owner,rigId,job.id,job.format,snapshot.data);
   if (!queued) return {error:"export_conflict",status:409} as const;

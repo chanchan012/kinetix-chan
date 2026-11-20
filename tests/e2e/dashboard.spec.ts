@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import { strFromU8, unzipSync } from "fflate";
+import { createCanvas, loadImage } from "@napi-rs/canvas";
 
 import { clerk } from "@clerk/testing/playwright";
 import type { KinetixRigState } from "../../lib/rig/model";
@@ -11,6 +12,86 @@ import { formats, type ExportFormat } from "../../lib/export/frames";
 test.beforeEach(async ({page}) => {
   await page.goto("/");
   await clerk.signIn({page, emailAddress:process.env.KINETIX_TEST_EMAIL!});
+});
+
+test("an illustrator paints, links, recolors, and exports pixel cels",async ({page},info)=>{
+  test.setTimeout(100_000);
+  const create = await page.request.post("/api/rigs",{data:{
+    name:"Drawn flame "+info.project.name,artboard:{name:"Flame",width:96,height:96,background:null},
+  }});
+  expect(create.status()).toBe(201);
+  const {id}=await create.json();
+  const path="/api/rigs/"+id;
+  try {
+    const clip = await page.request.post(path+"/clips",{data:{name:"Flicker",fps:12,frameCount:12}});
+    expect(clip.status()).toBe(201);
+    const {id:clipId}=await clip.json();
+    await page.goto("/studio/"+id);
+    const layers=page.getByRole("region",{name:"Artwork layers"});
+    await layers.getByText("Add drawing layer",{exact:true}).click();
+    await layers.getByRole("button",{name:"Indexed drawing",exact:true}).click();
+    await expect(layers.getByRole("button",{name:"Drawing 1",exact:true})).toHaveAttribute("aria-pressed","true");
+    const panel=page.getByLabel("Drawing tools",{exact:true});
+    const canvas=page.getByRole("img",{name:"Rig canvas"});
+    const bounds=(await canvas.boundingBox())!;
+    const scale=Math.min(bounds.width,bounds.height)/96;
+    const point=(x:number,y:number)=>({x:bounds.x+bounds.width/2+(x+.5-48)*scale,y:bounds.y+bounds.height/2+(y+.5-48)*scale});
+    const mark=async (x:number,y:number)=>{ const p=point(x,y);await page.mouse.click(p.x,p.y); };
+    const slider=page.getByRole("slider",{name:"Timeline frame"});
+    const seek=async (frame:number)=>{ await slider.fill(String(frame));await expect(panel.getByText("Frame "+(frame+1),{exact:true})).toBeVisible(); };
+    await mark(45,48);
+    await mark(46,47);
+    await seek(2);
+    await panel.getByRole("button",{name:"Link held cel"}).click();
+    await seek(5);
+    await panel.getByRole("button",{name:"Make independent"}).click();
+    await mark(49,48);
+    await seek(8);
+    await panel.getByRole("button",{name:"Blank exposure"}).click();
+    await expect(page.getByRole("button",{name:"Drawing 1 blank exposure 9"})).toBeVisible();
+    await page.getByRole("button",{name:"Previous cel exposure"}).click();
+    await expect(panel.getByText("Frame 6",{exact:true})).toBeVisible();
+    await page.getByRole("button",{name:"Next cel exposure"}).click();
+    await expect(panel.getByText("Frame 9",{exact:true})).toBeVisible();
+    await panel.getByLabel("Edit palette color").fill("#7249ff");
+    const saved=async()=> ((await (await page.request.get(path+"/state")).json()).state as KinetixRigState).drawings?.layers[0];
+    await expect.poll(async()=>(await saved())?.storage).toMatchObject({mode:"indexed",colors:["#7249ff","#fff2a0","#d54139","#202a48"]});
+    const drawing=(await saved())!;
+    expect(drawing.tracks[0]).toMatchObject({clipId,keys:[
+      {frame:0,celId:drawing.cels[0].id},{frame:2,celId:drawing.cels[0].id},
+      {frame:5,celId:drawing.cels[1].id},{frame:8,celId:null},
+    ]});
+    expect(drawing.cels[0].runs).toHaveLength(2);
+    expect(drawing.cels[1].runs).toHaveLength(3);
+    await page.getByRole("button",{name:"Export",exact:true}).click();
+    const dialog=page.getByRole("dialog",{name:"Export animation"});
+    await dialog.getByLabel("Format").selectOption("sprite-package");
+    for (const scale of [1,3]) {
+      await dialog.getByLabel("Pixel scale").selectOption(String(scale));
+      const download=page.waitForEvent("download");
+      await dialog.getByRole("button",{name:"Download sprite package"}).click();
+      const files=unzipSync(await readFile(await (await download).path()));
+      const manifest=JSON.parse(strFromU8(files["kinetix.json"]));
+      const atlas=await loadImage(files["atlas.png"]);
+      const context=createCanvas(atlas.width,atlas.height).getContext("2d");
+      context.drawImage(atlas,0,0);
+      expect(manifest.frames.map((frame:{durationTicks:number})=>frame.durationTicks)).toEqual(Array(12).fill(1));
+      const read=(frame:number,x:number,y:number)=>{
+        const rectangle=manifest.frames[frame].rect;
+        expect([rectangle.width,rectangle.height]).toEqual([96*scale,96*scale]);
+        return Array.from(context.getImageData(rectangle.x+x*scale,rectangle.y+y*scale,scale,scale).data);
+      };
+      const purple=Array.from({length:scale*scale},()=>[114,73,255,255]).flat();
+      const transparent=Array(scale*scale*4).fill(0);
+      expect(read(4,45,48)).toEqual(purple);
+      expect(read(4,49,48)).toEqual(transparent);
+      expect(read(6,49,48)).toEqual(purple);
+      expect(read(6,48,48)).toEqual(transparent);
+      expect(read(8,45,48)).toEqual(transparent);
+    }
+  } finally {
+    expect((await page.request.delete(path)).status()).toBe(204);
+  }
 });
 
 test("an illustrator groups, hides, locks, isolates, and duplicates artwork layers",async ({page},info)=>{
@@ -297,17 +378,32 @@ test("an illustrator lays out shapes with region selection, rulers, and guide sn
     await expect(guides.getByRole("button",{name:"Remove vertical guide at 122px"})).toBeVisible();
     await guides.getByRole("button",{name:"Close dialog"}).click();
     await page.getByRole("button",{name:"Snap",exact:true}).click();
-    await drag(102,90,141,90);
     const statePath = path+"/state";
     const saved = async () => (await (await page.request.get(statePath)).json()).state as KinetixRigState;
+    const rectangle = async () => (await saved()).parts.find(part=>part.name==="Rectangle 1")!;
+    await expect.poll(async()=>{
+      const state=await saved();
+      return state.version===2 && state.guides?.some(guide=>guide.axis==="x" && guide.position===122);
+    }).toBe(true);
+    const initial = worldPartBounds(await rectangle(),new Map());
+    async function tryGuide() {
+      const viewport=(await canvas.boundingBox())!;
+      const scale=Math.min(viewport.width/300,viewport.height/240);
+      const y=viewport.y+viewport.height/2+((initial.min.y+initial.max.y)/2-120)*scale;
+      const from=viewport.x+viewport.width/2+((initial.min.x+initial.max.x)/2-150)*scale;
+      await page.mouse.move(from,y);
+      await page.mouse.down();
+      await page.mouse.move(from+(124.5-initial.min.x)*scale,y,{steps:5});
+      await page.mouse.up();
+    }
     const savedLeft = async () => {
-      const first = (await saved()).parts[0];
-      return first ? Math.round(worldPartBounds(first,new Map()).min.x) : -1;
+      return Math.round(worldPartBounds(await rectangle(),new Map()).min.x);
     };
+    await tryGuide();
     await expect.poll(savedLeft).toBe(122);
     await page.getByRole("button",{name:"Undo",exact:true}).click();
     await page.keyboard.down("Alt");
-    await drag(102,90,141,90);
+    await tryGuide();
     await page.keyboard.up("Alt");
     await expect.poll(savedLeft).toBeGreaterThanOrEqual(123);
     const result = await saved();

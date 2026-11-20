@@ -26,7 +26,9 @@ import { Dialog } from "../dialog";
 import { FacetPanel,useFacetTool } from "./facet-tools";
 import { LayerList } from "./layer-list";
 import { AppearanceControls } from "./appearance-controls";
-import { editablePartIds,layerTreeFor } from "@/lib/rig/layer-tree";
+import { editablePartIds,layerTreeFor,visibleLayerRows } from "@/lib/rig/layer-tree";
+import { CelControls, defaultCelSettings, type CelSettings } from "./cel-controls";
+import { celAt, type Drawing } from "@/lib/rig/drawings";
 
 type Props = {
   actorId: string; rigId: string; name: string; initial: KinetixRigState; revision: number; clips: ClipTiming[];
@@ -55,6 +57,7 @@ export function Studio({actorId, rigId, name, initial, revision: initialRevision
   const [edgeSelection, setEdgeSelection] = useState<{partId:string; index:number} | null>(null);
   const [nodeSelection,setNodeSelection] = useState<{partId:string;index:number} | null>(null);
   const [tool, setTool] = useState<Tool>("select");
+  const [celSettings,setCelSettings] = useState(defaultCelSettings);
   const [primitive, setPrimitive] = useState<PrimitiveShape>("rectangle");
   const [smoothing,setSmoothing] = useState(2);
   const [selectionMode,setSelectionMode] = useState<SelectionMode>("marquee");
@@ -89,14 +92,20 @@ export function Studio({actorId, rigId, name, initial, revision: initialRevision
   const dirty = saved !== rig;
   const bone = selected?.kind === "bone" ? rig.bones.find(item => item.id === selected.id) : undefined;
   const part = selected?.kind === "part" ? rig.parts.find(item => item.id === selected.id) : undefined;
+  const drawing = selected?.kind==="drawing" ? rig.drawings?.layers.find(item=>item.id===selected.id) : undefined;
   const isolation = isolatedLayer && layerTreeFor(rig).nodes.some(node=>node.id===isolatedLayer) ? isolatedLayer : null;
   const editablePath = !part || editablePartIds(rig).has(part.id);
+  const drawable = Boolean(drawing && !animation.playing && visibleLayerRows(rig,isolation).some(({node,locked})=>
+    node.kind==="drawing" && node.drawingId===drawing.id && !locked));
   const facetTool = useFacetTool(part,edit);
   const selectedParts = rig.parts.filter(item=>selectionIds.includes(item.id)).map(item=>item.id);
   function select(value:Selection) {
     setSelected(value);
     setSelectionIds(value?.kind==="part" ? [value.id] : []);
-    if (tool==="facet" && value?.id!==selected?.id) setTool("select");
+    if (value?.kind==="drawing") {
+      setTool("select");
+      if (value.id!==selected?.id) updateCel({region:null});
+    } else if (tool==="facet" && value?.id!==selected?.id) setTool("select");
   }
   function selectRegion(ids:string[]) {
     setSelectionIds(ids);
@@ -111,12 +120,34 @@ export function Studio({actorId, rigId, name, initial, revision: initialRevision
     part.mesh.bindings.some(binding => binding.id === brush.boneId) ? brush : null;
   const pose = useMemo(() => sampleRig(rig,animation.tracks,animation.frame), [rig,animation]);
   const phase = animation.frame / animation.frames;
+  const sample = useMemo(()=>({clipId:animation.clipId,frame:animation.frame}),[animation.clipId,animation.frame]);
   const ghosts = useMemo(() => !animation.onion ? [] : [-1,1].map(offset => {
     const frame = Math.min(animation.frames - 1, Math.max(0, animation.frame + offset));
     return { rig: sampleRig(rig,animation.tracks,frame), phase: frame / animation.frames, frame };
   }).filter(ghost => ghost.frame !== animation.frame), [rig,animation]);
   const last = past.at(-1);
   const path = "/api/rigs/" + rigId + "/state";
+
+  function updateCel(changes:Partial<CelSettings>) {
+    setCelSettings(current=>({...current,...changes}));
+  }
+
+  function makeDrawing(mode:"indexed"|"rgba") {
+    if (animation.playing) return;
+    const id=crypto.randomUUID();
+    const firstCel=crypto.randomUUID();
+    const {width,height}=artboardFor(rig);
+    const number=(rig.drawings?.layers.length ?? 0)+1;
+    const storage:Drawing["storage"]=mode==="indexed" ?
+      {mode,colors:["#ff9500","#fff2a0","#d54139","#202a48"]} : {mode};
+    const reference:RigCommand=sample.clipId ?
+      {type:"exposure.set",drawingId:id,clipId:sample.clipId,key:{frame:sample.frame,celId:firstCel}} :
+      {type:"drawing.rest",id,celId:firstCel};
+    if (edit("Create drawing",
+      {type:"drawing.create",drawing:{id,name:"Drawing "+number,width,height,storage}},
+      {type:"cel.create",drawingId:id,id:firstCel},reference,
+    )) select({kind:"drawing",id});
+  }
 
   const refreshClips = useCallback(async (signal?: AbortSignal) => {
     const sequence = ++clipRefresh.current;
@@ -152,8 +183,9 @@ export function Studio({actorId, rigId, name, initial, revision: initialRevision
       store.getState().dispatch(label, { kind: "human", id: actorId }, ...commands);
       setError("");
       return true;
-    } catch {
-      setError("The edit would create an invalid rig.");
+    } catch (error) {
+      const issue = error && typeof error==="object" && "issues" in error && Array.isArray(error.issues) ? error.issues[0]?.message : undefined;
+      setError(typeof issue==="string" ? issue : error instanceof Error ? error.message : "The edit would create an invalid rig.");
       return false;
     }
   }
@@ -336,7 +368,8 @@ export function Studio({actorId, rigId, name, initial, revision: initialRevision
     <div className="studio-grid" ref={layout.ref} style={layout.style}>
       <aside className="studio-hierarchy" id="studio-hierarchy" aria-label="Rig hierarchy">
         <div className="studio-panel-title"><h2>Hierarchy</h2><span>{rig.bones.length} bones</span></div>
-        <Hierarchy rig={rig} selected={selected} selectedParts={selectedParts} select={select} isolation={isolation} setIsolate={setIsolate} edit={edit}/>
+        <Hierarchy rig={rig} selected={selected} selectedParts={selectedParts} select={select} isolation={isolation}
+          setIsolate={setIsolate} edit={edit} makeDrawing={makeDrawing}/>
       </aside>
       <PanelHandle panel="hierarchy" size={layout.panels.hierarchy} label="Resize hierarchy" controls="studio-hierarchy"/>
       <PanelHandle panel="split" size={layout.panels.split} label="Resize side panels" controls="studio-hierarchy studio-inspector"/>
@@ -352,7 +385,9 @@ export function Studio({actorId, rigId, name, initial, revision: initialRevision
             {zoomLevels.map(level => <option key={level} value={level}>{level === 1 ? "Fit" : level * 100 + "%"}</option>)}
           </select></label>
         </div>
-        <div className="studio-artboard"><Viewport rig={pose} brush={activeBrush} ghosts={ghosts} remoteBones={remoteBones}
+        <div className="studio-artboard"><Viewport rig={pose} sample={sample} brush={activeBrush} ghosts={ghosts} remoteBones={remoteBones}
+          pixels={drawing && tool==="select" ? {drawing,cel:celAt(drawing,sample),settings:celSettings,update:updateCel,editable:drawable} : null}
+          onionSettings={celSettings}
           {...{ phase, selected, selectedParts, selectedEdge, selectedNode, setNode, select, selectRegion, tool, primitive, smoothing,isolation,
             selectionMode, snapping, rulers, reference, zoom, showBones, pen, addBone, edit }}
           closePolygon={() => finishPath(true)}
@@ -399,7 +434,11 @@ export function Studio({actorId, rigId, name, initial, revision: initialRevision
               if (edit("Make faceted artwork",{type:"facet.initialize",id:part.id,faceId:crypto.randomUUID()})) chooseTool("facet");
             }}>Make faceted artwork</button></div>
         )}
-        {!editablePath ? <p className="studio-empty">Show and unlock the layer to edit it on the canvas.</p> :
+        {drawing ? <CelControls key={drawing.id} drawing={drawing} sample={sample} settings={celSettings} update={updateCel}
+          editable={drawable} edit={edit} remove={()=>{
+            if (window.confirm("Delete this drawing layer and all its cels?") &&
+              edit("Delete drawing",{type:"drawing.remove",id:drawing.id})) select(null);
+          }}/> : !editablePath ? <p className="studio-empty">Show and unlock the layer to edit it on the canvas.</p> :
           selectedParts.length > 1 ? <SelectionLayout rig={rig} ids={selectedParts} edit={edit} clear={() => select(null)}
             selectPart={id=>select({kind:"part",id})}/> :
             <Inspector {...{ bone, part, rig, edit, selectedEdge, setEdge, selectedNode, setNode }} clear={() => select(null)}/>}
@@ -555,9 +594,10 @@ function WeightTools({part, rig, brush, setBrush, edit, report}: {
   </section>;
 }
 
-function Hierarchy({rig, selected, selectedParts, select, isolation, setIsolate, edit}: {
+function Hierarchy({rig, selected, selectedParts, select, isolation, setIsolate, edit, makeDrawing}: {
   rig: KinetixRigState; selected: Selection; selectedParts:string[]; select: (value: Selection) => void;
   isolation:string|null;setIsolate:(id:string|null)=>void;edit:Edit;
+  makeDrawing:(mode:"indexed"|"rgba")=>void;
 }) {
   const depths = new Map<string, number>();
   return <div className="studio-tree">
@@ -568,7 +608,8 @@ function Hierarchy({rig, selected, selectedParts, select, isolation, setIsolate,
         aria-pressed={selected?.kind === "bone" && selected.id === bone.id} onClick={() => select({ kind: "bone", id: bone.id })}>
         <BoneIcon size={14}/><span>{bone.name}</span></button></li>;
     })}</ul>
-    <LayerList {...{rig,selectedParts,setIsolate,edit}} isolate={isolation} boneSelected={selected?.kind==="bone"}
+    <LayerList {...{rig,selectedParts,setIsolate,edit,makeDrawing}} isolate={isolation} boneSelected={selected?.kind==="bone"}
+      drawingId={selected?.kind==="drawing" ? selected.id : undefined} selectDrawing={id=>select({kind:"drawing",id})}
       selectPart={id=>select(id ? {kind:"part",id} : null)}/>
     {selected && <button className="studio-deselect" onClick={() => select(null)}>Clear selection</button>}
   </div>;

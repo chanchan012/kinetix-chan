@@ -12,7 +12,7 @@ export function createStudioMcp(agent:RigAgent) {
       contents:[{uri:link,mimeType:"application/json",text:JSON.stringify(await read())}],
     }));
   };
-  resource("rig-hierarchy","Bones, parent transforms, lengths, IK constraints and vector slots.",()=>agent.hierarchy());
+  resource("rig-hierarchy","Bones, IK, vector artwork, raster drawings and cel exposure tracks.",()=>agent.hierarchy());
   resource("timeline-summary","Clip durations, frame rates, keyframes and outgoing easing.",()=>agent.timelineSummary());
   resource("viewport-bounds","The rig artboard bounds and coordinate convention.",()=>agent.viewportBounds());
 
@@ -21,9 +21,9 @@ export function createStudioMcp(agent:RigAgent) {
   ) {
     const inputSchema:StandardSchemaWithJSON = schema;
     server.registerTool(name,{description,inputSchema,annotations:{
-      readOnlyHint:name==="export_sprite_package",
+      readOnlyHint:name==="export_sprite_package" || name==="read_drawing_cel",
       destructiveHint:["edit_document","bind_mesh_weights","generate_procedural_cycle","bake_ik_to_keyframes"].includes(name),
-      idempotentHint:name==="export_sprite_package",openWorldHint:false,
+      idempotentHint:name==="export_sprite_package" || name==="read_drawing_cel",openWorldHint:false,
     }},async (raw:unknown):Promise<CallToolResult> => {
       try {
         const data = await run(schema.parse(raw));
@@ -43,6 +43,7 @@ export function createStudioMcp(agent:RigAgent) {
   tool("draw_primitive","Draw a rectangle, ellipse or star from opposite corners in the part's local coordinates.",inputs.draw_primitive,input=>agent.drawPrimitive(input));
   tool("draw_pencil_path","Simplify and smooth a sequence of sampled points in the part's local coordinates.",inputs.draw_pencil_path,input=>agent.drawPencil(input));
   tool("edit_document","Apply one atomic batch of rig and artwork commands at the specified revision.",inputs.edit_document,input=>agent.editDocument(input));
+  tool("read_drawing_cel","Read a revision-pinned page of a cel's pixel runs as [row, left, width, ink].",inputs.read_drawing_cel,input=>agent.readDrawingCel(input));
   tool("bind_mesh_weights","Bind a closed vector part and assign up to four influences to specified vertices.",inputs.bind_mesh_weights,input=>agent.bindWeights(input));
   tool("create_animation_clip","Create a saved clip with a frame rate and duration in frames.",inputs.create_animation_clip,input=>agent.createClip(input));
   tool("insert_keyframe","Insert or replace a value in a bone, IK, or path position channel at a zero-based frame.",inputs.insert_keyframe,input=>agent.insertKey(input));

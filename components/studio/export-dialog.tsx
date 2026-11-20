@@ -24,6 +24,7 @@ export function ExportDialog({rigId, revision, clip, frameCount, artboard, unsav
   const rigPath = "/api/rigs/" + rigId;
   const path = rigPath + "/exports";
   const isSprite = format === "sprite-package";
+  const hasScale = isSprite || format==="png-sequence" || format==="spritesheet";
   const frameLimit = isSprite ? spriteMaxFrames : formats[format].frames;
   useEffect(() => {
     const element = dialog.current!;
@@ -58,6 +59,7 @@ export function ExportDialog({rigId, revision, clip, frameCount, artboard, unsav
     event.preventDefault();
     if (sending) return;
     const fields = new FormData(event.currentTarget);
+    const scale = hasScale ? Number(fields.get("scale")) : undefined;
     const startFrame = Number(fields.get("start")) - 1;
     const endFrame = Number(fields.get("end")) - 1;
     if (startFrame < 0 || startFrame > endFrame || endFrame >= frames || endFrame - startFrame + 1 > frameLimit) {
@@ -73,7 +75,7 @@ export function ExportDialog({rigId, revision, clip, frameCount, artboard, unsav
         const response = await fetch(rigPath + "/sprite-package",{
           method:"POST",headers:{"Content-Type":"application/json"},
           body:JSON.stringify({clipId:clip.id,revision,trackRevision:clip.trackRevision,startFrame,endFrame,pivot,
-            loop:fields.has("loop"),filter:fields.get("filter")}),
+            loop:fields.has("loop"),filter:fields.get("filter"),scale}),
         });
         if (response.status === 409) {
           setMessage("The design or clip changed. Reopen Export after the studio finishes updating.");
@@ -101,7 +103,7 @@ export function ExportDialog({rigId, revision, clip, frameCount, artboard, unsav
       }
       return;
     }
-    const parameters = {format,clipId:clip?.id,startFrame,endFrame};
+    const parameters = {format,clipId:clip?.id,startFrame,endFrame,scale};
     const key = JSON.stringify(parameters);
     const id = pending.current?.parameters === key ? pending.current.id : crypto.randomUUID();
     pending.current = { parameters:key, id };
@@ -110,7 +112,9 @@ export function ExportDialog({rigId, revision, clip, frameCount, artboard, unsav
     try {
       const response = await fetch(path,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id,...parameters})});
       if (!response.ok) {
-        if (response.status === 400) setMessage("Choose a shorter range for this animation.");
+        const failure = await response.json().catch(()=>null);
+        if (failure?.error==="raster_cels_require_a_raster_export") setMessage("This range contains drawn cels. Choose PNG, sprites, or video.");
+        else if (response.status === 400) setMessage("Choose a shorter range or smaller scale for this animation.");
         else setMessage("Could not queue the export. Try again.");
         return;
       }
@@ -134,6 +138,9 @@ export function ExportDialog({rigId, revision, clip, frameCount, artboard, unsav
         {clip && <option value="sprite-package">Sprite package (ZIP)</option>}
         {exportFormats.map(item => <option key={item} value={item}>{formats[item].label}</option>)}
       </select></label>
+      {hasScale && <label>Pixel scale<select name="scale" defaultValue="1">
+        {[1,2,3,4].map(value=><option key={value} value={value}>{value}×</option>)}
+      </select></label>}
       <div className="studio-field-pair">
         <label>First frame<input type="number" name="start" min={1} max={frames} defaultValue={1} required/></label>
         <label>Last frame<input key={format} type="number" name="end" min={1} max={frames}

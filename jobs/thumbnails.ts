@@ -5,6 +5,7 @@ import type { Library } from "../db/library";
 import { readRigState } from "../lib/rig/model";
 import { drawArtboardBackground, drawRigArtwork } from "../lib/rig/render";
 import { evaluateRig } from "../lib/rig/kinematics";
+import { paintCelRuns } from "../lib/rig/drawings";
 
 export async function processThumbnails(library:Library) {
   let saved = 0;
@@ -23,7 +24,9 @@ export async function processThumbnails(library:Library) {
       ctx.rect(0, 0, width, height);
       ctx.clip();
       drawArtboardBackground(ctx, rig);
-      drawRigArtwork(ctx, rig, evaluateRig(rig), frame / clip.frames);
+      drawRigArtwork(ctx,rig,evaluateRig(rig),frame/clip.frames,true,null,{
+        sample:{clipId:clip.id,frame},paint:(drawing,cel)=>paintCelRuns(ctx,drawing,cel),
+      });
     } else {
       const study = studyFor(clip.state.study);
       ctx.fillStyle = study.wash;

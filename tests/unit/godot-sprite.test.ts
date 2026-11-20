@@ -7,6 +7,7 @@ import { prepareSpritePackage } from "../../lib/export/sprite-package";
 import { spritePackageRequest } from "../../lib/export/sprite-package-options";
 import { setKey } from "../../lib/rig/animation";
 import { createBlankRig } from "../../lib/rig/model";
+import { editRig, type RigCommand } from "../../lib/rig/commands";
 
 const godot = process.env.KINETIX_GODOT_PATH;
 
@@ -52,6 +53,34 @@ position = Vector2(100,200)
       writeFileSync(zip,packageResult.bytes);
       expect(run("import.gd",zip)).toContain(scene);
       expect(run("check.gd",mode)).toContain("KINETIX_PLAYBACK " + mode);
+      expect(readFileSync(join(project,"character.tscn"),"utf8")).toBe(wrapper);
+    }
+    const drawingId="flame";
+    const transitions=[0,2,5,8,12,14];
+    const actions = transitions.flatMap((frame,index):RigCommand[]=>{
+      const id="pose-"+index;
+      return [
+        {type:"cel.create",drawingId,id,sourceId:index===1?"pose-0":undefined},
+        {type:"cel.replace",drawingId,id,runs:[[15,7+index,1,255]]},
+        {type:"exposure.set",drawingId,clipId,key:{frame,celId:id}},
+      ];
+    });
+    const [drawing] = editRig(createBlankRig({name:"Flame",width:64,height:64,background:null}),[
+      {type:"drawing.create",drawing:{id:drawingId,name:"Flame",width:64,height:64,
+        storage:{mode:"indexed",colors:["#ff9500"]}}},
+      ...actions,
+      {type:"exposure.set",drawingId,clipId,key:{frame:11,celId:null}},
+    ]);
+    for (const scale of [1,3]) {
+      const mode="cels-"+scale;
+      const pixelPackage = await prepareSpritePackage({inputs:async()=>({rigId,revision:2,state:drawing,name:"Flame",
+        clip:{id:clipId,name:"Flame",frameCount:16,fps:12,trackRevision:2,tracks:[]}})},
+      "owner",rigId,spritePackageRequest.parse({clipId,revision:2,trackRevision:2,startFrame:0,endFrame:15,scale,pivot:{x:12,y:20}}));
+      if (!pixelPackage.bytes) throw new Error("The Godot cel package could not be exported.");
+      const celZip=join(project,mode+".zip");
+      writeFileSync(celZip,pixelPackage.bytes);
+      expect(run("import.gd",celZip)).toContain(scene);
+      expect(run("check.gd",mode)).toContain("KINETIX_PLAYBACK "+mode);
       expect(readFileSync(join(project,"character.tscn"),"utf8")).toBe(wrapper);
     }
   } finally {

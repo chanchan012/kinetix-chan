@@ -10,7 +10,7 @@ import type { Selection } from "./viewport";
 import { useStudioShortcuts } from "./shortcuts";
 
 export type ClipTiming = { id: string; name: string; fps: number; frameCount: number; tracks: Track[]; trackRevision: number };
-export type FramePreview = { frame: number; frames: number; tracks: readonly Track[]; onion: boolean };
+export type FramePreview = { frame: number; frames: number; tracks: readonly Track[]; onion: boolean; clipId?:string; playing?:boolean };
 type Draft = { clip: ClipTiming; tracks: Track[]; conflict: boolean };
 const emptyTracks: Track[] = [];
 const degrees = 180 / Math.PI;
@@ -78,8 +78,9 @@ export function Timeline({clips, clipId, selectClip, manageClips, rigId, rig, se
   useEffect(() => { onClip(clip); }, [clip, onClip]);
 
   useEffect(() => {
-    preview({ frame: current, frames, tracks: basePose ? emptyTracks : tracks, onion });
-  }, [current, frames, tracks, basePose, onion, preview]);
+    preview({ frame: current, frames, tracks: basePose ? emptyTracks : tracks, onion,
+      clipId:basePose?undefined:clip?.id,playing });
+  }, [current, frames, tracks, basePose, onion, clip?.id, playing, preview]);
 
   useEffect(() => {
     if (!playing) return;
@@ -172,6 +173,18 @@ export function Timeline({clips, clipId, selectClip, manageClips, rigId, rig, se
   });
 
   const ticks = Array.from(new Set([1, Math.ceil(frames / 4), Math.ceil(frames / 2), Math.ceil(3 * frames / 4), frames]));
+  const drawingTracks = clip ? (rig.drawings?.layers ?? []).flatMap(drawing=>{
+    const keys=drawing.tracks.find(track=>track.clipId===clip.id)?.keys.filter(key=>key.frame<frames);
+    return keys?.length ? [{drawing,keys}] : [];
+  }) : [];
+  const selectedExposures=selected?.kind==="drawing" ? drawingTracks.find(({drawing})=>drawing.id===selected.id)?.keys : undefined;
+  const previousExposure=selectedExposures?.findLast(key=>key.frame<current);
+  const nextExposure=selectedExposures?.find(key=>key.frame>current);
+  function seekExposure(frame:number) {
+    setPlaying(false);
+    setBasePose(false);
+    setFrame(frame);
+  }
   return <section className="studio-timeline" id="studio-timeline" aria-label="Timeline">
     <div className="studio-timeline-head">
       <h2>Timeline</h2>
@@ -189,6 +202,12 @@ export function Timeline({clips, clipId, selectClip, manageClips, rigId, rig, se
       <button aria-label={playing ? "Pause timeline" : "Play timeline"} title="Play or pause (Space)" onClick={() => setPlaying(value => !value)}>
         {playing ? <Pause weight="fill" size={14}/> : <Play weight="fill" size={14}/>}
       </button>
+      {selectedExposures && <>
+        <button type="button" aria-label="Previous cel exposure" disabled={!previousExposure}
+          onClick={()=>previousExposure && seekExposure(previousExposure.frame)}>‹</button>
+        <button type="button" aria-label="Next cel exposure" disabled={!nextExposure}
+          onClick={()=>nextExposure && seekExposure(nextExposure.frame)}>›</button>
+      </>}
       <output aria-label="Current frame">{current + 1} / {frames}</output>
       <div className="studio-ruler">
         <div aria-hidden="true">{ticks.map(tick => <span key={tick}>{tick}</span>)}</div>
@@ -221,7 +240,18 @@ export function Timeline({clips, clipId, selectClip, manageClips, rigId, rig, se
         <>This clip changed elsewhere. <button disabled={saving} onClick={() => {
           if (window.confirm("Reload saved keyframes and discard local edits?")) void save(true);
         }}>Reload keys</button></> : error}</p>}
-      {tracks.length > 0 && <div className="studio-key-tracks">{tracks.map(track => {
+      {(tracks.length > 0 || drawingTracks.length>0) && <div className="studio-key-tracks">
+        {drawingTracks.map(({drawing,keys})=><div className="studio-key-track" key={drawing.id}>
+          <span title={drawing.name}>{drawing.name} · cels</span>
+          <div className="studio-key-lane">{keys.map(key=><button key={key.frame}
+            aria-label={drawing.name+" "+(key.celId ? "cel" : "blank")+" exposure "+(key.frame+1)}
+            aria-pressed={current===key.frame && selected?.kind==="drawing" && selected.id===drawing.id}
+            style={{left:`${key.frame / Math.max(1,frames-1)*100}%`}}
+            onClick={()=>{select({kind:"drawing",id:drawing.id});seekExposure(key.frame);}}>
+            {key.celId ? "■" : "□"}
+          </button>)}</div>
+        </div>)}
+        {tracks.map(track => {
         const id = channelId(track.channel);
         const {kind,id:objectId} = track.channel;
         const object = (kind === "part" ? rig.parts : rig.bones).find(item => item.id === objectId);

@@ -203,7 +203,11 @@ export function compileLottie(snapshot: ExportSnapshot) {
   for (const frame of sampleExportFrames(snapshot)) {
     const context = new VectorCapture();
     drawArtboardBackground(context, frame.rig);
-    drawRigArtwork(context, frame.rig, frame.poses, frame.phase);
+    drawRigArtwork(context,frame.rig,frame.poses,frame.phase,true,null,{
+      sample:frame.sample,paint:(_drawing,cel)=>{
+        if (cel.runs.length) throw new Error("Raster cels require a PNG, sprite or video export.");
+      },
+    });
     if (frames === 0) {
       context.marks.forEach(mark => paths.push([mark]));
     } else {

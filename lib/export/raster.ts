@@ -6,30 +6,36 @@ import ffmpeg from "@ffmpeg-installer/ffmpeg";
 import { strToU8, zipSync } from "fflate";
 import { drawArtboardBackground, drawRigArtwork } from "../rig/render";
 import { artboardFor } from "../rig/model";
-import { sampleExportFrames, spritesheetGrid, type ExportFrame, type ExportSnapshot } from "./frames";
+import { paintCelRuns } from "../rig/drawings";
+import { exportDimensions, sampleExportFrames, spritesheetGrid, type ExportFrame, type ExportSnapshot } from "./frames";
 
-function drawFrame(canvas: Canvas, frame: ExportFrame, opaque = false) {
+function drawFrame(canvas: Canvas, frame: ExportFrame, opaque = false, scale=1) {
   const context = canvas.getContext("2d");
   context.clearRect(0, 0, canvas.width, canvas.height);
   if (opaque) {
     context.fillStyle = "#f7f5ed";
     context.fillRect(0, 0, canvas.width, canvas.height);
   }
+  context.save();
+  context.scale(scale,scale);
   drawArtboardBackground(context, frame.rig);
-  drawRigArtwork(context, frame.rig, frame.poses, frame.phase);
+  drawRigArtwork(context,frame.rig,frame.poses,frame.phase,true,null,{
+    sample:frame.sample,paint:(drawing,cel)=>paintCelRuns(context,drawing,cel),
+  });
+  context.restore();
 }
 
 export function renderPngFrame(snapshot: ExportSnapshot) {
-  const {width, height} = artboardFor(snapshot.rig);
+  const {width, height} = exportDimensions(snapshot);
   const canvas = createCanvas(width, height);
   const frame = sampleExportFrames(snapshot).next();
   if (frame.done) throw new Error("There is no frame to render.");
-  drawFrame(canvas, frame.value);
+  drawFrame(canvas, frame.value,false,snapshot.scale);
   return canvas.toBuffer("image/png");
 }
 
 export function renderSpritesheet(snapshot: ExportSnapshot) {
-  const artboard = artboardFor(snapshot.rig);
+  const artboard = exportDimensions(snapshot);
   const frames = snapshot.endFrame - snapshot.startFrame + 1;
   const { columns, rows } = spritesheetGrid(frames, artboard.width, artboard.height);
   const sheet = createCanvas(artboard.width * columns, artboard.height * rows);
@@ -37,7 +43,7 @@ export function renderSpritesheet(snapshot: ExportSnapshot) {
   const canvas = createCanvas(artboard.width, artboard.height);
   let index = 0;
   for (const frame of sampleExportFrames(snapshot)) {
-    drawFrame(canvas, frame);
+    drawFrame(canvas,frame,false,snapshot.scale);
     context.drawImage(canvas, index % columns * artboard.width, Math.floor(index / columns) * artboard.height);
     index++;
   }
@@ -45,12 +51,12 @@ export function renderSpritesheet(snapshot: ExportSnapshot) {
 }
 
 export function renderPngSequence(snapshot: ExportSnapshot) {
-  const {width, height} = artboardFor(snapshot.rig);
+  const {width, height} = exportDimensions(snapshot);
   const canvas = createCanvas(width, height);
   const files: Record<string, Uint8Array> = {};
   let number = snapshot.startFrame;
   for (const frame of sampleExportFrames(snapshot)) {
-    drawFrame(canvas, frame);
+    drawFrame(canvas,frame,false,snapshot.scale);
     files["frames/" + String(number++ + 1).padStart(5, "0") + ".png"] = canvas.toBuffer("image/png");
   }
   files["sequence.json"] = strToU8(JSON.stringify({

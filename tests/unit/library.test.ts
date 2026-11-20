@@ -12,6 +12,8 @@ import { RigAgent } from "../../lib/mcp/actions";
 import type { RigCommand } from "../../lib/rig/commands";
 import { evaluateRig } from "../../lib/rig/kinematics";
 import { readRigState } from "../../lib/rig/model";
+import { strFromU8, unzipSync } from "fflate";
+import { createCanvas, loadImage } from "@napi-rs/canvas";
 
 const pg = new PGlite();
 const library = new Library(drizzle(pg));
@@ -30,6 +32,51 @@ beforeAll(async () => {
 },30000);
 afterAll(() => pg.close());
 describe("saved library", () => {
+  it("edits and reads scoped cels through MCP and renders the queued revision",async ()=>{
+    const rig=await library.create("artist","Raster fixture",{name:"Flame",width:48,height:48,background:null});
+    const path="/"+rig.id;
+    const credential=await library.tokens.create("artist",rig.id,"Cel agent");
+    try {
+      const agent=new RigAgent(library,(await library.tokens.verify(credential!.token))!);
+      const clip=await agent.createClip({name:"Flicker",fps:12,frameCount:6});
+      const clipId=clip.id as string;
+      const drawingId="flame";
+      const celId="lit";
+      const edit=await agent.editDocument({revision:rig.revision,commands:[
+        {type:"drawing.create",drawing:{id:drawingId,name:"Flame",width:48,height:48,
+          storage:{mode:"indexed",colors:["#ff9500"]}}},
+        {type:"cel.create",drawingId,id:celId},
+        {type:"cel.edit",drawingId,id:celId,operation:{
+          kind:"stroke",tool:"pencil",ink:255,size:1,opacity:1,stabilization:0,symmetry:"none",
+          points:[{x:16.5,y:14.5,pressure:1},{x:18.5,y:14.5,pressure:1}],
+        }},
+        {type:"exposure.set",drawingId,clipId,key:{frame:0,celId}},
+        {type:"exposure.set",drawingId,clipId,key:{frame:4,celId:null}},
+      ]});
+      await expect(agent.readDrawingCel({drawingId,celId,revision:edit.revision,limit:1,offset:0}))
+        .resolves.toMatchObject({runs:[[14,16,3,255]],nextOffset:null});
+      await expect(agent.editDocument({revision:edit.revision,commands:[
+        {type:"exposure.set",drawingId,clipId,key:{frame:6,celId}},
+      ]})).rejects.toThrow("outside the clip");
+      const id="41d1e947-b067-45c0-919b-84cdac5d43c3";
+      const request={id,format:"png-sequence",clipId,startFrame:2,endFrame:4,scale:3};
+      expect((await call("artist","POST",path+"/exports",{...request,format:"lottie"})).status).toBe(400);
+      expect((await call("artist","POST",path+"/exports",request)).status).toBe(202);
+      await agent.editDocument({revision:edit.revision,commands:[{type:"drawing.palette",id:drawingId,colors:["#ff0000"]}]});
+      expect(await processExport(library.exports,id)).toEqual({id,status:"ready"});
+      const pngs=unzipSync(Buffer.from(await (await call("artist","GET",path+"/exports/"+id+"/download")).arrayBuffer()));
+      expect(JSON.parse(strFromU8(pngs["sequence.json"]))).toMatchObject({width:144,height:144,startFrame:3,endFrame:5});
+      for (const [name,rgba] of [["00003",[255,149,0,255]],["00005",[0,0,0,0]]] as const) {
+        const image=await loadImage(pngs["frames/"+name+".png"]);
+        const canvas=createCanvas(image.width,image.height).getContext("2d");
+        canvas.drawImage(image,0,0);
+        expect(Array.from(canvas.getImageData(48,42,1,1).data)).toEqual(rgba);
+      }
+    } finally {
+      await library.remove("artist",rig.id);
+    }
+  });
+
   it("edits a blank design through scoped MCP commands, protects its revision and serves its saved artboard", async () => {
     const created = await call("owner","POST","",{name:"Portrait",artboard:{name:"Portrait",width:240,height:360,background:null}});
     expect(created.status).toBe(201);
