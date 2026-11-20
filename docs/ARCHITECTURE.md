@@ -136,3 +136,11 @@ MCP `viewport-bounds` returns the document dimensions. `rig-hierarchy` includes 
 `POST /api/rigs/:id/sprite-package` and the scoped MCP tool `export_sprite_package` use an owner-authorized query that reads art and clip revisions together. Supply `clipId`, `revision`, `trackRevision`, and an inclusive zero-based frame range. Supply `preflight: true` to return the planned manifest. Rendering validates revisions again and returns the ZIP, or the same bytes as base64 through MCP.
 
 The ZIP contains `kinetix.json` and `atlas.png`. Manifest version 1 describes an unrotated, untrimmed fixed grid with straight alpha. Each frame rectangle, original size, trim offset and pivot uses pixels from the top-left. One duration tick equals one frame at the integer clip frame rate. Pivot defaults to bottom center and can be set on export. The manifest includes the atlas SHA-256 and stable rig and clip IDs. Direct rendering supports up to 96 frames, a 16-megapixel atlas, and a 1.5 MB archive. See [engine export](ENGINE_EXPORT.md) for importer behavior.
+
+## M5.2 · Precision editing
+
+Vector parts accept optional rotation in radians, signed scale and a local pivot. The part matrix maps source vertices into the parent's plane. The viewport uses its inverse for node editing, and skinning uses the same transform before bone deformation. Canvas and Lottie trace paths in document coordinates with a consistent document-pixel stroke width. Missing transforms resolve to identity. Pivot edits compensate the stored position to keep the base shape in place.
+
+Marquee and lasso use artwork bounds in document coordinates. Align and distribute work from transformed curve extrema. Group movement, edge subdivision, node mode, reverse, cut, join and simplification are undoable commands. Splitting a cubic preserves its shape and retains any attached deformation mesh. Smooth nodes maintain aligned control handles during editing.
+
+Version 2 artboards can store up to 64 guides. The viewport displays them and can snap to them, the artboard edges or a 10 px grid within an eight-screen-pixel tolerance. Alt bypasses snapping for the current drag. Guides are available through MCP's viewport resource. MCP can create primitives and smoothed pencil paths using the same geometry functions as the studio, and use `edit_document` for transforms and layout.

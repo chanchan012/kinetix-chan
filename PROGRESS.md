@@ -16,11 +16,19 @@ Implemented the application shell, interactive guest playground, Clerk access ro
 
 ## Active subgoal and next exact step
 
-The active implementation goal covers all 23 subgoals in [the production studio roadmap](docs/PRODUCTION_STUDIO_ROADMAP.md). M5.1 and the first playable asset workflow are deployed. The first playable asset workflow delivers part position channels from 7.1, fixed-grid packages from 9.1, and the Godot sprite adapter from 9.3. Those three subgoals have further acceptance criteria in the roadmap.
+The active implementation goal covers all 23 subgoals in [the production studio roadmap](docs/PRODUCTION_STUDIO_ROADMAP.md). M5.1, M5.2, and the first playable asset workflow are deployed. The first playable asset workflow delivers part position channels from 7.1, fixed-grid packages from 9.1, and the Godot sprite adapter from 9.3. Those three subgoals have further acceptance criteria in the roadmap.
 
-The next exact step is M5.2 precision editing. Introduce optional vector-part rotation, scale and pivot in the shared model. Apply the same transform in the viewport, hit testing, and renderers. Add the corresponding inspector controls and shared commands before testing precision selection and snaps on the logo fixture.
+The next exact step is M5.3 faceted artwork. Add a validated polygon face graph with stable vertex and face IDs and per-face color. Render connected faces with the existing part transform and give the studio and MCP shared commands for editing a vertex, splitting a shared edge, cutting a face, and welding vertices. Keep the visual graph separate from deformation triangles.
 
 Owner-managed Inngest Cloud activation is still open. After the signing and event keys are present in Vercel, redeploy, sync the existing endpoint, and verify a hosted thumbnail and animation export run. Saved still PNGs are served directly.
+
+## M5.2 precision editing · November 20, 2026
+
+- **Brief and build** added path transforms with editable pivots, multi-path selection and layout, rulers and guides, snapping with an Alt override, primitives, smoothing, and path editing commands shared with MCP.
+- **Test** passed 42 Vitest tests with Godot enabled and 58 Playwright cases across the regression run and targeted reruns, with six expected desktop-only skips. The browser fixtures covered transformed pointer and keyboard edits, marquee and lasso, alignment, distribution, and guide snapping.
+- **Merge** published feature commit `ee54bd2` and main merge `eab7804`.
+- **Deploy** passed the local production build. Vercel preview and production are ready. The hosted smoke created two primitives through MCP, aligned them, saved a guide, and downloaded the resulting PNG.
+- **Document** records the transform and authoring contracts and the next facet-graph step.
 
 ## First playable asset · November 20, 2026
 

@@ -116,4 +116,10 @@ Select a path in a saved clip and choose its X or Y keyframe channel. After the 
 
 Run `npm run test:e2e -- --grep 'keys and plays artwork'` for the browser workflow. Set `KINETIX_GODOT_PATH` to a Godot 4.5.1 executable and run `npm test -- tests/unit/godot-sprite.test.ts` for headless playback and repeat reimport.
 
-Next, add M5.2 vector-part rotation, scale and pivot in `lib/rig/model.ts`, use the transform in `lib/rig/render.ts` and the viewport inverse mapping, and expose editable numeric properties in the studio. Use the dimensioned logo in [the roadmap](PRODUCTION_STUDIO_ROADMAP.md) to check pointer, keyboard and numeric alignment.
+## M5.2 · Precision editing
+
+Press **M** and choose a rectangle, ellipse or star. Press **N** to draw a smoothed pencil stroke. Use **Q** for marquee or lasso, then align or distribute selected paths in the Inspector. Use **Guides**, **Rulers** and **Snap** in the viewport and hold **Alt** to bypass snapping while dragging. The Inspector accepts numeric position, rotation, scale and pivot edits. Use Ctrl or ⌘ + arrow keys to nudge a selected path on the focused canvas.
+
+Run `npm test -- tests/unit/path-geometry.test.ts tests/unit/export.test.ts` for geometry and export parity. Run `npm run test:e2e -- --grep 'moves a transformed path|lays out shapes'` for the interactive workflow across all four layouts. No new service configuration or SQL migration is required.
+
+Next, build the facet graph and renderer for M5.3, then use one three-face illustration to validate a shared junction, shared edge splits, and the separate skinning topology. See [the roadmap](PRODUCTION_STUDIO_ROADMAP.md).
