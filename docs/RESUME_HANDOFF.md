@@ -128,4 +128,12 @@ Select a closed straight-edged polygon and choose **Make faceted artwork**. Use 
 
 Run `npm test -- tests/unit/facets.test.ts` for topology, seam opacity, and exact posed subdivision. Run `npm run test:e2e -- --grep 'three-color junction'` for the studio workflow across four layouts. This subgoal uses existing environment variables.
 
-Next, start M5.4 with the versioned layer tree and commands. Preserve old part IDs so rigs, animation tracks, facet references and saved exports still resolve after reading earlier documents. Use the layered badge in [the roadmap](PRODUCTION_STUDIO_ROADMAP.md) to verify group order, clipping and linked paints through export.
+## M5.4 · Layers and appearance
+
+Select a path and open **Appearance** in the inspector. Choose solid or gradient paint, or use **Manage swatches** and link a fill or stroke to a saved swatch. Select a group or path in **Layers** to assign a closed path as its clipping mask. Use **Region select** and **Combine paths** for compound paths or Boolean edits. Set **Base path** to the artwork whose ID and style should carry forward.
+
+Run `npm test -- tests/unit/layers.test.ts tests/unit/appearance.test.ts` for nesting, save compatibility, swatch detachment, masks, Boolean results and raster/Lottie fidelity. Run `npm run test:e2e -- --grep 'groups, hides, locks|delivers a badge'` for the authenticated artist workflow. If a Windows Turbopack CSS worker exits before IPC connects, use `npm run build -- --webpack` locally and verify the default Turbopack build on Vercel. This subgoal uses existing Vercel variables and Neon storage. Lottie reports a topology error when an animated mask changes its sampled vertex layout.
+
+## M5.5 · Next implementation step
+
+Start from `main` with a dedicated cel-authoring branch. Design versioned raster cel data and exposure references first. Compare sampled frames for a held cel, a shared edit and an independent copy. Then integrate pressure-aware tools, indexed palettes, onion skins and pixel-art scaling through the same commands and frame evaluator used by Studio, exports and MCP. The pixel-flame fixture defines the output checks. See [the production studio roadmap](PRODUCTION_STUDIO_ROADMAP.md).

@@ -16,11 +16,19 @@ Implemented the application shell, interactive guest playground, Clerk access ro
 
 ## Active subgoal and next exact step
 
-The active implementation goal covers all 23 subgoals in [the production studio roadmap](docs/PRODUCTION_STUDIO_ROADMAP.md). M5.1, M5.2, M5.3, and the first playable asset workflow are deployed. The first playable asset workflow delivers part position channels from 7.1, fixed-grid packages from 9.1, and the Godot sprite adapter from 9.3. Those three subgoals have further acceptance criteria in the roadmap.
+The active implementation goal covers all 23 subgoals in [the production studio roadmap](docs/PRODUCTION_STUDIO_ROADMAP.md). M5.1 through M5.4 and the first playable asset workflow are deployed. The first playable asset workflow delivers part position channels from 7.1, fixed-grid packages from 9.1, and the Godot sprite adapter from 9.3. Those three subgoals have further acceptance criteria in the roadmap.
 
-The next exact step is M5.4 layers and appearance. Introduce a versioned layer tree with stable IDs and explicit group order, then migrate the current ordered paths into it through a compatibility reader. Add shared hide, lock, reorder, and nesting commands before integrating layer compositing, clipping, expanded paints, and Boolean paths.
+M5.5 is next. Add stable drawing and cel IDs, a versioned raster drawing format and frame exposure records that reference cels. Verify held exposures and linked versus independent copies through the shared command model before wiring pressure drawing, onion skins and sprite exports.
 
 Owner-managed Inngest Cloud activation is still open. After the signing and event keys are present in Vercel, redeploy, sync the existing endpoint, and verify a hosted thumbnail and animation export run. Saved still PNGs are served directly.
+
+## M5.4 layers and appearance · November 21, 2026
+
+- **Brief and build** added nested layers, linked swatches, linear gradients, editable strokes, opacity, masks, compound paths and Boolean operations. Studio and MCP use the same revision-checked document commands.
+- **Test** passed 57 Vitest cases with Godot enabled and 70 Playwright cases across four layouts, with six expected desktop-only skips. The badge fixture checked two linked fills after recolor and undo, a transparent cutout, and a clipped gradient in the downloaded PNG. Lottie-web 5.13.0 independently played the exported badge with SVG and Canvas and matched the sampled color and alpha.
+- **Merge** published feature commit `70e6c62` and merged it to `main` at `6a88a2b`.
+- **Deploy** the local Webpack production build passed after a Windows Turbopack CSS-worker startup error. Vercel's default Turbopack build passed on the [feature preview](https://kinetix-chan-k7yfj70ev-chanchans-projects-aada625f.vercel.app) and [production](https://kinetix-chan.vercel.app). A hosted smoke test created the badge through scoped MCP, inspected it on a phone viewport and checked exported pixels. The test rig and account were removed.
+- **Document** records schema, commands, render limits and the exact M5.5 starting step.
 
 ## M5.3 faceted artwork · November 20, 2026
 
