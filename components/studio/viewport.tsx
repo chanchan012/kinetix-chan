@@ -3,16 +3,18 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 import { evaluateRig, rotatePoint } from "@/lib/rig/kinematics";
 import { artboardFor, type KinetixRigState, type Point, type VectorKnot, type VectorPart } from "@/lib/rig/model";
-import { drawArtboardBackground, drawRigArtwork, inPartSpace, traceMesh, tracePart, viewportFrameFor } from "@/lib/rig/render";
+import { drawArtboardBackground, drawRigArtwork, inPartSpace, traceMesh, tracePart, tracePolygons, viewportFrameFor } from "@/lib/rig/render";
 import { partSpace, partWorldSpace } from "@/lib/rig/part-transform";
 import { deformMesh, paintMesh } from "@/lib/rig/skinning";
 import type { RigCommand } from "@/lib/rig/commands";
 import { movePathKnot, pencilKnots, primitiveKnots, type KnotHandle, type PrimitiveShape } from "@/lib/rig/path-geometry";
 import { pointBounds, pointInPolygon, translatedPartOffset, worldPartBounds, type Axis } from "@/lib/rig/path-layout";
+import { facetArtworkFaces,facetPointMappers } from "@/lib/rig/facet-skinning";
+import type { FacetViewportTool } from "./facet-tools";
 
 export type Selection = { kind: "bone" | "part"; id: string } | null;
 export type SelectionMode = "marquee" | "lasso";
-export type Tool = "select" | "bone" | "pen" | "polygon" | "primitive" | "pencil" | "region";
+export type Tool = "select" | "bone" | "pen" | "polygon" | "primitive" | "pencil" | "region" | "facet";
 export type Brush = { partId: string; boneId: string; radius: number; strength: number };
 type Gesture =
   | { type: "rotate"; id: string; origin: Point; start: number; rotation: number }
@@ -24,6 +26,7 @@ type Gesture =
   | { type: "move"; part: VectorPart; ids:string[]; start: Point }
   | { type: "region"; points:Point[] }
   | { type: "knot"; part: VectorPart; index: number; handle: KnotHandle; start:Point }
+  | { type: "facetVertex"; part:VectorPart; vertexId:string; start:Point }
   | { type: "paint"; part: VectorPart; last: Point; brush: Brush };
 
 type Props = {
@@ -41,6 +44,7 @@ type Props = {
   selectRegion: (ids:string[]) => void;
   tool: Tool;
   primitive: PrimitiveShape;
+  facets: FacetViewportTool | null;
   smoothing: number;
   selectionMode: SelectionMode;
   snapping: boolean;
@@ -66,6 +70,7 @@ const noGuides: NonNullable<Extract<KinetixRigState,{version:2}>["guides"]> = []
 function segmentDistance(point: Point, start: Point, end: Point) {
   const x = end.x - start.x;
   const y = end.y - start.y;
+  if (!x && !y) return distance(point,start);
   const ratio = Math.max(0, Math.min(1, ((point.x - start.x) * x + (point.y - start.y) * y) / (x * x + y * y)));
   return distance(point, { x: start.x + x * ratio, y: start.y + y * ratio });
 }
@@ -117,7 +122,7 @@ function drawRulers(context:CanvasRenderingContext2D,camera:Point,scale:number,s
 }
 
 export function Viewport({rig, phase, ghosts, brush, remoteBones, selected, selectedParts, selectedEdge, selectedNode, setNode,
-  select, selectRegion, tool, primitive, smoothing, selectionMode, snapping, rulers, reference, zoom, showBones,
+  select, selectRegion, tool, primitive, facets, smoothing, selectionMode, snapping, rulers, reference, zoom, showBones,
   pen, addKnot, closePolygon, addDrawnPath, addBone, edit}: Props) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
@@ -195,6 +200,13 @@ export function Viewport({rig, phase, ghosts, brush, remoteBones, selected, sele
         const knots = current.part.knots.map((knot,index)=>index===current.index ? movePathKnot(knot,current.handle,local) : knot);
         return { type: "part.update", id: current.part.id, changes: { knots } };
       }
+      case "facetVertex": {
+        const mapper = facetPointMappers(current.part,authoredPoses);
+        const vertex = current.part.facets!.vertices.find(item=>item.id===current.vertexId)!;
+        const anchor = mapper.world(vertex.point);
+        const target = drawingPoint({x:anchor.x+point.x-current.start.x,y:anchor.y+point.y-current.start.y},override);
+        return {type:"facet.move",id:current.part.id,vertexId:current.vertexId,point:mapper.local(target)};
+      }
     }
   }
 
@@ -208,6 +220,11 @@ export function Viewport({rig, phase, ghosts, brush, remoteBones, selected, sele
   } : draft?.type === "parts.translate" ? {
     ...rig, parts:rig.parts.map(part=>draft.ids.includes(part.id) ?
       {...part,offset:translatedPartOffset(part,draft.delta,authoredPoses)} : part),
+  } : draft?.type === "facet.move" ? {
+    ...rig,parts:rig.parts.map(part=>part.id===draft.id && part.facets ? {
+      ...part,facets:{...part.facets,vertices:part.facets.vertices.map(vertex=>vertex.id===draft.vertexId ?
+        {...vertex,point:draft.point} : vertex)},
+    } : part),
   } : rig;
 
   useEffect(() => {
@@ -287,7 +304,43 @@ export function Viewport({rig, phase, ghosts, brush, remoteBones, selected, sele
         }
       }
       const part = selected?.kind === "part" && selectedParts.length<=1 ? preview.parts.find(item => item.id === selected.id) : undefined;
-      if (part?.mesh) {
+      if (part?.facets && !brush && (facets || !part.mesh)) {
+        const graph = facets?.triangulation ?? part.facets;
+        const map = facetPointMappers(part,poses).world;
+        const points = new Map(graph.vertices.map(vertex=>[vertex.id,map(vertex.point)]));
+        for (const face of graph.faces) {
+          context.strokeStyle = facets?.faceId===face.id ? "#fff4d6" : "#392c32b0";
+          tracePolygons(context,[face.vertices.map(id=>points.get(id)!)]);
+          context.stroke();
+        }
+        if (facets) {
+          const a = points.get(facets.a);
+          const b = points.get(facets.b);
+          if (a && b && facets.mode==="edge") {
+            context.strokeStyle = "#216885";
+            context.beginPath();
+            context.moveTo(a.x,a.y);
+            context.lineTo(b.x,b.y);
+            context.stroke();
+          }
+          if (facets.mode==="vertex" || facets.mode==="draw") for (const [id,point] of points) {
+            context.fillStyle = id===facets.a || id===facets.b ? "#f78355" : "#fffcef";
+            context.strokeStyle = "#653622";
+            circle(context,point,4*pixel);
+          }
+          if (facets.mode==="draw" && facets.draft.length) {
+            const draft = facets.draft.map(item=>map(item.point));
+            context.strokeStyle = "#5a2f1f";
+            context.fillStyle = "#f78355";
+            context.beginPath();
+            context.moveTo(draft[0].x,draft[0].y);
+            for (const point of draft.slice(1)) context.lineTo(point.x,point.y);
+            if (cursor) context.lineTo(cursor.x,cursor.y);
+            context.stroke();
+            for (const point of draft) circle(context,point,4*pixel);
+          }
+        }
+      } else if (part?.mesh) {
         const points = deformMesh(part, poses);
         traceMesh(context, points, part.mesh.triangles);
         context.strokeStyle = brush ? "#28566cb5" : "#534c43a6";
@@ -386,7 +439,7 @@ export function Viewport({rig, phase, ghosts, brush, remoteBones, selected, sele
     });
     return () => cancelAnimationFrame(frame);
   }, [scale, size, camera.x, camera.y, preview, rig, authoredPoses, phase, reference, selected, selectedParts, selectedEdge, selectedNode,
-    showBones, gesture, cursor, pen, ghosts, brush, remoteBones, primitive, selectionMode, rulers, guides,
+    showBones, gesture, cursor, pen, ghosts, brush, remoteBones, primitive, facets, selectionMode, rulers, guides,
     viewportFrame.x,viewportFrame.y,viewportFrame.width,viewportFrame.height]);
 
   function down(event: PointerEvent<HTMLCanvasElement>) {
@@ -401,6 +454,41 @@ export function Viewport({rig, phase, ghosts, brush, remoteBones, selected, sele
       const mesh = paintMesh(part, authoredPoses, brush.boneId, point, brush.radius, brush.strength);
       next = { type: "paint", part: { ...part, mesh }, last: point, brush };
       setCursor(point);
+    } else if (tool==="facet") {
+      const part = facets && rig.parts.find(item=>item.id===facets.partId);
+      if (!facets || !part || !part.facets) return;
+      const mapper = facetPointMappers(part,authoredPoses);
+      const graph = part.facets;
+      const world = new Map(graph.vertices.map(vertex=>[vertex.id,mapper.world(vertex.point)]));
+      if (facets.mode==="edge") {
+        const edges = graph.faces.flatMap(face=>face.vertices.map((a,index)=>{
+          const b = face.vertices[(index+1)%face.vertices.length];
+          return {a,b,distance:segmentDistance(point,world.get(a)!,world.get(b)!)};
+        })).sort((a,b)=>a.distance-b.distance);
+        if (edges[0]?.distance<tolerance) facets.pickEdge(edges[0].a,edges[0].b);
+        return;
+      }
+      if (facets.mode==="face" || facets.mode==="sample") {
+        const face = facetArtworkFaces(part,authoredPoses).reverse()
+          .find(item=>item.polygons.some(polygon=>pointInPolygon(point,polygon)));
+        if (face && facets.mode==="sample") facets.sample(face.fill);
+        else if (face) facets.pickFace(face.id);
+        return;
+      }
+      const available = facets.mode==="draw" && event.altKey ? facets.draft : [...graph.vertices,...facets.draft];
+      const candidates = available.map(vertex=>({
+        ...vertex,distance:distance(point,world.get(vertex.id) ?? mapper.world(vertex.point)),
+      })).sort((a,b)=>a.distance-b.distance);
+      const match = candidates[0]?.distance<tolerance ? candidates[0] : undefined;
+      if (facets.mode==="draw") {
+        facets.addVertex(match ? {id:match.id,point:match.point} : {
+          id:crypto.randomUUID(),point:mapper.local(drawingPoint(point,event.altKey)),
+        });
+        return;
+      }
+      if (!match) return;
+      facets.pickVertex(match.id);
+      next = {type:"facetVertex",part,vertexId:match.id,start:point};
     } else if (tool === "bone" || tool === "pen" || tool === "polygon") {
       next = { type: tool, start: tool==="bone" ? point : drawingPoint(point,event.altKey) };
     } else if (tool === "primitive") {
@@ -411,7 +499,7 @@ export function Viewport({rig, phase, ghosts, brush, remoteBones, selected, sele
       next = { type: tool,points:[point] };
     } else {
       const part = selected?.kind === "part" ? rig.parts.find(item => item.id === selected.id) : undefined;
-      if (part && !part.mesh && selectedParts.length<=1) {
+      if (part && !part.mesh && !part.facets && selectedParts.length<=1) {
         for (const [index, knot] of part.knots.entries()) {
           const handle = (["point", "incoming", "outgoing"] as const).find(key => {
             const candidate = knot[key];
@@ -447,6 +535,7 @@ export function Viewport({rig, phase, ghosts, brush, remoteBones, selected, sele
         context.resetTransform();
         context.lineWidth = 2 * tolerance;
         const hit = [...rig.parts].reverse().find(item => {
+          if (item.facets) return facetArtworkFaces(item,authoredPoses).some(face=>face.polygons.some(polygon=>pointInPolygon(point,polygon)));
           if (item.mesh) {
             traceMesh(context, deformMesh(item, authoredPoses), item.mesh.triangles);
             return context.isPointInPath(point.x, point.y);
@@ -497,13 +586,13 @@ export function Viewport({rig, phase, ghosts, brush, remoteBones, selected, sele
       }).map(part=>part.id);
       selectRegion(ids);
     } else if (cursor || gesture.type === "paint") {
-      if ((gesture.type==="move" || gesture.type==="knot") && distance(point,gesture.start)*scale < 1) {
+      if ((gesture.type==="move" || gesture.type==="knot" || gesture.type==="facetVertex") && distance(point,gesture.start)*scale < 1) {
         clear();
         return;
       }
       const command = gestureCommand(gesture,point,event.altKey);
       if (command) edit(gesture.type === "rotate" ? "Rotate bone" : gesture.type === "target" ? "Move IK target" :
-        gesture.type === "paint" ? "Paint weights" : "Edit path", command);
+        gesture.type === "paint" ? "Paint weights" : gesture.type==="facetVertex" ? "Move facet vertex" : "Edit path", command);
     }
     clear();
   }

@@ -19,7 +19,7 @@ function curvePoint(a: Point, b: Point, c: Point, d: Point, t: number): Point {
 export function bindMesh(part: VectorPart, poses: Map<string, BonePose>, boneId: string): SkinMesh {
   if (!part.closed || !poses.has(boneId)) throw new Error("Choose a bone and a closed path.");
   const polygon: Point[] = [];
-  for (const [index, knot] of part.knots.entries()) {
+  for (const [index, knot] of (part.facets ? [] : part.knots).entries()) {
     polygon.push(knot.point);
     const next = part.knots[(index + 1) % part.knots.length];
     if (!knot.outgoing && !next.incoming) continue;
@@ -27,7 +27,15 @@ export function bindMesh(part: VectorPart, poses: Map<string, BonePose>, boneId:
       polygon.push(curvePoint(knot.point, knot.outgoing ?? knot.point, next.incoming ?? next.point, next.point, step / 5));
     }
   }
-  const indices = earcut(polygon.flatMap(({x, y}) => [x, y]));
+  let indices: number[];
+  if (part.facets) {
+    const byId = new Map(part.facets.vertices.map((vertex,index)=>[vertex.id,index]));
+    polygon.push(...part.facets.vertices.map(vertex=>vertex.point));
+    indices = part.facets.faces.flatMap(face=>{
+      const nodes = face.vertices.map(id=>byId.get(id)!);
+      return earcut(nodes.flatMap(index=>[polygon[index].x,polygon[index].y])).map(index=>nodes[index]);
+    });
+  } else indices = earcut(polygon.flatMap(({x,y})=>[x,y]));
   if (indices.length < 3) throw new Error("The path has no triangulatable area.");
   const triangles: SkinMesh["triangles"] = [];
   const midpoints = new Map<string, number>();
@@ -68,7 +76,12 @@ export function deformMesh(part: VectorPart, poses: Map<string, BonePose>): Poin
   if (!mesh) return [];
   const matrices = new Map(mesh.bindings.map(binding => [binding.id, binding]));
   const transform = partMatrix(part);
-  return mesh.vertices.map(vertex => {
+  const points:Point[] = [];
+  for (const vertex of mesh.vertices) {
+    if (vertex.splitFrom) {
+      points.push(meanPoint(vertex.splitFrom.map(index=>points[index])));
+      continue;
+    }
     const local = mapPartPoint(transform,vertex.point);
     const bind = worldPoint({ x:local.x-mesh.offset.x, y:local.y-mesh.offset.y }, mesh.origin, mesh.angle);
     const result = { x: 0, y: 0 };
@@ -82,8 +95,34 @@ export function deformMesh(part: VectorPart, poses: Map<string, BonePose>): Poin
       result.x += point.x * weight;
       result.y += point.y * weight;
     }
-    return result;
-  });
+    points.push(result);
+  }
+  return points;
+}
+
+const meanPoint = (points:readonly Point[]):Point => ({
+  x:points.reduce((sum,point)=>sum+point.x,0)/points.length,
+  y:points.reduce((sum,point)=>sum+point.y,0)/points.length,
+});
+
+/** Preserve the posed triangle exactly until an artist paints new weights on its added vertex. */
+export function splitMeshTriangle(mesh:SkinMesh,index:number):SkinMesh {
+  const triangle = mesh.triangles[index];
+  if (!triangle) throw new Error("Choose an existing deformation triangle.");
+  const sources = triangle.map(vertex=>mesh.vertices[vertex]);
+  const point = meanPoint(sources.map(vertex=>vertex.point));
+  const influence = new Map<string,number>();
+  for (const vertex of sources) for (const {boneId,weight} of vertex.weights) {
+    influence.set(boneId,(influence.get(boneId)??0)+weight/3);
+  }
+  const best = [...influence].sort((a,b)=>b[1]-a[1]).slice(0,4);
+  const sum = best.reduce((total,[,weight])=>total+weight,0);
+  const weights = best.map(([boneId,weight])=>({boneId,weight:weight/sum}));
+  const next = mesh.vertices.length;
+  const [a,b,c] = triangle;
+  const triangles = mesh.triangles.slice();
+  triangles.splice(index,1,[a,b,next],[b,c,next],[c,a,next]);
+  return {...mesh,vertices:[...mesh.vertices,{point,weights,splitFrom:[a,b,c]}],triangles};
 }
 
 /** Increase the selected bone's influence with radial falloff and renormalize each touched vertex. */
@@ -106,7 +145,7 @@ export function paintMesh(part: VectorPart, poses: Map<string, BonePose>, boneId
       .filter(entry => entry.weight > 1e-6).sort((a, b) => b.weight - a.weight).slice(0, 3);
     weights.push({ boneId, weight: influence });
     const sum = weights.reduce((total, entry) => total + entry.weight, 0);
-    return { ...vertex, weights: weights.map(entry => ({ ...entry, weight: entry.weight / sum })) };
+    return { ...vertex, splitFrom:undefined, weights: weights.map(entry => ({ ...entry, weight: entry.weight / sum })) };
   });
   return { ...mesh, vertices };
 }

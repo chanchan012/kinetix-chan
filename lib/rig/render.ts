@@ -3,6 +3,7 @@ import type { BonePose } from "./kinematics";
 import { createRigState, type KinetixRigState, type Point, type VectorPart } from "./model";
 import { deformMesh } from "./skinning";
 import { partMatrix } from "./part-transform";
+import { facetArtworkFaces } from "./facet-skinning";
 
 export const viewportFrame = {x:-10,y:3,width:510,height:280};
 export const viewportFrameFor = (rig: KinetixRigState) => rig.version === 1 ? viewportFrame :
@@ -69,6 +70,15 @@ export function traceMesh(context: RigDrawingContext, points: Point[], triangles
   }
 }
 
+export function tracePolygons(context:RigDrawingContext,polygons:readonly (readonly Point[])[]) {
+  context.beginPath();
+  for (const polygon of polygons) {
+    context.moveTo(polygon[0].x,polygon[0].y);
+    for (const point of polygon.slice(1)) context.lineTo(point.x,point.y);
+    context.closePath();
+  }
+}
+
 export function drawRigArtwork(
   context: RigDrawingContext, rig: KinetixRigState, poses: Map<string, BonePose>, phase: number,
   reference = true,
@@ -86,6 +96,18 @@ export function drawRigArtwork(
     context.restore();
   }
   for (const part of rig.parts) {
+    if (part.facets) {
+      const faces = facetArtworkFaces(part,poses);
+      tracePolygons(context,faces.flatMap(face=>face.polygons));
+      context.fillStyle = faces[0].fill;
+      context.fill();
+      for (const face of faces) {
+        tracePolygons(context,face.polygons);
+        context.fillStyle = face.fill;
+        context.fill();
+      }
+      continue;
+    }
     if (part.mesh) {
       traceMesh(context, deformMesh(part, poses), part.mesh.triangles);
       context.fillStyle = part.fill;

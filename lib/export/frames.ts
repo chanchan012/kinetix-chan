@@ -29,7 +29,8 @@ export const formats: Record<ExportFormat, { label: string; mime: string; extens
 
 export function supportedExport(format: ExportFormat, snapshot: ExportSnapshot): boolean {
   const count = snapshot.endFrame - snapshot.startFrame + 1;
-  const shapes = snapshot.rig.parts.reduce((total, part) => total + (part.mesh?.triangles.length ?? 1), 64);
+  const shapes = snapshot.rig.parts.reduce((total, part) => total + (part.mesh?.triangles.length ?? 1) +
+    (part.facets?.faces.length ?? 0), 64);
   const { width, height } = artboardFor(snapshot.rig);
   if (format !== "lottie" && width * height * count > 64 * 1024 * 1024) return false;
   if (format === "spritesheet") {
