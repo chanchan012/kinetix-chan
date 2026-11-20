@@ -2,8 +2,7 @@ import { z } from "zod";
 import type { ExportQueue } from "../../db/exports";
 import { exportRequested, inngest } from "../../jobs/client";
 import { tracksSchema } from "../rig/animation";
-import { readRigState } from "../rig/model";
-import { studyFor } from "../studies";
+import { readRigState, referenceFrameCount } from "../rig/model";
 import { exportFormatSchema, exportSnapshotSchema, supportedExport } from "./frames";
 
 export const exportRequest = z.strictObject({
@@ -15,8 +14,7 @@ export async function queueExport(queue:ExportQueue, owner:string, rigId:string,
   const input = await queue.inputs(owner,rigId,job.clipId);
   if (!input) return {error:"not_found",status:404} as const;
   const state = readRigState(input.state);
-  const study = studyFor(state.study);
-  const frameCount = input.clip?.frameCount ?? study.frames;
+  const frameCount = input.clip?.frameCount ?? referenceFrameCount(state);
   const snapshot = exportSnapshotSchema.safeParse({
     name:input.clip?.name ?? input.name,rig:state,tracks:tracksSchema.parse(input.clip?.tracks ?? []),
     fps:input.clip?.fps ?? 24,frameCount,startFrame:job.startFrame ?? 0,endFrame:job.endFrame ?? frameCount-1,

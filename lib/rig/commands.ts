@@ -1,6 +1,6 @@
 import { enablePatches, produceWithPatches, type Draft } from "immer";
 import { z } from "zod";
-import { boneSchema, constraintSchema, orderedBones, partSchema, rigStateSchema, type KinetixRigState } from "./model";
+import { artboardSchema, boneSchema, constraintSchema, orderedBones, partSchema, rigStateSchema, type KinetixRigState } from "./model";
 
 enablePatches();
 
@@ -16,6 +16,9 @@ export const rigCommandSchema = z.discriminatedUnion("type", [
   z.strictObject({ type: z.literal("part.create"), part: partSchema }),
   z.strictObject({ type: z.literal("part.update"), id: partSchema.shape.id, changes: partSchema.omit({ id: true }).partial() }),
   z.strictObject({ type: z.literal("part.remove"), id: partSchema.shape.id }),
+  z.strictObject({ type: z.literal("part.reorder"), id: partSchema.shape.id, direction: z.enum(["forward", "backward"]) }),
+  z.strictObject({ type: z.literal("part.splitEdge"), id: partSchema.shape.id, edge: z.int().min(0).max(255) }),
+  z.strictObject({ type: z.literal("artboard.update"), artboard: artboardSchema }),
 ]);
 export type RigCommand = z.infer<typeof rigCommandSchema>;
 
@@ -76,6 +79,33 @@ function applyCommand(rig: Draft<KinetixRigState>, command: RigCommand) {
     case "part.remove":
       findById(rig.parts, command.id, "Vector part");
       rig.parts = rig.parts.filter(part => part.id !== command.id);
+      break;
+    case "part.reorder": {
+      const part = findById(rig.parts, command.id, "Vector part");
+      const index = rig.parts.indexOf(part);
+      const next = index + (command.direction === "forward" ? 1 : -1);
+      if (next < 0 || next >= rig.parts.length) throw new Error("The part is already at this end of the stack.");
+      rig.parts.splice(index, 1);
+      rig.parts.splice(next, 0, part);
+      break;
+    }
+    case "part.splitEdge": {
+      const part = findById(rig.parts, command.id, "Vector part");
+      const segments = part.closed ? part.knots.length : part.knots.length - 1;
+      if (command.edge >= segments) throw new Error("This edge does not exist.");
+      const start = part.knots[command.edge];
+      const end = part.knots[(command.edge + 1) % part.knots.length];
+      if (start.outgoing || end.incoming) throw new Error("Select a straight polygon edge.");
+      part.knots.splice(command.edge + 1, 0, { point: {
+        x: (start.point.x + end.point.x) / 2,
+        y: (start.point.y + end.point.y) / 2,
+      } });
+      delete part.mesh;
+      break;
+    }
+    case "artboard.update":
+      if (rig.version !== 2) throw new Error("Artboard settings require a blank design document.");
+      rig.artboard = command.artboard;
       break;
   }
 }

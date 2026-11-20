@@ -3,7 +3,7 @@ import { validator } from "hono/validator";
 import { z } from "zod";
 import type { IdentityEnv } from "./api";
 import type { Library } from "../db/library";
-import { readRigState, rigStateSchema } from "./rig/model";
+import { artboardSchema, readRigState, rigStateSchema, studyIdSchema } from "./rig/model";
 import { tracksSchema } from "./rig/animation";
 import { exportApi } from "./export/api";
 import { realtimeApi } from "./realtime/api";
@@ -11,7 +11,7 @@ import type { RoomBus } from "./realtime/bus";
 import { credentialApi } from "./mcp/credentials";
 
 const name = z.string().trim().min(1).max(120);
-const createRig = z.strictObject({name,study:z.enum(["fox","heron","fish"])});
+const createRig = z.union([z.strictObject({name,study:studyIdSchema}), z.strictObject({name,artboard:artboardSchema})]);
 const renameRig = z.strictObject({name});
 const editClip = z.strictObject({name,fps:z.int().min(1).max(120),frameCount:z.int().min(1).max(36000)});
 const editRigState = z.strictObject({ revision:z.int().min(0).max(2_147_483_646), state:rigStateSchema });
@@ -39,8 +39,8 @@ export function libraryApi(repository:()=>Library,rooms?:()=>RoomBus) {
     })
     .get("/",async c => c.json(await repository().list(c.get("userId")!)))
     .post("/",body(createRig),async c => {
-      const {name,study} = c.req.valid("json");
-      return c.json(await repository().create(c.get("userId")!,name,study),201);
+      const input = c.req.valid("json");
+      return c.json(await repository().create(c.get("userId")!,input.name,"study" in input ? input.study : input.artboard),201);
     })
     .get("/:id",async c => {
       const row = await repository().open(c.get("userId")!,c.req.param("id"));

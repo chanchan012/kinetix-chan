@@ -9,6 +9,7 @@ import { createRigState } from "../../lib/rig/model";
 import { sampleRig, setKey, tracksSchema } from "../../lib/rig/animation";
 import { processExport } from "../../jobs/exports";
 import { RigAgent } from "../../lib/mcp/actions";
+import type { RigCommand } from "../../lib/rig/commands";
 import { evaluateRig } from "../../lib/rig/kinematics";
 import { readRigState } from "../../lib/rig/model";
 
@@ -29,6 +30,34 @@ beforeAll(async () => {
 },30000);
 afterAll(() => pg.close());
 describe("saved library", () => {
+  it("edits a blank design through scoped MCP commands, protects its revision and serves its saved artboard", async () => {
+    const created = await call("owner","POST","",{name:"Portrait",artboard:{name:"Portrait",width:240,height:360,background:null}});
+    expect(created.status).toBe(201);
+    const rig = await created.json();
+    const path = "/" + rig.id;
+    const issued = await call("owner","POST",path+"/mcp-credentials",{label:"Design agent"});
+    const {token} = await issued.json();
+    const agent = new RigAgent(library,(await library.tokens.verify(token))!);
+    expect(await agent.viewportBounds()).toMatchObject({width:240,height:360,artboard:{background:null}});
+    const commands: RigCommand[] = [
+      {type:"artboard.update",artboard:{name:"Poster",width:256,height:384,background:null}},
+      {type:"part.create",part:{
+        id:"face",name:"Face",offset:{x:0,y:0},parentId:null,closed:true,fill:"#c34728",
+        knots:[{point:{x:32,y:64}},{point:{x:128,y:64}},{point:{x:80,y:180}}],
+      }},
+      {type:"part.splitEdge",id:"face",edge:0},
+    ];
+    await agent.editDocument({revision:rig.revision,commands});
+    await expect(agent.editDocument({revision:rig.revision,commands})).rejects.toThrow("changed");
+    expect(await agent.hierarchy()).toMatchObject({parts:[{id:"face",knots:[{},{point:{x:80,y:64}},{},{}]}]});
+    expect((await call("other","GET",path+"/artboard.png")).status).toBe(404);
+    const exported = await call("owner","GET",path+"/artboard.png");
+    expect(exported.headers.get("content-type")).toBe("image/png");
+    const png = Buffer.from(await exported.arrayBuffer());
+    expect([png.readUInt32BE(16),png.readUInt32BE(20)]).toEqual([256,384]);
+    await library.remove("owner",rig.id);
+  });
+
   it("issues owner-only, revocable rig credentials and bakes a matching IK pose", async () => {
     const rig = await library.create("owner","MCP fixture","fox");
     const path = "/" + rig.id + "/mcp-credentials";

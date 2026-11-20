@@ -1,6 +1,6 @@
 import { tracksSchema, sampleRig } from "../rig/animation";
 import { evaluateRig } from "../rig/kinematics";
-import { rigStateSchema } from "../rig/model";
+import { artboardFor, rigStateSchema } from "../rig/model";
 import { z } from "zod";
 
 export const exportFormats = ["lottie", "spritesheet", "png-sequence", "mp4", "webm"] as const;
@@ -19,8 +19,6 @@ export const exportSnapshotSchema = z.strictObject({
 export type ExportSnapshot = z.infer<typeof exportSnapshotSchema>;
 export type ExportFrame = { rig: ExportSnapshot["rig"]; poses: ReturnType<typeof evaluateRig>; phase: number };
 
-export const artboard = { width: 512, height: 320 };
-
 export const formats: Record<ExportFormat, { label: string; mime: string; extension: string; frames: number }> = {
   lottie: { label:"Lottie JSON", mime:"application/json", extension:"json", frames:180 },
   spritesheet: { label:"Spritesheet PNG", mime:"image/png", extension:"png", frames:96 },
@@ -32,7 +30,20 @@ export const formats: Record<ExportFormat, { label: string; mime: string; extens
 export function supportedExport(format: ExportFormat, snapshot: ExportSnapshot): boolean {
   const count = snapshot.endFrame - snapshot.startFrame + 1;
   const shapes = snapshot.rig.parts.reduce((total, part) => total + (part.mesh?.triangles.length ?? 1), 64);
+  const { width, height } = artboardFor(snapshot.rig);
+  if (format !== "lottie" && width * height * count > 64 * 1024 * 1024) return false;
+  if (format === "spritesheet") {
+    const {columns, rows} = spritesheetGrid(count, width, height);
+    if (width * columns > 8192 || height * rows > 8192) return false;
+  }
   return count <= formats[format].frames && shapes * count <= (format === "lottie" ? 40_000 : 300_000);
+}
+
+export function spritesheetGrid(frames:number, width:number, height:number) {
+  const minimum = Math.ceil(frames / Math.floor(8192 / height));
+  const maximum = Math.min(frames, Math.floor(8192 / width));
+  const columns = Math.min(maximum, Math.max(minimum, Math.ceil(Math.sqrt(frames * height / width))));
+  return { columns, rows: Math.ceil(frames / columns) };
 }
 
 export function* sampleExportFrames(input: ExportSnapshot): Generator<ExportFrame> {

@@ -10,6 +10,60 @@ test.beforeEach(async ({page}) => {
   await clerk.signIn({page, emailAddress:process.env.KINETIX_TEST_EMAIL!});
 });
 
+test("an illustrator draws, edits, reopens, and exports a blank design", async ({page}, info) => {
+  const name = "Portrait design " + info.project.name;
+  await page.goto("/dashboard");
+  await page.getByRole("button",{name:"New design"}).click();
+  await page.getByLabel("Design name").fill(name);
+  await page.getByLabel("Artboard name").fill("Portrait");
+  await page.getByLabel("Width (px)").fill("240");
+  await page.getByLabel("Height (px)").fill("360");
+  await page.getByRole("button",{name:"Create design"}).click();
+  await expect(page.getByRole("heading",{name})).toBeVisible({timeout:20_000});
+  const id = new URL(page.url()).pathname.split("/").at(-1);
+  const path = "/api/rigs/" + id;
+  try {
+    const canvas = page.getByRole("img",{name:"Rig canvas"});
+    const bounds = (await canvas.boundingBox())!;
+    const scale = Math.min(bounds.width / 240,bounds.height / 360);
+    const x = (world:number) => bounds.x + bounds.width / 2 + (world - 120) * scale;
+    const y = (world:number) => bounds.y + bounds.height / 2 + (world - 180) * scale;
+    for (const polygon of [[[50,112],[190,112],[120,245]],[[55,177],[73,123],[96,163]],[[143,157],[165,110],[183,170]]]) {
+      await page.getByRole("button",{name:"Polygon",exact:true}).click();
+      for (const [px,py] of polygon) await page.mouse.click(x(px),y(py));
+      await page.getByRole("button",{name:"Close polygon"}).click();
+    }
+    const inspector = page.getByRole("complementary",{name:"Inspector"});
+    await inspector.getByLabel("Edge").selectOption("0");
+    await inspector.getByRole("button",{name:"Split edge"}).click();
+    await expect(inspector.getByLabel("Edge").locator("option")).toHaveCount(5);
+    await page.mouse.move(x(143),y(157));
+    await page.mouse.down();
+    await page.mouse.move(x(130),y(150),{steps:4});
+    await page.mouse.up();
+    await expect(inspector.getByText("Human · Edit path")).toBeVisible();
+    await page.getByRole("button",{name:"Undo",exact:true}).click();
+    await expect(inspector.getByText("Human · Split edge")).toBeVisible();
+    await page.getByRole("button",{name:"Save",exact:true}).click();
+    await expect(page.getByRole("button",{name:"Save",exact:true})).toBeDisabled();
+    await page.reload();
+    await expect(page.getByRole("button",{name:"Polygon 3",exact:true})).toBeVisible();
+    const saved: {state:KinetixRigState} = await (await page.request.get(path+"/state")).json();
+    expect(saved.state).toMatchObject({version:2,artboard:{name:"Portrait",width:240,height:360,background:null}});
+    expect(saved.state.parts.map(part=>part.knots.length)).toEqual([3,3,4]);
+    expect(saved.state.parts[2].knots[0].point.x).toBeCloseTo(143,0);
+    await page.getByRole("button",{name:"Export",exact:true}).click();
+    const link = page.getByRole("link",{name:"Download saved artboard PNG"});
+    const png = await page.request.get((await link.getAttribute("href"))!);
+    expect(png.headers()["content-type"]).toBe("image/png");
+    const bytes = await png.body();
+    expect([bytes.readUInt32BE(16),bytes.readUInt32BE(20),bytes[25]]).toEqual([240,360,6]);
+    expect(await page.evaluate(()=>document.documentElement.scrollHeight<=innerHeight && document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+  } finally {
+    expect((await page.request.delete(path)).status()).toBe(204);
+  }
+});
+
 test("a member queues an export from the studio", async ({page}, info) => {
   const name = "Export " + info.project.name + " rig";
   const created = await page.request.post("/api/rigs", {data:{name,study:"fox"}});

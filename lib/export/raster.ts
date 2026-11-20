@@ -4,23 +4,34 @@ import { pipeline } from "node:stream/promises";
 import { createCanvas, type Canvas } from "@napi-rs/canvas";
 import ffmpeg from "@ffmpeg-installer/ffmpeg";
 import { strToU8, zipSync } from "fflate";
-import { drawRigArtwork } from "../rig/render";
-import { artboard, sampleExportFrames, type ExportFrame, type ExportSnapshot } from "./frames";
+import { drawArtboardBackground, drawRigArtwork } from "../rig/render";
+import { artboardFor } from "../rig/model";
+import { sampleExportFrames, spritesheetGrid, type ExportFrame, type ExportSnapshot } from "./frames";
 
 function drawFrame(canvas: Canvas, frame: ExportFrame, opaque = false) {
   const context = canvas.getContext("2d");
-  context.clearRect(0, 0, artboard.width, artboard.height);
+  context.clearRect(0, 0, canvas.width, canvas.height);
   if (opaque) {
     context.fillStyle = "#f7f5ed";
-    context.fillRect(0, 0, artboard.width, artboard.height);
+    context.fillRect(0, 0, canvas.width, canvas.height);
   }
+  drawArtboardBackground(context, frame.rig);
   drawRigArtwork(context, frame.rig, frame.poses, frame.phase);
 }
 
+export function renderPngFrame(snapshot: ExportSnapshot) {
+  const {width, height} = artboardFor(snapshot.rig);
+  const canvas = createCanvas(width, height);
+  const frame = sampleExportFrames(snapshot).next();
+  if (frame.done) throw new Error("There is no frame to render.");
+  drawFrame(canvas, frame.value);
+  return canvas.toBuffer("image/png");
+}
+
 export function renderSpritesheet(snapshot: ExportSnapshot) {
+  const artboard = artboardFor(snapshot.rig);
   const frames = snapshot.endFrame - snapshot.startFrame + 1;
-  const columns = Math.min(8, Math.ceil(Math.sqrt(frames * artboard.height / artboard.width)));
-  const rows = Math.ceil(frames / columns);
+  const { columns, rows } = spritesheetGrid(frames, artboard.width, artboard.height);
   const sheet = createCanvas(artboard.width * columns, artboard.height * rows);
   const context = sheet.getContext("2d");
   const canvas = createCanvas(artboard.width, artboard.height);
@@ -34,7 +45,8 @@ export function renderSpritesheet(snapshot: ExportSnapshot) {
 }
 
 export function renderPngSequence(snapshot: ExportSnapshot) {
-  const canvas = createCanvas(artboard.width, artboard.height);
+  const {width, height} = artboardFor(snapshot.rig);
+  const canvas = createCanvas(width, height);
   const files: Record<string, Uint8Array> = {};
   let number = snapshot.startFrame;
   for (const frame of sampleExportFrames(snapshot)) {
@@ -42,12 +54,13 @@ export function renderPngSequence(snapshot: ExportSnapshot) {
     files["frames/" + String(number++ + 1).padStart(5, "0") + ".png"] = canvas.toBuffer("image/png");
   }
   files["sequence.json"] = strToU8(JSON.stringify({
-    ...artboard, fps: snapshot.fps, startFrame: snapshot.startFrame + 1, endFrame: snapshot.endFrame + 1,
+    width, height, fps: snapshot.fps, startFrame: snapshot.startFrame + 1, endFrame: snapshot.endFrame + 1,
   }));
   return Buffer.from(zipSync(files, { level: 0 }));
 }
 
 function* rawFrames(snapshot: ExportSnapshot) {
+  const artboard = artboardFor(snapshot.rig);
   const canvas = createCanvas(artboard.width, artboard.height);
   const context = canvas.getContext("2d");
   for (const frame of sampleExportFrames(snapshot)) {
@@ -58,10 +71,11 @@ function* rawFrames(snapshot: ExportSnapshot) {
 }
 
 export async function renderVideo(snapshot: ExportSnapshot, format: "mp4" | "webm"): Promise<Buffer> {
+  const artboard = artboardFor(snapshot.rig);
   const args = [
     "-hide_banner", "-loglevel", "error", "-f", "rawvideo", "-pixel_format", "rgba",
     "-video_size", artboard.width + "x" + artboard.height, "-framerate", String(snapshot.fps), "-i", "pipe:0",
-    "-an", "-pix_fmt", "yuv420p", "-threads", "2",
+    "-an", "-vf", "pad=ceil(iw/2)*2:ceil(ih/2)*2", "-pix_fmt", "yuv420p", "-threads", "2",
   ];
   if (format === "mp4") args.push("-c:v", "libx264", "-preset", "fast", "-crf", "20",
     "-movflags", "frag_keyframe+empty_moov+default_base_moof");

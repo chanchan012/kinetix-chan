@@ -1,5 +1,6 @@
-import { drawRigArtwork, type RigDrawingContext } from "../rig/render";
-import { artboard, sampleExportFrames, type ExportSnapshot } from "./frames";
+import { drawArtboardBackground, drawRigArtwork, type RigDrawingContext } from "../rig/render";
+import { sampleExportFrames, type ExportSnapshot } from "./frames";
+import { artboardFor } from "../rig/model";
 
 type Vec = [number, number];
 type Color = [number, number, number];
@@ -137,6 +138,7 @@ export function compileLottie(snapshot: ExportSnapshot) {
   let frames = 0;
   for (const frame of sampleExportFrames(snapshot)) {
     const context = new VectorCapture();
+    drawArtboardBackground(context, frame.rig);
     drawRigArtwork(context, frame.rig, frame.poses, frame.phase);
     if (frames === 0) {
       context.marks.forEach(mark => paths.push([mark]));
@@ -149,6 +151,7 @@ export function compileLottie(snapshot: ExportSnapshot) {
     }
     frames++;
   }
+  const artboard = artboardFor(snapshot.rig);
   return {
     v: "5.12.2", fr: snapshot.fps, ip: 0, op: frames, w: artboard.width, h: artboard.height,
     nm: snapshot.name, ddd: 0, assets: [],

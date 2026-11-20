@@ -4,7 +4,7 @@ import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { Diamond, FilmSlate, Pause, Play } from "@phosphor-icons/react";
 import { studyFor } from "@/lib/studies";
 import { channelId, removeKey, setKey, setKeyEase, tracksSchema, type Channel, type Track } from "@/lib/rig/animation";
-import type { KinetixRigState } from "@/lib/rig/model";
+import { referenceFrameCount, type KinetixRigState } from "@/lib/rig/model";
 import { EasingGraph } from "./easing-graph";
 import type { Selection } from "./viewport";
 import { useStudioShortcuts } from "./shortcuts";
@@ -22,7 +22,7 @@ export function Timeline({clips, clipId, selectClip, manageClips, rigId, rig, se
   preview: (frame: FramePreview) => void; onDirty: (value: boolean) => void;
   onClip: (clip: ClipTiming | undefined) => void;
 }) {
-  const source = studyFor(rig.study);
+  const source = rig.study ? studyFor(rig.study) : null;
   const [previousClipId, setPreviousClipId] = useState(clipId);
   const [frame, setFrame] = useState(0);
   const [playing, setPlaying] = useState(false);
@@ -50,7 +50,7 @@ export function Timeline({clips, clipId, selectClip, manageClips, rigId, rig, se
   const tracks = draft?.tracks ?? clip?.tracks ?? emptyTracks;
   const dirty = draft && draft.tracks !== draft.clip.tracks;
   const fps = clip?.fps ?? 24;
-  const frames = clip?.frameCount ?? source.frames;
+  const frames = clip?.frameCount ?? referenceFrameCount(rig);
   const current = Math.min(frame, frames - 1);
 
   const bone = selected?.kind === "bone" ? rig.bones.find(item => item.id === selected.id) : undefined;
@@ -170,7 +170,7 @@ export function Timeline({clips, clipId, selectClip, manageClips, rigId, rig, se
     <div className="studio-timeline-head">
       <h2>Timeline</h2>
       <label><span className="sr-only">Animation clip</span><select value={clip ? clipId : ""} onChange={event => selectClip(event.target.value)}>
-        <option value="">{source.clip} · Study</option>
+        <option value="">{source ? source.clip + " · Study" : "Base pose"}</option>
         {clips.map(item => <option value={item.id} key={item.id}>{item.name}</option>)}
       </select></label>
       <button className="studio-toggle studio-manage-clips" onClick={manageClips} disabled={hasDrafts || saving}

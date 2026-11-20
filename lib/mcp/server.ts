@@ -22,7 +22,7 @@ export function createStudioMcp(agent:RigAgent) {
     const inputSchema:StandardSchemaWithJSON = schema;
     server.registerTool(name,{description,inputSchema,annotations:{
       readOnlyHint:false,
-      destructiveHint:["bind_mesh_weights","generate_procedural_cycle","bake_ik_to_keyframes"].includes(name),
+      destructiveHint:["edit_document","bind_mesh_weights","generate_procedural_cycle","bake_ik_to_keyframes"].includes(name),
       idempotentHint:false,openWorldHint:false,
     }},async (raw:unknown):Promise<CallToolResult> => {
       try {
@@ -38,6 +38,7 @@ export function createStudioMcp(agent:RigAgent) {
   tool("create_bone","Create a bone with a stable ID, optional parent, and local transform.",inputs.create_bone,input=>agent.createBone(input));
   tool("attach_ik_constraint","Attach a two-bone constraint to a connected upper and lower bone pair.",inputs.attach_ik_constraint,input=>agent.attachIK(input));
   tool("draw_vector_part","Add an open or closed vector path with optional cubic handles and bone parent.",inputs.draw_vector_part,input=>agent.drawVector(input));
+  tool("edit_document","Apply one atomic batch of rig and artwork commands at the specified revision.",inputs.edit_document,input=>agent.editDocument(input));
   tool("bind_mesh_weights","Bind a closed vector part and assign up to four influences to specified vertices.",inputs.bind_mesh_weights,input=>agent.bindWeights(input));
   tool("create_animation_clip","Create a saved clip with a frame rate and duration in frames.",inputs.create_animation_clip,input=>agent.createClip(input));
   tool("insert_keyframe","Insert or replace a value in a bone or IK channel at a zero-based frame.",inputs.insert_keyframe,input=>agent.insertKey(input));
