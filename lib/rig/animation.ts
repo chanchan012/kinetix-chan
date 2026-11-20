@@ -1,6 +1,6 @@
 import { produce } from "immer";
 import { z } from "zod";
-import { boneSchema, constraintSchema, type KinetixRigState } from "./model";
+import { boneSchema, constraintSchema, partSchema, type KinetixRigState } from "./model";
 
 export const easeSchema = z.strictObject({
   x1: z.number().min(0).max(1),
@@ -14,6 +14,7 @@ export const linearEase: Ease = { x1: 0, y1: 0, x2: 1, y2: 1 };
 export const channelSchema = z.discriminatedUnion("kind", [
   z.strictObject({ kind: z.literal("bone"), id: boneSchema.shape.id, property: z.enum(["rotation", "x", "y"]) }),
   z.strictObject({ kind: z.literal("ik"), id: constraintSchema.shape.id, property: z.enum(["x", "y", "enabled"]) }),
+  z.strictObject({ kind: z.literal("part"), id: partSchema.shape.id, property: z.enum(["x", "y"]) }),
 ]);
 export const keyframeSchema = z.strictObject({
   frame: z.int().min(0).max(35_999),
@@ -86,6 +87,7 @@ export function sampleRig(rig: KinetixRigState, tracks: readonly Track[], frame:
   return produce(rig, draft => {
     const bones = new Map(draft.bones.map(bone => [bone.id, bone]));
     const constraints = new Map(draft.constraints.map(constraint => [constraint.id, constraint]));
+    const parts = new Map(draft.parts.map(part => [part.id, part]));
     const connected = new Set(draft.constraints.map(constraint => constraint.lowerId));
     for (const track of tracks) {
       const { kind, id, property } = track.channel;
@@ -95,11 +97,14 @@ export function sampleRig(rig: KinetixRigState, tracks: readonly Track[], frame:
         if (!bone) continue;
         if (property === "rotation") bone.rotation = value;
         else if (!connected.has(id)) bone.offset[property] = value;
-      } else {
+      } else if (kind === "ik") {
         const constraint = constraints.get(id);
         if (!constraint) continue;
         if (property === "enabled") constraint.enabled = value >= 0.5;
         else constraint.target[property] = value;
+      } else {
+        const part = parts.get(id);
+        if (part) part.offset[property] = value;
       }
     }
   });

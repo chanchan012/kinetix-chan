@@ -8,10 +8,24 @@ import { formats } from "./frames";
 import { exportRequest, queueExport } from "./requests";
 import { readRigState, referenceFrameCount } from "../rig/model";
 import { renderPngFrame } from "./raster";
+import { prepareSpritePackage } from "./sprite-package";
+import { spritePackageRequest } from "./sprite-package-options";
 const missing = {error:"not_found"} as const;
 
 export function exportApi(repository: () => Library) {
   return new Hono<IdentityEnv>()
+    .post("/:id/sprite-package",validator("json",(value,c) => {
+      const parsed = spritePackageRequest.safeParse(value);
+      return parsed.success ? parsed.data : c.json({error:"invalid_export"},400);
+    }),async c => {
+      const result = await prepareSpritePackage(repository().exports,c.get("userId")!,c.req.param("id"),c.req.valid("json"));
+      if ("error" in result && result.error) return c.json({error:result.error},result.status);
+      c.header("Cache-Control","private, no-store");
+      if (!result.bytes) return c.json(result.manifest);
+      c.header("Content-Type","application/zip");
+      c.header("Content-Disposition",`attachment; filename="kinetix-${result.manifest.source.clipId}.zip"`);
+      return c.body(result.bytes);
+    })
     .get("/:id/artboard.png",async c => {
       const row = await repository().open(c.get("userId")!,c.req.param("id"));
       if (!row) return c.json(missing,404);

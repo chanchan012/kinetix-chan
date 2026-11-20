@@ -3,7 +3,7 @@
 import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { Diamond, FilmSlate, Pause, Play } from "@phosphor-icons/react";
 import { studyFor } from "@/lib/studies";
-import { channelId, removeKey, setKey, setKeyEase, tracksSchema, type Channel, type Track } from "@/lib/rig/animation";
+import { channelId, removeKey, sampleTrack, setKey, setKeyEase, tracksSchema, type Channel, type Track } from "@/lib/rig/animation";
 import { referenceFrameCount, type KinetixRigState } from "@/lib/rig/model";
 import { EasingGraph } from "./easing-graph";
 import type { Selection } from "./viewport";
@@ -54,6 +54,7 @@ export function Timeline({clips, clipId, selectClip, manageClips, rigId, rig, se
   const current = Math.min(frame, frames - 1);
 
   const bone = selected?.kind === "bone" ? rig.bones.find(item => item.id === selected.id) : undefined;
+  const part = selected?.kind === "part" ? rig.parts.find(item => item.id === selected.id) : undefined;
   const ik = bone && rig.constraints.find(item => [item.upperId, item.lowerId].includes(bone.id));
   const options: { channel: Channel; label: string; value: number }[] = [];
   if (bone) {
@@ -63,9 +64,14 @@ export function Timeline({clips, clipId, selectClip, manageClips, rigId, rig, se
       if (ik) options.push({ channel: { kind: "ik", id: ik.id, property }, label: "IK target · " + property.toUpperCase(), value: ik.target[property] });
     }
   }
+  if (part) for (const property of ["x","y"] as const) {
+    options.push({ channel:{kind:"part",id:part.id,property},label:part.name + " · " + property.toUpperCase(),
+      value:part.offset[property] });
+  }
   const active = options.find(option => channelId(option.channel) === channelKey) ?? options[0];
-  const key = active && tracks.find(track => channelId(track.channel) === channelId(active.channel))?.keys.find(item => item.frame === current);
-  const keyValue = key?.value ?? active?.value;
+  const activeTrack = active && tracks.find(track => channelId(track.channel) === channelId(active.channel));
+  const key = activeTrack?.keys.find(item => item.frame === current);
+  const keyValue = activeTrack ? sampleTrack(activeTrack,current) : active?.value;
   const units = active?.channel.property === "rotation" ? degrees : 1;
   const hasDrafts = Object.values(drafts).some(item => item.tracks !== item.clip.tracks);
   useEffect(() => { onDirty(hasDrafts); }, [hasDrafts, onDirty]);
@@ -195,7 +201,7 @@ export function Timeline({clips, clipId, selectClip, manageClips, rigId, rig, se
       <div className="studio-key-tools">
         <label><span className="sr-only">Keyframe channel</span><select disabled={!options.length} value={active ? channelId(active.channel) : ""}
           onChange={event => { setGraphOpen(false); setChannelKey(event.target.value); }}>
-          {!options.length && <option value="">Select a bone</option>}
+          {!options.length && <option value="">Select a bone or path</option>}
           {options.map(option => <option key={channelId(option.channel)} value={channelId(option.channel)}>{option.label}</option>)}
         </select></label>
         {active && <label><span className="sr-only">Keyframe value</span><input ref={valueInput} type="number" step="any"
@@ -217,8 +223,9 @@ export function Timeline({clips, clipId, selectClip, manageClips, rigId, rig, se
         }}>Reload keys</button></> : error}</p>}
       {tracks.length > 0 && <div className="studio-key-tracks">{tracks.map(track => {
         const id = channelId(track.channel);
-        const object = rig.bones.find(item => item.id === track.channel.id);
-        const label = track.channel.kind === "ik" ? "IK target" : object?.name ?? "Deleted bone";
+        const {kind,id:objectId} = track.channel;
+        const object = (kind === "part" ? rig.parts : rig.bones).find(item => item.id === objectId);
+        const label = kind === "ik" ? "IK target" : object?.name ?? (kind === "part" ? "Deleted path" : "Deleted bone");
         return <div className="studio-key-track" key={id}>
           <span>{label} · {track.channel.property}</span>
           <div className="studio-key-lane">{track.keys.map(item => <button key={item.frame}
@@ -226,9 +233,10 @@ export function Timeline({clips, clipId, selectClip, manageClips, rigId, rig, se
             aria-pressed={item.frame === current && id === (active && channelId(active.channel))}
             title={`Frame ${item.frame + 1}`} style={{ left: `${item.frame / Math.max(1,frames - 1) * 100}%` }}
             onClick={() => {
-              const boneId = track.channel.kind === "bone" ? object?.id :
-                rig.constraints.find(constraint => constraint.id === track.channel.id)?.upperId;
-              if (boneId) select({ kind: "bone", id: boneId });
+              if (kind === "ik") {
+                const boneId = rig.constraints.find(constraint => constraint.id === objectId)?.upperId;
+                if (boneId) select({ kind: "bone", id: boneId });
+              } else if (object) select({ kind, id: object.id });
               setPlaying(false);
               setFrame(item.frame);
               setChannelKey(id);
