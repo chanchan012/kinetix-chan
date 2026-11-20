@@ -144,3 +144,11 @@ Vector parts accept optional rotation in radians, signed scale and a local pivot
 Marquee and lasso use artwork bounds in document coordinates. Align and distribute work from transformed curve extrema. Group movement, edge subdivision, node mode, reverse, cut, join and simplification are undoable commands. Splitting a cubic preserves its shape and retains any attached deformation mesh. Smooth nodes maintain aligned control handles during editing.
 
 Version 2 artboards can store up to 64 guides. The viewport displays them and can snap to them, the artboard edges or a 10 px grid within an eight-screen-pixel tolerance. Alt bypasses snapping for the current drag. Guides are available through MCP's viewport resource. MCP can create primitives and smoothed pencil paths using the same geometry functions as the studio, and use `edit_document` for transforms and layout.
+
+## M5.3 · Faceted artwork
+
+A closed vector part can carry a `facets` graph with stable vertex and face IDs and a solid fill for each face. An edge may belong to two faces on opposite sides. Winding, simple perimeters and vertex references are validated after edits. Vertex and edge edits update all incident faces. The editor supports drafting against existing vertices, isolated vertex creation with Alt, face colors, sampling, cuts, welding, mirroring, and triangulation with a preview.
+
+The visual graph and skin mesh have independent topologies. A bound part projects color regions through the piecewise-affine deformation computed by the existing skin solver. A mesh triangle split adds a center vertex that follows the mean of its three posed source vertices. Painting independent weights onto that vertex moves it to the regular bone-influence evaluator. The facet graph and face colors carry through the split. Canvas and the export renderers share this geometry.
+
+MCP uses `edit_document` for `facet.initialize`, `facet.add`, `facet.move`, `facet.paint`, `facet.splitEdge`, `facet.cut`, `facet.weld`, `facet.mirror`, `facet.triangulate`, and `mesh.splitTriangle`. The hierarchy resource includes the graph and independent mesh through the vector part. The saved format gains optional JSON fields and needs no migration.

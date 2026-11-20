@@ -16,11 +16,19 @@ Implemented the application shell, interactive guest playground, Clerk access ro
 
 ## Active subgoal and next exact step
 
-The active implementation goal covers all 23 subgoals in [the production studio roadmap](docs/PRODUCTION_STUDIO_ROADMAP.md). M5.1, M5.2, and the first playable asset workflow are deployed. The first playable asset workflow delivers part position channels from 7.1, fixed-grid packages from 9.1, and the Godot sprite adapter from 9.3. Those three subgoals have further acceptance criteria in the roadmap.
+The active implementation goal covers all 23 subgoals in [the production studio roadmap](docs/PRODUCTION_STUDIO_ROADMAP.md). M5.1, M5.2, M5.3, and the first playable asset workflow are deployed. The first playable asset workflow delivers part position channels from 7.1, fixed-grid packages from 9.1, and the Godot sprite adapter from 9.3. Those three subgoals have further acceptance criteria in the roadmap.
 
-The next exact step is M5.3 faceted artwork. Add a validated polygon face graph with stable vertex and face IDs and per-face color. Render connected faces with the existing part transform and give the studio and MCP shared commands for editing a vertex, splitting a shared edge, cutting a face, and welding vertices. Keep the visual graph separate from deformation triangles.
+The next exact step is M5.4 layers and appearance. Introduce a versioned layer tree with stable IDs and explicit group order, then migrate the current ordered paths into it through a compatibility reader. Add shared hide, lock, reorder, and nesting commands before integrating layer compositing, clipping, expanded paints, and Boolean paths.
 
 Owner-managed Inngest Cloud activation is still open. After the signing and event keys are present in Vercel, redeploy, sync the existing endpoint, and verify a hosted thumbnail and animation export run. Saved still PNGs are served directly.
+
+## M5.3 faceted artwork · November 20, 2026
+
+- **Brief and build** added shared face vertices and edges, editable colors, face drafting, weld, cut, mirror, triangulation preview, and independent deformation subdivision. The same edit commands are available through MCP.
+- **Test** passed 46 Vitest tests with Godot enabled and 62 Playwright cases across four layouts, with six expected desktop-only skips. Tests moved a three-color junction, measured alpha at shared edges, and confirmed a weighted subdivision preserved the posed outline and colors.
+- **Merge** published feature commit `8c5b1f0` and main merge `b74570a`.
+- **Deploy** passed the local production build. Vercel preview and production are ready. The hosted smoke moved a shared junction through MCP, split its bound mesh, opened the facet inspector on a phone-sized viewport, and verified the exported PNG colors.
+- **Document** records the graph, editor tools, and layer-tree implementation handoff.
 
 ## M5.2 precision editing · November 20, 2026
 

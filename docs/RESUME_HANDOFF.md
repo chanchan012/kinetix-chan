@@ -122,4 +122,10 @@ Press **M** and choose a rectangle, ellipse or star. Press **N** to draw a smoot
 
 Run `npm test -- tests/unit/path-geometry.test.ts tests/unit/export.test.ts` for geometry and export parity. Run `npm run test:e2e -- --grep 'moves a transformed path|lays out shapes'` for the interactive workflow across all four layouts. No new service configuration or SQL migration is required.
 
-Next, build the facet graph and renderer for M5.3, then use one three-face illustration to validate a shared junction, shared edge splits, and the separate skinning topology. See [the roadmap](PRODUCTION_STUDIO_ROADMAP.md).
+## M5.3 · Faceted artwork
+
+Select a closed straight-edged polygon and choose **Make faceted artwork**. Use the Facet tools to select faces, edges, or vertices directly on the canvas. Choose **Draw face** to reuse existing vertices, and hold **Alt** to place an independent vertex. Use **Preview triangulation** before applying new faces. **Split deformation triangle** operates on the separate bound mesh in Mesh weights.
+
+Run `npm test -- tests/unit/facets.test.ts` for topology, seam opacity, and exact posed subdivision. Run `npm run test:e2e -- --grep 'three-color junction'` for the studio workflow across four layouts. This subgoal uses existing environment variables.
+
+Next, start M5.4 with the versioned layer tree and commands. Preserve old part IDs so rigs, animation tracks, facet references and saved exports still resolve after reading earlier documents. Use the layered badge in [the roadmap](PRODUCTION_STUDIO_ROADMAP.md) to verify group order, clipping and linked paints through export.
