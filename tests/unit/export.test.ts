@@ -63,6 +63,26 @@ describe("animation export formats", () => {
     expect(compileLottie(snapshot())).toMatchObject({w:512,h:320});
   });
 
+  it("renders keyed artwork position on a design without a skeleton", async () => {
+    const rig = createBlankRig({name:"Sprite",width:64,height:64,background:null});
+    rig.parts.push({
+      id:"sprite",name:"Sprite",parentId:null,offset:{x:0,y:0},closed:true,fill:"#ff0000",
+      knots:[{point:{x:4,y:4}},{point:{x:16,y:4}},{point:{x:16,y:16}},{point:{x:4,y:16}}],
+    });
+    const channel = {kind:"part",id:"sprite",property:"x"} as const;
+    const tracks = setKey(setKey(setKey([],channel,0,0),channel,2,32),channel,4,0);
+    const input = {...snapshot(),rig,frameCount:5,startFrame:1,endFrame:1,tracks};
+    const image = await loadImage(renderPngFrame(input));
+    const ctx = createCanvas(64,64).getContext("2d");
+    ctx.drawImage(image,0,0);
+    expect(ctx.getImageData(8,8,1,1).data[3]).toBe(0);
+    expect(Array.from(ctx.getImageData(24,8,1,1).data)).toEqual([255,0,0,255]);
+    expect(lottie.parse(compileLottie(input)).layers[0].shapes[0].ks).toMatchObject({
+      a:0,k:{v:[[20,4],[32,4],[32,16],[20,16],[20,4]]},
+    });
+    expect(rig.parts[0].offset.x).toBe(0);
+  });
+
   it("produces deterministic Lottie shape layers and animated control points", () => {
     const input = snapshot();
     input.rig.parts.push({

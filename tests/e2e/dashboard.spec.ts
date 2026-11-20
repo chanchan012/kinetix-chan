@@ -1,4 +1,6 @@
 import { expect, test } from "@playwright/test";
+import { readFile } from "node:fs/promises";
+import { strFromU8, unzipSync } from "fflate";
 
 import { clerk } from "@clerk/testing/playwright";
 import type { KinetixRigState } from "../../lib/rig/model";
@@ -8,6 +10,72 @@ import { formats, type ExportFormat } from "../../lib/export/frames";
 test.beforeEach(async ({page}) => {
   await page.goto("/");
   await clerk.signIn({page, emailAddress:process.env.KINETIX_TEST_EMAIL!});
+});
+
+test("an animator keys and plays artwork position without a skeleton", async ({page}, info) => {
+  const created = await page.request.post("/api/rigs",{data:{
+    name:"Sprite motion " + info.project.name,artboard:{name:"Sprite",width:200,height:180,background:null},
+  }});
+  expect(created.status()).toBe(201);
+  const {id,revision,state} = await created.json();
+  const path = "/api/rigs/" + id;
+  try {
+    const part = {id:"lantern",name:"Lantern",parentId:null,offset:{x:0,y:0},closed:true,fill:"#ff8800",
+      knots:[{point:{x:22,y:58}},{point:{x:43,y:58}},{point:{x:43,y:96}},{point:{x:22,y:96}}]};
+    expect((await page.request.patch(path+"/state",{data:{revision,state:{...state,parts:[part]}}})).status()).toBe(200);
+    const {id:clipId} = await (await page.request.post(path+"/clips",{data:{name:"Swing",fps:12,frameCount:9}})).json();
+    await page.goto("/studio/" + id);
+    await page.getByRole("button",{name:"Lantern",exact:true}).click();
+    const channel = page.getByRole("combobox",{name:"Keyframe channel"});
+    await expect(channel.locator("option:checked")).toHaveText("Lantern · X");
+    const frame = page.getByRole("slider",{name:"Timeline frame"});
+    for (const [at,offset] of [[0,0],[4,64],[8,0]]) {
+      await frame.fill(String(at));
+      await page.getByLabel("Keyframe value").fill(String(offset));
+      await page.getByRole("button",{name:"Insert keyframe"}).click();
+    }
+    const saved = async () => {
+      const response = await page.request.get(path+"/clips/"+clipId+"/tracks");
+      return (await response.json()).tracks;
+    };
+    await expect.poll(saved).toMatchObject([{channel:{kind:"part",id:"lantern",property:"x"},
+      keys:[{frame:0,value:0},{frame:4,value:64},{frame:8,value:0}]}]);
+    await page.reload();
+    await page.getByRole("button",{name:"Lantern x keyframe 5",exact:true}).click();
+    await expect(page.getByRole("complementary",{name:"Rig hierarchy"}).getByRole("button",{name:"Lantern"})).toHaveAttribute("aria-pressed","true");
+    await expect(page.getByLabel("Keyframe value")).toHaveValue("64");
+    const canvas = page.locator("canvas.studio-canvas");
+    await expect.poll(() => canvas.evaluate(element => {
+      if (!(element instanceof HTMLCanvasElement)) return [];
+      const context = element.getContext("2d")!;
+      const scale = Math.min(element.width / 200,element.height / 180);
+      const sampleAlpha = (x:number) => context.getImageData(
+        Math.round(element.width / 2 + (x - 100) * scale),
+        Math.round(element.height / 2 + (72 - 90) * scale),1,1,
+      ).data[3];
+      return [sampleAlpha(30),sampleAlpha(98)];
+    })).toEqual([0,255]);
+    await page.getByRole("button",{name:"Play timeline"}).click();
+    await expect(page.getByRole("button",{name:"Pause timeline"})).toBeVisible();
+    await page.getByRole("button",{name:"Pause timeline"}).click();
+    await page.getByRole("button",{name:"Export",exact:true}).click();
+    const dialog = page.getByRole("dialog",{name:"Export animation"});
+    await dialog.getByLabel("Format").selectOption("sprite-package");
+    await dialog.getByLabel("Pivot X (px)").fill("33");
+    await dialog.getByLabel("Pivot Y (px)").fill("72");
+    const download = page.waitForEvent("download");
+    await dialog.getByRole("button",{name:"Download sprite package"}).click();
+    const artifact = await download;
+    expect(artifact.suggestedFilename()).toBe("kinetix-" + clipId + ".zip");
+    const files = unzipSync(await readFile(await artifact.path()));
+    const manifest = JSON.parse(strFromU8(files["kinetix.json"]));
+    expect(manifest.clip).toEqual({name:"Swing",fps:12,loop:true,startFrame:0,endFrame:8});
+    expect(manifest.frames).toHaveLength(9);
+    expect(manifest.frames[0]).toMatchObject({pivot:{x:33,y:72},durationTicks:1});
+    expect(files["atlas.png"].subarray(0,4)).toEqual(new Uint8Array([137,80,78,71]));
+  } finally {
+    expect((await page.request.delete(path)).status()).toBe(204);
+  }
 });
 
 test("an illustrator draws, edits, reopens, and exports a blank design", async ({page}, info) => {

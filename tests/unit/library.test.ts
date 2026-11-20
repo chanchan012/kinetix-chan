@@ -50,6 +50,28 @@ describe("saved library", () => {
     await agent.editDocument({revision:rig.revision,commands});
     await expect(agent.editDocument({revision:rig.revision,commands})).rejects.toThrow("changed");
     expect(await agent.hierarchy()).toMatchObject({parts:[{id:"face",knots:[{},{point:{x:80,y:64}},{},{}]}]});
+    const clip = await agent.createClip({name:"Eye movement",fps:12,frameCount:5});
+    const channel = {kind:"part",id:"face",property:"y"} as const;
+    await agent.insertKey({clipId:clip.id as string,channel,frame:0,value:0});
+    await agent.insertKey({clipId:clip.id as string,channel,frame:4,value:24});
+    const {clips} = await agent.timelineSummary();
+    const state = readRigState((await library.get("owner",rig.id))!.state);
+    expect(sampleRig(state,clips[0].tracks,2).parts[0].offset.y).toBe(12);
+    const parameters = {
+      clipId:clip.id as string,revision:rig.revision+1,trackRevision:2,startFrame:0,endFrame:4,
+      pivot:{x:38,y:160},loop:true,filter:"nearest" as const,preflight:true,
+    };
+    const preflight = await call("owner","POST",path+"/sprite-package",parameters);
+    expect(preflight.status).toBe(200);
+    expect(await preflight.json()).toMatchObject({version:1,frames:[
+      {sourceFrame:0,pivot:{x:38,y:160}}, {sourceFrame:1}, {sourceFrame:2}, {sourceFrame:3}, {sourceFrame:4},
+    ]});
+    expect((await call("other","POST",path+"/sprite-package",parameters)).status).toBe(404);
+    expect((await call("owner","POST",path+"/sprite-package",{...parameters,trackRevision:1})).status).toBe(409);
+    const packageBytes = await call("owner","POST",path+"/sprite-package",{...parameters,preflight:false});
+    expect(packageBytes.headers.get("content-type")).toBe("application/zip");
+    const agentPackage = await agent.exportSpritePackage({...parameters,preflight:false});
+    expect(Buffer.from(await packageBytes.arrayBuffer()).toString("base64")).toBe(agentPackage.base64);
     expect((await call("other","GET",path+"/artboard.png")).status).toBe(404);
     const exported = await call("owner","GET",path+"/artboard.png");
     expect(exported.headers.get("content-type")).toBe("image/png");

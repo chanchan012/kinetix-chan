@@ -6,7 +6,7 @@ import { useStore } from "zustand";
 import { ArrowLeft, ArrowCounterClockwise, ArrowClockwise, Bone as BoneIcon, Cursor, FloppyDisk, Keyboard, PenNib, Polygon } from "@phosphor-icons/react";
 import { createRigStore } from "@/lib/rig/store";
 import { evaluateRig, rotatePoint } from "@/lib/rig/kinematics";
-import { orderedBones, referenceFrameCount, type Bone, type KinetixRigState, type Point, type VectorKnot, type VectorPart } from "@/lib/rig/model";
+import { artboardFor, orderedBones, referenceFrameCount, type Bone, type KinetixRigState, type Point, type VectorKnot, type VectorPart } from "@/lib/rig/model";
 import { sampleRig } from "@/lib/rig/animation";
 import { bindMesh } from "@/lib/rig/skinning";
 import type { RigCommand } from "@/lib/rig/commands";
@@ -341,7 +341,7 @@ export function Studio({actorId, rigId, name, initial, revision: initialRevision
       <Timeline {...{ rigId, rig, selected, select, clipId, selectClip }} clips={liveClips}
         manageClips={() => setClipsOpen(true)} preview={setAnimation} onDirty={setTimelineDirty} onClip={setClip}/>
     </div>
-    {exportOpen && <ExportDialog rigId={rigId} clip={clip} frameCount={referenceFrameCount(rig)}
+    {exportOpen && <ExportDialog rigId={rigId} revision={revision} clip={clip} frameCount={referenceFrameCount(rig)} artboard={artboardFor(rig)}
       unsaved={dirty || timelineDirty} hasArtboard={rig.version === 2} renderConfigured={renderConfigured} close={() => setExportOpen(false)}/>}
     {shareOpen && <ShareDialog rigId={rigId} close={() => setShareOpen(false)}/>}
     {mcpOpen && <McpDialog rigId={rigId} close={() => setMcpOpen(false)}/>}

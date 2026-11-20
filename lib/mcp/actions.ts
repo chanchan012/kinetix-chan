@@ -1,6 +1,8 @@
 import { z } from "zod";
 import type { Library } from "../../db/library";
 import { queueExport } from "../export/requests";
+import { prepareSpritePackage } from "../export/sprite-package";
+import { spritePackageRequest } from "../export/sprite-package-options";
 import type { RoomBus } from "../realtime/bus";
 import type { RoomPresence } from "../realtime/protocol";
 import { channelSchema, easeSchema, sampleRig, setKey, setKeyEase, tracksSchema, type Channel, type Track } from "../rig/animation";
@@ -39,11 +41,12 @@ export const inputs = {
   }),
   bake_ik_to_keyframes:z.strictObject({clipId,constraintId:constraintSchema.shape.id,startFrame:frame.optional(),endFrame:frame.optional()}),
   trigger_lottie_export:z.strictObject({clipId:clipId.optional(),startFrame:frame.optional(),endFrame:frame.optional(),requestId:z.uuid().optional()}),
+  export_sprite_package:spritePackageRequest,
 };
 export type ToolName = keyof typeof inputs;
 
 function requireChannel(rig:KinetixRigState, channel:Channel) {
-  const items = channel.kind === "bone" ? rig.bones : rig.constraints;
+  const items = channel.kind === "part" ? rig.parts : channel.kind === "bone" ? rig.bones : rig.constraints;
   if (!items.some(item=>item.id===channel.id)) throw new Error("This channel does not belong to the current rig.");
 }
 
@@ -174,7 +177,7 @@ export class RigAgent {
       requireChannel(rig,input.channel);
       return setKey(tracks,input.channel,input.frame,input.value);
     });
-    if (input.channel.kind==="bone") await this.select({kind:"bone",id:input.channel.id});
+    if (input.channel.kind!=="ik") await this.select({kind:input.channel.kind,id:input.channel.id});
     return result;
   }
 
@@ -251,5 +254,15 @@ export class RigAgent {
     });
     if ("error" in result) throw new Error("Could not queue Lottie export: "+result.error);
     return result.job;
+  }
+
+  async exportSpritePackage(input:z.output<typeof spritePackageRequest>) {
+    const result = await prepareSpritePackage(this.library.exports,this.userId,this.rigId,input);
+    if ("error" in result && result.error) throw new Error("Sprite package export failed: " + result.error);
+    return {
+      manifest:result.manifest,
+      ...(result.bytes && { filename:"kinetix-" + input.clipId + ".zip",mimeType:"application/zip",
+        base64:Buffer.from(result.bytes).toString("base64") }),
+    };
   }
 }

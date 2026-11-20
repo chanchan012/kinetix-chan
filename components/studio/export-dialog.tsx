@@ -2,15 +2,18 @@
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { exportFormats, formats, type ExportFormat } from "@/lib/export/frames";
+import { spriteMaxFrames } from "@/lib/export/sprite-package-options";
+import type { Artboard } from "@/lib/rig/model";
 import type { ClipTiming } from "./timeline";
 
 type Job = { id: string; format: ExportFormat; status: "queued" | "running" | "ready" | "failed"; byteCount: number | null };
 const statusLabel = { queued:"Queued", running:"Rendering", ready:"Ready", failed:"Failed" } as const;
 
-export function ExportDialog({rigId, clip, frameCount, unsaved, hasArtboard, renderConfigured, close}: {
-  rigId: string; clip?: ClipTiming; frameCount: number; unsaved: boolean; hasArtboard: boolean; renderConfigured: boolean; close: () => void;
+export function ExportDialog({rigId, revision, clip, frameCount, artboard, unsaved, hasArtboard, renderConfigured, close}: {
+  rigId: string; revision: number; clip?: ClipTiming; frameCount: number; artboard: Artboard;
+  unsaved: boolean; hasArtboard: boolean; renderConfigured: boolean; close: () => void;
 }) {
-  const [format, setFormat] = useState<ExportFormat>("lottie");
+  const [format, setFormat] = useState<ExportFormat | "sprite-package">("lottie");
   const [jobs, setJobs] = useState<Job[]>([]);
   const [sending, setSending] = useState(false);
   const [message, setMessage] = useState("");
@@ -18,7 +21,10 @@ export function ExportDialog({rigId, clip, frameCount, unsaved, hasArtboard, ren
   const dialog = useRef<HTMLDialogElement>(null);
   const pending = useRef<{ parameters: string; id: string } | null>(null);
   const frames = clip?.frameCount ?? frameCount;
-  const path = "/api/rigs/" + rigId + "/exports";
+  const rigPath = "/api/rigs/" + rigId;
+  const path = rigPath + "/exports";
+  const isSprite = format === "sprite-package";
+  const frameLimit = isSprite ? spriteMaxFrames : formats[format].frames;
   useEffect(() => {
     const element = dialog.current!;
     element.showModal();
@@ -54,8 +60,45 @@ export function ExportDialog({rigId, clip, frameCount, unsaved, hasArtboard, ren
     const fields = new FormData(event.currentTarget);
     const startFrame = Number(fields.get("start")) - 1;
     const endFrame = Number(fields.get("end")) - 1;
-    if (startFrame < 0 || startFrame > endFrame || endFrame >= frames || endFrame - startFrame + 1 > formats[format].frames) {
+    if (startFrame < 0 || startFrame > endFrame || endFrame >= frames || endFrame - startFrame + 1 > frameLimit) {
       setMessage("Choose a valid frame range within the limit for this format.");
+      return;
+    }
+    if (isSprite) {
+      if (!clip || unsaved) return;
+      setSending(true);
+      setMessage("");
+      try {
+        const pivot = {x:Number(fields.get("pivotX")),y:Number(fields.get("pivotY"))};
+        const response = await fetch(rigPath + "/sprite-package",{
+          method:"POST",headers:{"Content-Type":"application/json"},
+          body:JSON.stringify({clipId:clip.id,revision,trackRevision:clip.trackRevision,startFrame,endFrame,pivot,
+            loop:fields.has("loop"),filter:fields.get("filter")}),
+        });
+        if (response.status === 409) {
+          setMessage("The design or clip changed. Reopen Export after the studio finishes updating.");
+          return;
+        }
+        if (response.status === 400) {
+          setMessage("This sprite package exceeds the render limits. Try a shorter range or smaller artboard.");
+          return;
+        }
+        if (!response.ok) throw new Error("Could not render sprites");
+        const url = URL.createObjectURL(await response.blob());
+        try {
+          const link = document.createElement("a");
+          link.href = url;
+          link.download = "kinetix-" + clip.id + ".zip";
+          link.click();
+        } finally {
+          setTimeout(() => URL.revokeObjectURL(url),1000);
+        }
+        setMessage("Sprite package downloaded.");
+      } catch {
+        setMessage("Could not download the sprite package. Try again.");
+      } finally {
+        setSending(false);
+      }
       return;
     }
     const parameters = {format,clipId:clip?.id,startFrame,endFrame};
@@ -85,17 +128,27 @@ export function ExportDialog({rigId, clip, frameCount, unsaved, hasArtboard, ren
     <header><h2>Export animation</h2><button onClick={close}>Close</button></header>
     {unsaved && <p className="studio-export-note">The export uses your saved rig and keyframes.</p>}
     {hasArtboard && <a href={"/api/rigs/" + rigId + "/artboard.png"}>Download saved artboard PNG</a>}
-    {!renderConfigured && <p className="studio-export-note">Exports will run when the render service is connected.</p>}
+    {!renderConfigured && !isSprite && <p className="studio-export-note">Exports will run when the render service is connected.</p>}
     <form onSubmit={enqueue}>
-      <label>Format<select value={format} onChange={event => setFormat(event.target.value as ExportFormat)}>
+      <label>Format<select value={format} onChange={event => setFormat(event.target.value as typeof format)}>
+        {clip && <option value="sprite-package">Sprite package (ZIP)</option>}
         {exportFormats.map(item => <option key={item} value={item}>{formats[item].label}</option>)}
       </select></label>
       <div className="studio-field-pair">
         <label>First frame<input type="number" name="start" min={1} max={frames} defaultValue={1} required/></label>
         <label>Last frame<input key={format} type="number" name="end" min={1} max={frames}
-          defaultValue={Math.min(frames,formats[format].frames)} required/></label>
+          defaultValue={Math.min(frames,frameLimit)} required/></label>
       </div>
-      <button className="studio-save" disabled={sending}>{sending ? "Queuing…" : "Queue export"}</button>
+      {isSprite && <>
+        <div className="studio-field-pair">
+          <label>Pivot X (px)<input type="number" name="pivotX" min={-4096} max={8192} step="any" defaultValue={artboard.width / 2} required/></label>
+          <label>Pivot Y (px)<input type="number" name="pivotY" min={-4096} max={8192} step="any" defaultValue={artboard.height} required/></label>
+        </div>
+        <label>Texture filtering<select name="filter"><option value="nearest">Nearest</option><option value="linear">Linear</option></select></label>
+        <label className="studio-check"><input type="checkbox" name="loop" defaultChecked/>Loop animation</label>
+      </>}
+      <button className="studio-save" disabled={sending || (isSprite && (!clip || unsaved))}>{isSprite ?
+        (sending ? "Rendering…" : "Download sprite package") : (sending ? "Queuing…" : "Queue export")}</button>
     </form>
     {message && <p className="studio-key-error" role="alert">{message}</p>}
     {loadError && <p className="studio-key-error" role="status">Could not load export status. Retrying…</p>}

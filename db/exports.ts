@@ -18,8 +18,8 @@ export class ExportQueue {
 
   async inputs(owner: string, rigId: string, clipId?: string) {
     const rows = await this.db.select({
-      rigId:rigs.id, name:rigs.name, state:rigs.state,
-      clip:{ id:clips.id, name:clips.name, fps:clips.fps, frameCount:clips.frameCount, tracks:clips.tracks },
+      rigId:rigs.id, name:rigs.name, state:rigs.state, revision:rigs.revision,
+      clip:{ id:clips.id, name:clips.name, fps:clips.fps, frameCount:clips.frameCount, tracks:clips.tracks, trackRevision:clips.trackRevision },
     }).from(rigs)
       .leftJoin(clips, clipId ? and(eq(clips.rigId,rigs.id),eq(clips.id,clipId)) : sql`false`)
       .where(and(eq(rigs.ownerId,owner),eq(rigs.id,rigId)));
