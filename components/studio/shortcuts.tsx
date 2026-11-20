@@ -19,11 +19,16 @@ export function useStudioShortcuts(handle: (event: KeyboardEvent) => void) {
 
 const shortcuts = [
   ["Select / Draw bone / Pen / Polygon", "V / B / P / G"],
+  ["Draw a rectangle, ellipse or star", "M"],
+  ["Draw freehand with the pencil", "N"],
+  ["Select paths with marquee or lasso", "Q"],
+  ["Override snapping while drawing or dragging", "Alt"],
   ["Finish path / Close shape", "Enter / Shift + Enter"],
   ["Cancel tool or stroke setup", "Esc"],
   ["Toggle bones / Onion skin", "H / O"],
   ["Play or pause", "Space"],
   ["Step one frame / Step five frames", "← or → / Shift + ← or →"],
+  ["Nudge a selected path on the focused canvas", "Ctrl or ⌘ + arrows (add Shift for 10 px)"],
   ["Insert keyframe", "K"],
   ["Zoom in / Zoom out / Fit", "+ / − / 0"],
   ["Save rig", "Ctrl or ⌘ + S"],

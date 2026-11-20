@@ -3,14 +3,15 @@
 import { useCallback, useEffect, useEffectEvent, useMemo, useRef, useState, type CSSProperties } from "react";
 import Link from "next/link";
 import { useStore } from "zustand";
-import { ArrowLeft, ArrowCounterClockwise, ArrowClockwise, Bone as BoneIcon, Cursor, FloppyDisk, Keyboard, PenNib, Polygon } from "@phosphor-icons/react";
+import { ArrowLeft, ArrowCounterClockwise, ArrowClockwise, Bone as BoneIcon, Cursor, FloppyDisk, Keyboard, PencilSimple, PenNib, Polygon, Selection as SelectionIcon, Shapes } from "@phosphor-icons/react";
 import { createRigStore } from "@/lib/rig/store";
 import { evaluateRig, rotatePoint } from "@/lib/rig/kinematics";
 import { artboardFor, orderedBones, referenceFrameCount, type Bone, type KinetixRigState, type Point, type VectorKnot, type VectorPart } from "@/lib/rig/model";
 import { sampleRig } from "@/lib/rig/animation";
 import { bindMesh } from "@/lib/rig/skinning";
 import type { RigCommand } from "@/lib/rig/commands";
-import { Viewport, type Selection, type Tool, type Brush } from "./viewport";
+import { primitiveShapes, type PrimitiveShape } from "@/lib/rig/path-geometry";
+import { Viewport, type Selection, type SelectionMode, type Tool, type Brush } from "./viewport";
 import { Timeline, type ClipTiming, type FramePreview } from "./timeline";
 import { ExportDialog } from "./export-dialog";
 import { ShareDialog } from "./share-dialog";
@@ -32,7 +33,10 @@ const degrees = 180 / Math.PI;
 const tools = [{ id: "select", label: "Select", icon: Cursor, key: "V" },
   { id: "bone", label: "Draw bone", icon: BoneIcon, key: "B" },
   { id: "pen", label: "Pen", icon: PenNib, key: "P" },
-  { id: "polygon", label: "Polygon", icon: Polygon, key: "G" }] as const;
+  { id: "polygon", label: "Polygon", icon: Polygon, key: "G" },
+  { id: "primitive", label: "Shapes", icon: Shapes, key: "M" },
+  { id: "pencil", label: "Pencil", icon: PencilSimple, key: "N" },
+  { id: "region", label: "Region select", icon: SelectionIcon, key: "Q" }] as const;
 const zoomLevels = [0.5, 0.75, 1, 1.25, 1.5, 2, 3];
 
 export function Studio({actorId, rigId, name, initial, revision: initialRevision, clips, renderConfigured, owned}: Props) {
@@ -42,9 +46,17 @@ export function Studio({actorId, rigId, name, initial, revision: initialRevision
   const future = useStore(store, state => state.future);
   const [saved, setSaved] = useState(rig);
   const [revision, setRevision] = useState(initialRevision);
-  const [selected, select] = useState<Selection>(rig.bones[0] ? { kind: "bone", id: rig.bones[0].id } : null);
+  const [selected,setSelected] = useState<Selection>(rig.bones[0] ? { kind: "bone", id: rig.bones[0].id } : null);
+  const [selectionIds,setSelectionIds] = useState<string[]>([]);
   const [edgeSelection, setEdgeSelection] = useState<{partId:string; index:number} | null>(null);
+  const [nodeSelection,setNodeSelection] = useState<{partId:string;index:number} | null>(null);
   const [tool, setTool] = useState<Tool>("select");
+  const [primitive, setPrimitive] = useState<PrimitiveShape>("rectangle");
+  const [smoothing,setSmoothing] = useState(2);
+  const [selectionMode,setSelectionMode] = useState<SelectionMode>("marquee");
+  const [snapping,setSnapping] = useState(false);
+  const [rulers,setRulers] = useState(false);
+  const [guidesOpen,setGuidesOpen] = useState(false);
   const [pen, setPen] = useState<VectorKnot[]>([]);
   const [showBones, setShowBones] = useState(true);
   const [reference, setReference] = useState(true);
@@ -72,9 +84,21 @@ export function Studio({actorId, rigId, name, initial, revision: initialRevision
   const dirty = saved !== rig;
   const bone = selected?.kind === "bone" ? rig.bones.find(item => item.id === selected.id) : undefined;
   const part = selected?.kind === "part" ? rig.parts.find(item => item.id === selected.id) : undefined;
+  const selectedParts = rig.parts.filter(item=>selectionIds.includes(item.id)).map(item=>item.id);
+  function select(value:Selection) {
+    setSelected(value);
+    setSelectionIds(value?.kind==="part" ? [value.id] : []);
+  }
+  function selectRegion(ids:string[]) {
+    setSelectionIds(ids);
+    setSelected(ids.length ? {kind:"part",id:ids.at(-1)!} : null);
+    setTool("select");
+  }
   const selectedEdge = edgeSelection && edgeSelection.partId === part?.id ? edgeSelection.index : -1;
   const setEdge = (index:number) => setEdgeSelection(part && index >= 0 ? {partId:part.id,index} : null);
-  const activeBrush = part && brush?.partId === part.id && part.mesh && tool === "select" &&
+  const selectedNode = part && nodeSelection?.partId === part.id ? Math.min(nodeSelection.index,part.knots.length-1) : -1;
+  const setNode = (index:number) => setNodeSelection(part ? {partId:part.id,index} : null);
+  const activeBrush = part && selectedParts.length === 1 && brush?.partId === part.id && part.mesh && tool === "select" &&
     part.mesh.bindings.some(binding => binding.id === brush.boneId) ? brush : null;
   const pose = useMemo(() => sampleRig(rig,animation.tracks,animation.frame), [rig,animation]);
   const phase = animation.frame / animation.frames;
@@ -205,18 +229,19 @@ export function Studio({actorId, rigId, name, initial, revision: initialRevision
     }
   }
 
-  function finishPath(closed: boolean) {
-    if (pen.length < (closed ? 3 : 2)) return;
+  function finishPath(closed: boolean, drawing = pen) {
+    if (drawing.length < (closed ? 3 : 2)) return;
     const id = crypto.randomUUID();
     const parent = bone ? evaluateRig(rig).get(bone.id) : undefined;
     const toLocal = (point: Point) => parent ?
       rotatePoint({ x: point.x - parent.origin.x, y: point.y - parent.origin.y }, -parent.angle) : point;
-    const knots = pen.map(knot => ({
+    const knots = drawing.map(knot => ({
       point: toLocal(knot.point),
       incoming: knot.incoming && toLocal(knot.incoming),
       outgoing: knot.outgoing && toLocal(knot.outgoing),
+      mode: knot.mode,
     }));
-    const kind = tool === "polygon" ? "Polygon" : "Path";
+    const kind = tool === "primitive" ? primitive[0].toUpperCase() + primitive.slice(1) : tool === "polygon" ? "Polygon" : "Path";
     if (edit("Draw " + kind.toLowerCase(), { type: "part.create", part: {
       id, parentId: bone?.id ?? null, name: kind + " " + (rig.parts.length + 1), offset: { x: 0, y: 0 },
       knots, fill: "#b54b2b", closed,
@@ -297,7 +322,7 @@ export function Studio({actorId, rigId, name, initial, revision: initialRevision
     <div className="studio-grid" ref={layout.ref} style={layout.style}>
       <aside className="studio-hierarchy" id="studio-hierarchy" aria-label="Rig hierarchy">
         <div className="studio-panel-title"><h2>Hierarchy</h2><span>{rig.bones.length} bones</span></div>
-        <Hierarchy rig={rig} selected={selected} select={select}/>
+        <Hierarchy rig={rig} selected={selected} selectedParts={selectedParts} select={select}/>
       </aside>
       <PanelHandle panel="hierarchy" size={layout.panels.hierarchy} label="Resize hierarchy" controls="studio-hierarchy"/>
       <PanelHandle panel="split" size={layout.panels.split} label="Resize side panels" controls="studio-hierarchy studio-inspector"/>
@@ -314,25 +339,46 @@ export function Studio({actorId, rigId, name, initial, revision: initialRevision
           </select></label>
         </div>
         <div className="studio-artboard"><Viewport rig={pose} brush={activeBrush} ghosts={ghosts} remoteBones={remoteBones}
-          {...{ phase, selected, selectedEdge, select, tool, reference, zoom, showBones, pen, addBone, edit }}
+          {...{ phase, selected, selectedParts, selectedEdge, selectedNode, setNode, select, selectRegion, tool, primitive, smoothing,
+            selectionMode, snapping, rulers, reference, zoom, showBones, pen, addBone, edit }}
           closePolygon={() => finishPath(true)}
+          addDrawnPath={(closed,knots) => finishPath(closed,knots)}
           addKnot={knot => setPen(knots => knots.length < 256 ? [...knots, knot] : knots)}/></div>
         <div className="studio-stage-footer">
-          {tool === "pen" || tool === "polygon" ? <div className="studio-tool-group">
+          {tool === "region" ? <div className="studio-tool-group studio-zoom">
+            <label><span className="sr-only">Region selection mode</span><select value={selectionMode}
+              onChange={event=>setSelectionMode(event.target.value as SelectionMode)}>
+              <option value="marquee">Marquee</option><option value="lasso">Lasso</option>
+            </select></label>
+          </div> : tool === "primitive" ? <div className="studio-tool-group">
+            <label className="studio-zoom"><span className="sr-only">Shape</span><select value={primitive}
+              onChange={event => setPrimitive(event.target.value as PrimitiveShape)}>
+              {primitiveShapes.map(shape => <option key={shape} value={shape}>{shape[0].toUpperCase() + shape.slice(1)}</option>)}
+            </select></label>
+          </div> : tool === "pencil" ? <div className="studio-tool-group studio-zoom">
+            <label>Smoothing<select value={smoothing} onChange={event => setSmoothing(Number(event.target.value))}>
+              <option value={0.75}>Low</option><option value={2}>Medium</option><option value={4}>High</option>
+            </select></label>
+          </div> : tool === "pen" || tool === "polygon" ? <div className="studio-tool-group">
             {tool === "pen" && <button disabled={pen.length < 2} onClick={() => finishPath(false)}>Finish path</button>}
             <button disabled={pen.length < 3} onClick={() => finishPath(true)}>{tool === "polygon" ? "Close polygon" : "Close shape"}</button>
           </div> : <div className="studio-tool-group">
             <button title="Show or hide bones (H)" aria-pressed={showBones} onClick={() => setShowBones(value => !value)}>Bones</button>
             {rig.study && <button aria-pressed={reference} onClick={() => setReference(value => !value)}>Artwork</button>}
             {rig.version === 2 && <button onClick={() => setArtboardOpen(true)}>Artboard</button>}
+            {rig.version === 2 && <button onClick={() => setGuidesOpen(true)}>Guides</button>}
+            <button aria-pressed={rulers} onClick={() => setRulers(value=>!value)}>Rulers</button>
+            <button aria-pressed={snapping} title="Snap to guides, artboard edges and 10 px grid. Hold Alt to override."
+              onClick={() => setSnapping(value=>!value)}>Snap</button>
           </div>}
         </div>
       </section>
       <PanelHandle panel="inspector" size={layout.panels.inspector} label="Resize inspector" controls="studio-inspector" direction={-1}/>
       <aside className="studio-inspector" id="studio-inspector" aria-label="Inspector">
         <div className="studio-panel-title"><h2>Inspector</h2></div>
-        <Inspector {...{ bone, part, rig, edit, selectedEdge, setEdge }} clear={() => select(null)}/>
-        {part?.closed && <WeightTools key={part.id} part={part} rig={rig} brush={activeBrush} setBrush={setBrush} edit={edit} report={setError}/>}
+        {selectedParts.length > 1 ? <SelectionLayout ids={selectedParts} edit={edit} clear={() => select(null)}/> :
+          <Inspector {...{ bone, part, rig, edit, selectedEdge, setEdge, selectedNode, setNode }} clear={() => select(null)}/>}
+        {part?.closed && selectedParts.length===1 && <WeightTools key={part.id} part={part} rig={rig} brush={activeBrush} setBrush={setBrush} edit={edit} report={setError}/>}
         {last && <p className="studio-history" role="status">{last.actor.kind === "ai" ? "AI" : "Human"} · {last.label}</p>}
         {!last && room.lastEdit?.kind === "ai" && <p className="studio-history" role="status">AI · {room.lastEdit.label ?? "Edit rig"}</p>}
       </aside>
@@ -357,7 +403,50 @@ export function Studio({actorId, rigId, name, initial, revision: initialRevision
         <button className="studio-save">Apply artboard settings</button>
       </form>
     </Dialog>}
+    {guidesOpen && rig.version === 2 && <GuideDialog guides={rig.guides ?? []} edit={edit} close={() => setGuidesOpen(false)}/>}
   </main>;
+}
+
+type Edit = (label:string,...commands:RigCommand[])=>boolean;
+type Guides = Extract<KinetixRigState,{version:2}>["guides"];
+
+function GuideDialog({guides,edit,close}: {guides:NonNullable<Guides>;edit:Edit;close:()=>void}) {
+  return <Dialog title="Artboard guides" className="studio-easing studio-export" onClose={close}>
+    <form onSubmit={event => {
+      event.preventDefault();
+      const fields = new FormData(event.currentTarget);
+      const axis = fields.get("axis")==="x" ? "x" : "y";
+      const position = Number(fields.get("position"));
+      if (!guides.some(guide=>guide.axis===axis && guide.position===position)) {
+        edit("Add guide",{type:"artboard.guides",guides:[...guides,{axis,position}]});
+      }
+    }}>
+      <label>Orientation<select name="axis"><option value="x">Vertical</option><option value="y">Horizontal</option></select></label>
+      <label>Position (px)<input type="number" name="position" step="any" min={-1000000} max={1000000} defaultValue={100} required/></label>
+      <button className="studio-save" disabled={guides.length>=64}>Add guide</button>
+    </form>
+    {guides.length>0 && <div className="studio-properties" aria-label="Saved guides">{guides.map((guide,index)=>
+      <button key={guide.axis + ":" + guide.position + ":" + index} onClick={() =>
+        edit("Remove guide",{type:"artboard.guides",guides:guides.filter((_,i)=>i!==index)})}>
+        Remove {guide.axis==="x" ? "vertical" : "horizontal"} guide at {guide.position}px
+      </button>
+    )}</div>}
+  </Dialog>;
+}
+
+const alignments = [
+  ["x","min","Align left"],["x","center","Align horizontal centers"],["x","max","Align right"],
+  ["y","min","Align top"],["y","center","Align vertical centers"],["y","max","Align bottom"],
+  ["x","distribute","Distribute horizontally"],["y","distribute","Distribute vertically"],
+] as const;
+
+function SelectionLayout({ids,edit,clear}: {ids:string[];edit:Edit;clear:()=>void}) {
+  return <div className="studio-properties">
+    <p>{ids.length} paths selected</p>
+    {alignments.map(([axis,mode,label])=><button key={label} disabled={mode==="distribute" && ids.length<3}
+      onClick={() => edit(label,{type:"parts.layout",ids,axis,mode})}>{label}</button>)}
+    <button onClick={clear}>Clear selection</button>
+  </div>;
 }
 
 function WeightTools({part, rig, brush, setBrush, edit, report}: {
@@ -415,7 +504,9 @@ function WeightTools({part, rig, brush, setBrush, edit, report}: {
   </section>;
 }
 
-function Hierarchy({rig, selected, select}: {rig: KinetixRigState; selected: Selection; select: (value: Selection) => void}) {
+function Hierarchy({rig, selected, selectedParts, select}: {
+  rig: KinetixRigState; selected: Selection; selectedParts:string[]; select: (value: Selection) => void;
+}) {
   const depths = new Map<string, number>();
   return <div className="studio-tree">
     <ul>{orderedBones(rig.bones).map(bone => {
@@ -426,15 +517,16 @@ function Hierarchy({rig, selected, select}: {rig: KinetixRigState; selected: Sel
         <BoneIcon size={14}/><span>{bone.name}</span></button></li>;
     })}</ul>
     {rig.parts.length > 0 && <><h3>Paths</h3><ul>{rig.parts.map(part => <li key={part.id}>
-      <button aria-pressed={selected?.kind === "part" && selected.id === part.id} onClick={() => select({ kind: "part", id: part.id })}>
+      <button aria-pressed={selectedParts.includes(part.id)} onClick={() => select({ kind: "part", id: part.id })}>
         <span className="studio-swatch" style={{ backgroundColor: part.fill }}/><span>{part.name}</span></button></li>)}</ul></>}
     {selected && <button className="studio-deselect" onClick={() => select(null)}>Clear selection</button>}
   </div>;
 }
 
-function Inspector({bone, part, rig, edit, clear, selectedEdge, setEdge}: {
+function Inspector({bone, part, rig, edit, clear, selectedEdge, setEdge, selectedNode, setNode}: {
   bone?: Bone; part?: VectorPart; rig: KinetixRigState; edit: (label: string, ...commands: RigCommand[]) => boolean;
   clear: () => void; selectedEdge:number; setEdge:(index:number)=>void;
+  selectedNode:number; setNode:(index:number)=>void;
 }) {
   if (bone) {
     const constraint = rig.constraints.find(ik => [ik.upperId, ik.lowerId].includes(bone.id));
@@ -476,19 +568,24 @@ function Inspector({bone, part, rig, edit, clear, selectedEdge, setEdge}: {
       }}>Delete bone</button>
     </div>;
   }
-  if (part) return <PathProperties key={part.id} {...{ part, rig, edit, clear, selectedEdge, setEdge }}/>;
+  if (part) return <PathProperties key={part.id} {...{ part, rig, edit, clear, selectedEdge, setEdge, selectedNode, setNode }}/>;
   return <p className="studio-empty">Select a bone or path to edit it.</p>;
 }
 
-function PathProperties({part, rig, edit, clear, selectedEdge:edge, setEdge}: {
+function PathProperties({part, rig, edit, clear, selectedEdge:edge, setEdge, selectedNode, setNode}: {
   part: VectorPart; rig: KinetixRigState; edit: (label: string, ...commands: RigCommand[]) => boolean; clear: () => void;
   selectedEdge:number; setEdge:(index:number)=>void;
+  selectedNode:number; setNode:(index:number)=>void;
 }) {
   const order = rig.parts.indexOf(part);
-  const straightEdges = part.knots.flatMap((start, index) => {
-    const end = part.knots[index + 1] ?? (part.closed ? part.knots[0] : undefined);
-    return end && !start.outgoing && !end.incoming ? [index] : [];
-  });
+  const edges = part.closed ? part.knots.length : part.knots.length-1;
+  const canSplit = edge >= 0 && edge < edges && part.knots.length < 256;
+  const [joinSource,setJoinSource] = useState("");
+  const [simplifyTolerance,setSimplifyTolerance] = useState("1");
+  const joinOptions = part.closed ? [] : rig.parts.filter(item=>item.id!==part.id && !item.closed && item.parentId===part.parentId);
+  const scale = part.scale ?? {x:1,y:1};
+  const pivot = part.pivot ?? {x:0,y:0};
+  const transform = (label:string,changes:Partial<VectorPart>) => edit(label,{type:"part.update",id:part.id,changes});
   return <div className="studio-properties">
     <label>Name<input key={part.name} defaultValue={part.name} maxLength={120} onBlur={event => {
       if (!event.currentTarget.value.trim() || !edit("Rename path", { type: "part.update", id: part.id,
@@ -496,6 +593,23 @@ function PathProperties({part, rig, edit, clear, selectedEdge:edge, setEdge}: {
     }}/></label>
     <label>Color<input type="color" value={part.fill} onChange={event =>
       edit("Set path color", { type: "part.update", id: part.id, changes: { fill: event.target.value } })}/></label>
+    <div className="studio-field-pair">
+      <Numeric label="Position X (px)" value={part.offset.x} onCommit={x => transform("Move path",{offset:{...part.offset,x}})}/>
+      <Numeric label="Position Y (px)" value={part.offset.y} onCommit={y => transform("Move path",{offset:{...part.offset,y}})}/>
+    </div>
+    <Numeric label="Rotation (°)" value={(part.rotation ?? 0) * degrees} onCommit={value => transform("Rotate path",{rotation:value / degrees})}/>
+    <div className="studio-field-pair">
+      <Numeric label="Scale X (%)" value={scale.x * 100} onCommit={value => transform("Scale path",{scale:{...scale,x:value/100}})}/>
+      <Numeric label="Scale Y (%)" value={scale.y * 100} onCommit={value => transform("Scale path",{scale:{...scale,y:value/100}})}/>
+    </div>
+    <div className="studio-field-pair">
+      <Numeric label="Pivot X (px)" value={pivot.x} onCommit={x => edit("Move path pivot",{type:"part.pivot",id:part.id,pivot:{...pivot,x}})}/>
+      <Numeric label="Pivot Y (px)" value={pivot.y} onCommit={y => edit("Move path pivot",{type:"part.pivot",id:part.id,pivot:{...pivot,y}})}/>
+    </div>
+    <div className="studio-field-pair">
+      <button onClick={() => transform("Flip path horizontally",{scale:{...scale,x:-scale.x}})}>Flip horizontal</button>
+      <button onClick={() => transform("Flip path vertically",{scale:{...scale,y:-scale.y}})}>Flip vertical</button>
+    </div>
     <label className="studio-check"><input type="checkbox" checked={part.closed} onChange={event =>
       edit("Set path closure", { type: "part.update", id: part.id, changes: { closed: event.target.checked } })}/>Closed path</label>
     <div className="studio-field-pair">
@@ -504,18 +618,64 @@ function PathProperties({part, rig, edit, clear, selectedEdge:edge, setEdge}: {
       <button disabled={order <= 0} onClick={() =>
         edit("Send backward", { type: "part.reorder", id: part.id, direction: "backward" })}>Send backward</button>
     </div>
-    {straightEdges.length > 0 && <div className="studio-field-pair">
-      <label>Edge<select value={straightEdges.includes(edge) ? edge : -1} onChange={event => setEdge(Number(event.target.value))}>
+    <div className="studio-field-pair">
+      <label>Edge<select value={edge < edges ? edge : -1} onChange={event => setEdge(Number(event.target.value))}>
         <option value={-1}>Choose edge</option>
-        {straightEdges.map(index => <option key={index} value={index}>
+        {Array.from({length:edges},(_,index) => <option key={index} value={index}>
           {index + 1} to {(index + 1) % part.knots.length + 1}
         </option>)}
       </select></label>
-      <button disabled={!straightEdges.includes(edge) || part.knots.length >= 256} onClick={() => {
-        if (part.mesh && !window.confirm("Insert the vertex and remove this path’s mesh binding?")) return;
-        if (edit("Split edge", { type: "part.splitEdge", id: part.id, edge })) setEdge(-1);
+      <button disabled={!canSplit} onClick={() => {
+        if (edit("Split edge", { type: "part.splitEdge", id: part.id, edge })) {
+          setEdge(-1);
+          setNode(-1);
+        }
       }}>Split edge</button>
+    </div>
+    <label>Node<select value={selectedNode} onChange={event => setNode(Number(event.target.value))}>
+      <option value={-1}>Choose node</option>
+      {part.knots.map((_,index) => <option key={index} value={index}>Node {index+1}</option>)}
+    </select></label>
+    <div className="studio-field-pair">
+      {(["corner","smooth"] as const).map(mode => <button key={mode} disabled={selectedNode<0} onClick={() => {
+        if (part.mesh && !window.confirm("Change the node and remove this path’s mesh binding?")) return;
+        edit("Set " + mode + " node",{type:"part.nodeMode",id:part.id,index:selectedNode,mode});
+      }}>{mode === "corner" ? "Corner node" : "Smooth node"}</button>)}
+    </div>
+    <button onClick={() => {
+      if (edit("Reverse path",{type:"part.reverse",id:part.id})) {
+        setEdge(-1);
+        setNode(-1);
+      }
+    }}>Reverse path</button>
+    <button disabled={selectedNode < 0 || (!part.closed && (selectedNode === 0 || selectedNode === part.knots.length-1))}
+      onClick={() => {
+        if (part.mesh && !window.confirm("Cut the path and remove its mesh binding?")) return;
+        if (edit("Cut path",{type:"part.cut",id:part.id,index:selectedNode,newId:crypto.randomUUID()})) {
+          setNode(-1);
+          setEdge(-1);
+        }
+      }}>Cut at node</button>
+    {joinOptions.length > 0 && <div className="studio-field-pair">
+      <label>Join with<select value={joinSource} onChange={event=>setJoinSource(event.target.value)}>
+        <option value="">Choose path</option>
+        {joinOptions.map(item=><option key={item.id} value={item.id}>{item.name}</option>)}
+      </select></label>
+      <button disabled={!joinOptions.some(item=>item.id===joinSource)} onClick={() => {
+        if (edit("Join paths",{type:"part.join",id:part.id,sourceId:joinSource})) setJoinSource("");
+      }}>Join paths</button>
     </div>}
+    <div className="studio-field-pair">
+      <label>Simplify tolerance (px)<input type="number" min={0.01} max={100} step="any" value={simplifyTolerance}
+        onChange={event=>setSimplifyTolerance(event.target.value)}/></label>
+      <button disabled={!(Number(simplifyTolerance)>=0.01 && Number(simplifyTolerance)<=100)} onClick={() => {
+        if (part.mesh && !window.confirm("Simplify the path and remove its mesh binding?")) return;
+        if (edit("Simplify path",{type:"part.simplify",id:part.id,tolerance:Number(simplifyTolerance)})) {
+          setNode(-1);
+          setEdge(-1);
+        }
+      }}>Simplify path</button>
+    </div>
     <button className="studio-danger" onClick={() => {
       if (edit("Delete path", { type: "part.remove", id: part.id })) clear();
     }}>Delete path</button>

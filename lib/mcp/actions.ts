@@ -8,13 +8,15 @@ import type { RoomPresence } from "../realtime/protocol";
 import { channelSchema, easeSchema, sampleRig, setKey, setKeyEase, tracksSchema, type Channel, type Track } from "../rig/animation";
 import { editRig, rigCommandSchema, type RigCommand } from "../rig/commands";
 import { evaluateRig } from "../rig/kinematics";
-import { artboardFor, boneSchema, constraintSchema, partSchema, readRigState, type KinetixRigState } from "../rig/model";
+import { artboardFor, boneSchema, constraintSchema, partSchema, pointSchema, readRigState, type KinetixRigState } from "../rig/model";
+import { pencilKnots, primitiveKnots, primitiveShapes } from "../rig/path-geometry";
 import { bindMesh } from "../rig/skinning";
 import { viewportFrameFor } from "../rig/render";
 
 const frame = z.int().min(0).max(35_999);
 const clipId = z.uuid();
 const boneId = boneSchema.shape.id;
+const drawnPart = partSchema.omit({mesh:true,knots:true,closed:true});
 type Agent = {id:string;rigId:string;userId:string;label:string};
 type Selection = RoomPresence["selection"];
 
@@ -22,6 +24,8 @@ export const inputs = {
   create_bone:z.strictObject({bone:boneSchema}),
   attach_ik_constraint:z.strictObject({constraint:constraintSchema}),
   draw_vector_part:z.strictObject({part:partSchema.omit({mesh:true})}),
+  draw_primitive:z.strictObject({part:drawnPart,shape:z.enum(primitiveShapes),from:pointSchema,to:pointSchema,square:z.boolean().optional()}),
+  draw_pencil_path:z.strictObject({part:drawnPart,points:z.array(pointSchema).min(2).max(1200),tolerance:z.number().min(0.01).max(100)}),
   edit_document:z.strictObject({
     revision:z.int().min(0).max(2_147_483_646),
     commands:z.array(rigCommandSchema).min(1).max(100),
@@ -126,7 +130,7 @@ export class RigAgent {
     const {state} = await this.snapshot();
     const {width,height} = artboardFor(state);
     return {rigId:this.rigId,...viewportFrameFor(state),exportArtboard:{x:0,y:0,width,height},
-      ...(state.version === 2 && {artboard:state.artboard}),unit:"px",yAxis:"down"};
+      ...(state.version === 2 && {artboard:state.artboard,guides:state.guides ?? []}),unit:"px",yAxis:"down"};
   }
 
   createBone({bone}:z.infer<typeof inputs.create_bone>) {
@@ -137,6 +141,15 @@ export class RigAgent {
   }
   drawVector({part}:z.infer<typeof inputs.draw_vector_part>) {
     return this.changeRig("Draw vector part",()=>({type:"part.create",part}),{kind:"part",id:part.id});
+  }
+  drawPrimitive(input:z.infer<typeof inputs.draw_primitive>) {
+    if (input.from.x === input.to.x || input.from.y === input.to.y) throw new Error("The shape needs a width and height.");
+    const knots = primitiveKnots(input.shape,input.from,input.to,input.square ?? false);
+    return this.drawVector({part:{...input.part,knots,closed:true}});
+  }
+  drawPencil(input:z.infer<typeof inputs.draw_pencil_path>) {
+    const knots = pencilKnots(input.points,input.tolerance);
+    return this.drawVector({part:{...input.part,knots,closed:false}});
   }
   editDocument(input:z.infer<typeof inputs.edit_document>) {
     return this.changeRig("Edit document",()=>input.commands,null,input.revision);

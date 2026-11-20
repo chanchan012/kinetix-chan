@@ -1,6 +1,7 @@
 import earcut from "earcut";
 import { rotatePoint, type BonePose } from "./kinematics";
 import type { Point, SkinMesh, VectorPart } from "./model";
+import { mapPartPoint, partMatrix } from "./part-transform";
 
 export function worldPoint(local: Point, origin: Point, angle: number): Point {
   const point = rotatePoint(local, angle);
@@ -66,10 +67,10 @@ export function deformMesh(part: VectorPart, poses: Map<string, BonePose>): Poin
   const mesh = part.mesh;
   if (!mesh) return [];
   const matrices = new Map(mesh.bindings.map(binding => [binding.id, binding]));
-  const x = part.offset.x - mesh.offset.x;
-  const y = part.offset.y - mesh.offset.y;
+  const transform = partMatrix(part);
   return mesh.vertices.map(vertex => {
-    const bind = worldPoint({ x: vertex.point.x + x, y: vertex.point.y + y }, mesh.origin, mesh.angle);
+    const local = mapPartPoint(transform,vertex.point);
+    const bind = worldPoint({ x:local.x-mesh.offset.x, y:local.y-mesh.offset.y }, mesh.origin, mesh.angle);
     const result = { x: 0, y: 0 };
     for (const { boneId, weight } of vertex.weights) {
       const initial = matrices.get(boneId)!;

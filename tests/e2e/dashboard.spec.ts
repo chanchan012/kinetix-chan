@@ -5,11 +5,137 @@ import { strFromU8, unzipSync } from "fflate";
 import { clerk } from "@clerk/testing/playwright";
 import type { KinetixRigState } from "../../lib/rig/model";
 import { forwardKinematics } from "../../lib/rig/kinematics";
+import { worldPartBounds } from "../../lib/rig/path-layout";
 import { formats, type ExportFormat } from "../../lib/export/frames";
 
 test.beforeEach(async ({page}) => {
   await page.goto("/");
   await clerk.signIn({page, emailAddress:process.env.KINETIX_TEST_EMAIL!});
+});
+
+test("an illustrator lays out shapes with region selection, rulers, and guide snapping", async ({page},info) => {
+  const create = await page.request.post("/api/rigs",{data:{
+    name:"Precision layout " + info.project.name,artboard:{name:"Marks",width:300,height:240,background:null},
+  }});
+  expect(create.status()).toBe(201);
+  const {id} = await create.json();
+  const path = "/api/rigs/"+id;
+  try {
+    await page.goto("/studio/"+id);
+    const canvas = page.getByRole("img",{name:"Rig canvas"});
+    await expect(canvas).toBeVisible();
+    const bounds = (await canvas.boundingBox())!;
+    const factor = Math.min(bounds.width/300,bounds.height/240);
+    const x = (pixel:number) => bounds.x+bounds.width/2+(pixel-150)*factor;
+    const y = (pixel:number) => bounds.y+bounds.height/2+(pixel-120)*factor;
+    async function drag(x1:number,y1:number,x2:number,y2:number) {
+      await page.mouse.move(x(x1),y(y1));
+      await page.mouse.down();
+      await page.mouse.move(x(x2),y(y2),{steps:5});
+      await page.mouse.up();
+    }
+    for (const [shape, x1,y1,x2,y2] of [
+      ["rectangle",85,74,119,107],["ellipse",138,93,176,129],["star",186,115,223,152],
+    ] as const) {
+      await page.getByRole("button",{name:"Shapes",exact:true}).click();
+      await page.getByRole("combobox",{name:"Shape",exact:true}).selectOption(shape);
+      await drag(x1,y1,x2,y2);
+    }
+    const tree = page.getByRole("complementary",{name:"Rig hierarchy"});
+    await expect(tree.getByRole("button",{name:"Star 3",exact:true})).toBeVisible();
+    await page.getByRole("button",{name:"Region select"}).click();
+    await drag(75,60,232,165);
+    const inspector = page.getByRole("complementary",{name:"Inspector"});
+    await expect(inspector.getByText("3 paths selected")).toBeVisible();
+    await inspector.getByRole("button",{name:"Align top"}).click();
+    await inspector.getByRole("button",{name:"Distribute horizontally"}).click();
+    await page.getByRole("button",{name:"Region select"}).click();
+    await page.getByRole("combobox",{name:"Region selection mode"}).selectOption("lasso");
+    await page.mouse.move(x(75),y(62));
+    await page.mouse.down();
+    for (const [px,py] of [[236,62],[236,118],[75,118],[75,62]]) {
+      await page.mouse.move(x(px),y(py),{steps:5});
+    }
+    await page.mouse.up();
+    await expect(inspector.getByText("3 paths selected")).toBeVisible();
+    await tree.getByRole("button",{name:"Rectangle 1",exact:true}).click();
+    await page.getByRole("button",{name:"Rulers",exact:true}).click();
+    await expect(page.getByRole("button",{name:"Rulers",exact:true})).toHaveAttribute("aria-pressed","true");
+    await page.getByRole("button",{name:"Guides",exact:true}).click();
+    const guides = page.getByRole("dialog",{name:"Artboard guides"});
+    await guides.getByLabel("Position (px)").fill("122");
+    await guides.getByRole("button",{name:"Add guide",exact:true}).click();
+    await expect(guides.getByRole("button",{name:"Remove vertical guide at 122px"})).toBeVisible();
+    await guides.getByRole("button",{name:"Close dialog"}).click();
+    await page.getByRole("button",{name:"Snap",exact:true}).click();
+    await drag(102,90,141,90);
+    const statePath = path+"/state";
+    const saved = async () => (await (await page.request.get(statePath)).json()).state as KinetixRigState;
+    const savedLeft = async () => {
+      const first = (await saved()).parts[0];
+      return first ? Math.round(worldPartBounds(first,new Map()).min.x) : -1;
+    };
+    await expect.poll(savedLeft).toBe(122);
+    await page.getByRole("button",{name:"Undo",exact:true}).click();
+    await page.keyboard.down("Alt");
+    await drag(102,90,141,90);
+    await page.keyboard.up("Alt");
+    await expect.poll(savedLeft).toBeGreaterThanOrEqual(123);
+    const result = await saved();
+    expect(result).toMatchObject({guides:[{axis:"x",position:122}]});
+    const vertical = result.parts.map(part=>worldPartBounds(part,new Map()).min.y);
+    expect(Math.max(...vertical)-Math.min(...vertical)).toBeLessThan(1.5);
+  } finally {
+    expect((await page.request.delete(path)).status()).toBe(204);
+  }
+});
+
+test("an illustrator moves a transformed path with numbers, keys, and the pointer", async ({page},info) => {
+  const creation = await page.request.post("/api/rigs",{data:{
+    name:"Logo layout " + info.project.name,artboard:{name:"Logo",width:240,height:240,background:null},
+  }});
+  expect(creation.status()).toBe(201);
+  const {id,revision,state} = await creation.json();
+  const path = "/api/rigs/" + id;
+  try {
+    const part = {id:"tile",name:"Tile",parentId:null,offset:{x:0,y:0},closed:true,fill:"#ff3300",
+      knots:[{point:{x:20,y:20}},{point:{x:60,y:20}},{point:{x:60,y:60}},{point:{x:20,y:60}}]};
+    expect((await page.request.patch(path+"/state",{data:{revision,state:{...state,parts:[part]}}})).status()).toBe(200);
+    await page.goto("/studio/"+id);
+    await page.getByRole("button",{name:"Tile",exact:true}).click();
+    const inspector = page.getByRole("complementary",{name:"Inspector"});
+    for (const [name,value] of [
+      ["Position X (px)","120"],["Rotation (°)","90"],["Scale X (%)","150"],["Pivot X (px)","20"],["Pivot Y (px)","20"],
+    ]) {
+      const field = inspector.getByLabel(name,{exact:true});
+      await field.fill(value);
+      await field.press("Enter");
+    }
+    const positionX = inspector.getByLabel("Position X (px)",{exact:true});
+    const positionY = inspector.getByLabel("Position Y (px)",{exact:true});
+    await expect(positionX).toHaveValue("80");
+    await expect(positionY).toHaveValue("10");
+    const canvas = page.getByRole("img",{name:"Rig canvas"});
+    await canvas.focus();
+    await expect(canvas).toBeFocused();
+    await canvas.press("Control+Shift+ArrowRight");
+    await expect(positionX).toHaveValue("90");
+    const bounds = (await canvas.boundingBox())!;
+    const scale = Math.min(bounds.width,bounds.height)/240;
+    const screenX = bounds.x + bounds.width/2 + (90 - 120)*scale;
+    const screenY = bounds.y + bounds.height/2 + (60 - 120)*scale;
+    await page.mouse.move(screenX,screenY);
+    await page.mouse.down();
+    await page.mouse.move(screenX+20*scale,screenY+15*scale,{steps:5});
+    await page.mouse.up();
+    await expect.poll(async () => Math.round(Number(await positionX.inputValue()))).toBe(110);
+    await expect.poll(async () => Math.round(Number(await positionY.inputValue()))).toBe(25);
+    await page.getByRole("button",{name:"Undo",exact:true}).click();
+    await expect(positionX).toHaveValue("90");
+    await expect(positionY).toHaveValue("10");
+  } finally {
+    expect((await page.request.delete(path)).status()).toBe(204);
+  }
 });
 
 test("an animator keys and plays artwork position without a skeleton", async ({page}, info) => {

@@ -1,7 +1,8 @@
 import { drawStudy } from "../artwork";
-import { rotatePoint, type BonePose } from "./kinematics";
+import type { BonePose } from "./kinematics";
 import { createRigState, type KinetixRigState, type Point, type VectorPart } from "./model";
 import { deformMesh } from "./skinning";
+import { partMatrix } from "./part-transform";
 
 export const viewportFrame = {x:-10,y:3,width:510,height:280};
 export const viewportFrameFor = (rig: KinetixRigState) => rig.version === 1 ? viewportFrame :
@@ -9,7 +10,7 @@ export const viewportFrameFor = (rig: KinetixRigState) => rig.version === 1 ? vi
 
 export type RigDrawingContext = Pick<CanvasRenderingContext2D,
   "arc" | "beginPath" | "bezierCurveTo" | "closePath" | "fill" | "lineTo" |
-  "lineWidth" | "moveTo" | "restore" | "rotate" | "save" | "stroke" | "translate"
+  "lineWidth" | "moveTo" | "restore" | "rotate" | "save" | "stroke" | "transform" | "translate"
 > & { fillStyle: unknown; strokeStyle: unknown };
 
 export function drawArtboardBackground(context: RigDrawingContext, rig: KinetixRigState) {
@@ -23,12 +24,6 @@ export function drawArtboardBackground(context: RigDrawingContext, rig: KinetixR
   context.closePath();
   context.fillStyle = background;
   context.fill();
-}
-
-export function partSpace(point: Point, part: VectorPart, poses: Map<string, BonePose>): Point {
-  const parent = part.parentId === null ? undefined : poses.get(part.parentId);
-  const local = parent ? rotatePoint({ x: point.x - parent.origin.x, y: point.y - parent.origin.y }, -parent.angle) : point;
-  return { x: local.x - part.offset.x, y: local.y - part.offset.y };
 }
 
 export function tracePart(context: RigDrawingContext, part: VectorPart) {
@@ -59,7 +54,7 @@ export function inPartSpace(
     context.translate(parent.origin.x, parent.origin.y);
     context.rotate(parent.angle);
   }
-  context.translate(part.offset.x, part.offset.y);
+  context.transform(...partMatrix(part));
   draw();
   context.restore();
 }
@@ -97,16 +92,14 @@ export function drawRigArtwork(
       context.fill();
       continue;
     }
-    inPartSpace(context, part, poses, () => {
-      tracePart(context, part);
-      if (part.closed) {
-        context.fillStyle = part.fill;
-        context.fill();
-      } else {
-        context.strokeStyle = part.fill;
-        context.lineWidth = 2;
-        context.stroke();
-      }
-    });
+    inPartSpace(context, part, poses, () => tracePart(context, part));
+    if (part.closed) {
+      context.fillStyle = part.fill;
+      context.fill();
+    } else {
+      context.strokeStyle = part.fill;
+      context.lineWidth = 2;
+      context.stroke();
+    }
   }
 }

@@ -6,6 +6,9 @@ import { compileLottie } from "../../lib/export/lottie";
 import { renderPngFrame, renderPngSequence, renderSpritesheet, renderVideo } from "../../lib/export/raster";
 import { createBlankRig, createRigState, readRigState } from "../../lib/rig/model";
 import { editRig } from "../../lib/rig/commands";
+import { partSpace, partWorldSpace } from "../../lib/rig/part-transform";
+import { bindMesh, deformMesh } from "../../lib/rig/skinning";
+import { evaluateRig } from "../../lib/rig/kinematics";
 import { setKey } from "../../lib/rig/animation";
 import type { ExportSnapshot } from "../../lib/export/frames";
 
@@ -37,6 +40,42 @@ const lottie = z.object({
 });
 
 describe("animation export formats", () => {
+  it("uses one path transform for editing, mesh deformation and export", async () => {
+    const input = {...snapshot(),rig:createBlankRig({name:"Logo",width:96,height:96,background:null}),
+      frameCount:1,endFrame:0,tracks:[]};
+    const part = {
+      id:"mark",name:"Mark",parentId:null,offset:{x:40,y:20},rotation:Math.PI/2,scale:{x:2,y:1},
+      closed:true,fill:"#ff5500",knots:[{point:{x:10,y:10}},{point:{x:22,y:10}},{point:{x:22,y:22}},{point:{x:10,y:22}}],
+    };
+    const [rig] = editRig(input.rig,[
+      {type:"part.create",part}, {type:"part.pivot",id:"mark",pivot:{x:16,y:16}},
+    ]);
+    input.rig = rig;
+    const transformed = rig.parts[0];
+    const poses = evaluateRig(rig);
+    const world = partWorldSpace({x:10,y:10},transformed,poses);
+    expect(world.x).toBeCloseTo(30);
+    expect(world.y).toBeCloseTo(40);
+    expect(partSpace(world,transformed,poses).x).toBeCloseTo(10);
+    expect(partSpace(world,transformed,poses).y).toBeCloseTo(10);
+
+    const image = await loadImage(renderPngFrame(input));
+    const ctx = createCanvas(96,96).getContext("2d");
+    ctx.drawImage(image,0,0);
+    expect(Array.from(ctx.getImageData(24,50,1,1).data)).toEqual([255,85,0,255]);
+    expect(ctx.getImageData(44,44,1,1).data[3]).toBe(0);
+    expect(lottie.parse(compileLottie(input)).layers[0].shapes[0].ks).toMatchObject({
+      k:{v:[[30,40],[30,64],[18,64],[18,40],[30,40]]},
+    });
+
+    const withBone = {...rig,bones:[{id:"root",name:"Root",offset:{x:0,y:0},length:1,rotation:0,parentId:null}]};
+    const bonePoses = evaluateRig(withBone);
+    const bound = {...transformed,mesh:bindMesh(transformed,bonePoses,"root")};
+    const deformed = deformMesh(bound,bonePoses);
+    expect(deformed[0].x).toBeCloseTo(world.x);
+    expect(deformed[0].y).toBeCloseTo(world.y);
+  });
+
   it("preserves blank artboard dimensions, transparency, geometry and stacking across export formats", async () => {
     const artboard = { name:"Portrait", width:96, height:151, background:null };
     const triangle = {
