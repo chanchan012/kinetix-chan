@@ -16,11 +16,19 @@ Implemented the application shell, interactive guest playground, Clerk access ro
 
 ## Active subgoal and next exact step
 
-The active implementation goal covers all 23 subgoals in [the production studio roadmap](docs/PRODUCTION_STUDIO_ROADMAP.md). M5.1 through M5.4 and the first playable asset workflow are deployed. The first playable asset workflow delivers part position channels from 7.1, fixed-grid packages from 9.1, and the Godot sprite adapter from 9.3. Those three subgoals have further acceptance criteria in the roadmap.
+The active implementation goal covers all 23 subgoals in [the production studio roadmap](docs/PRODUCTION_STUDIO_ROADMAP.md). M5.1 through M5.5 and the first playable asset workflow are deployed. The first playable asset workflow delivers part position channels from 7.1, fixed-grid packages from 9.1, and the Godot sprite adapter from 9.3. Those three subgoals have further acceptance criteria in the roadmap.
 
-M5.5 is next. Add stable drawing and cel IDs, a versioned raster drawing format and frame exposure records that reference cels. Verify held exposures and linked versus independent copies through the shared command model before wiring pressure drawing, onion skins and sprite exports.
+The next exact step is to extend M9.1 portable sprite delivery. Extract shared timing, pivot and frame geometry from the fixed-grid package in `lib/export/sprite-package.ts`. Implement revision-bound loose frames and packed atlas layouts, then compare the same pixel-flame clip across all three layouts in a reference player.
 
 Owner-managed Inngest Cloud activation is still open. After the signing and event keys are present in Vercel, redeploy, sync the existing endpoint, and verify a hosted thumbnail and animation export run. Saved still PNGs are served directly.
+
+## M5.5 drawn cels and pixel art · November 21, 2026
+
+- **Brief and build** added indexed and RGBA drawing layers, pressure-aware brush tools, palette ramps, pixel-region transforms, a cel exposure lane, configurable onion colors, and integer-scale raster delivery. Studio and MCP share the pixel operations and exposure sampler.
+- **Test** passed 64 Vitest checks, with the six-pose fixture playing and reimporting at 1× and 3× in Godot 4.5.1. The full Playwright run and corrected guide-snapping rerun cover 74 passing cases across four layouts, with six expected desktop-only skips. The worker test rendered the original indexed colors after the saved palette changed.
+- **Merge** published `868a1fe` on the feature branch and merged it at `94c97fd` on `main`.
+- **Deploy** the local Next.js production build passed using Webpack. Vercel's default Turbopack build passed on the [feature preview](https://kinetix-chan-bv2447ee8-chanchans-projects-aada625f.vercel.app) and [production](https://kinetix-chan.vercel.app). A hosted test authored cels through MCP, opened the exposure lane on a phone viewport, and verified byte-identical 3× ZIPs from MCP and the Studio endpoint. The temporary rig and account were removed.
+- **Document** records cel storage, command and export contracts, and the portable sprite package handoff.
 
 ## M5.4 layers and appearance · November 21, 2026
 

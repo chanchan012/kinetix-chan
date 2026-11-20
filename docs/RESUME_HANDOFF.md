@@ -134,6 +134,12 @@ Select a path and open **Appearance** in the inspector. Choose solid or gradient
 
 Run `npm test -- tests/unit/layers.test.ts tests/unit/appearance.test.ts` for nesting, save compatibility, swatch detachment, masks, Boolean results and raster/Lottie fidelity. Run `npm run test:e2e -- --grep 'groups, hides, locks|delivers a badge'` for the authenticated artist workflow. If a Windows Turbopack CSS worker exits before IPC connects, use `npm run build -- --webpack` locally and verify the default Turbopack build on Vercel. This subgoal uses existing Vercel variables and Neon storage. Lottie reports a topology error when an animated mask changes its sampled vertex layout.
 
-## M5.5 · Next implementation step
+## M5.5 · Drawn cels and pixel art
 
-Start from `main` with a dedicated cel-authoring branch. Design versioned raster cel data and exposure references first. Compare sampled frames for a held cel, a shared edit and an independent copy. Then integrate pressure-aware tools, indexed palettes, onion skins and pixel-art scaling through the same commands and frame evaluator used by Studio, exports and MCP. The pixel-flame fixture defines the output checks. See [the production studio roadmap](PRODUCTION_STUDIO_ROADMAP.md).
+Create a saved clip, open **Add drawing layer** in Layers and choose indexed or RGBA. Select a pixel tool in the drawing inspector. Use **Link held cel**, **Make independent** or **Blank exposure** at the desired frame. Use **Pixel scale** in Export to render a PNG sequence, sprite sheet or fixed-grid package at an integer scale.
+
+Run `npm test -- tests/unit/drawings.test.ts tests/unit/library.test.ts` for the held-cel sampler, pixel commands and queued export snapshots. Set `KINETIX_GODOT_PATH` to the installed Godot 4.5.1 console binary to test playback and reimport at both scales. Run `npm run test:e2e -- --grep 'recolors, and exports pixel cels'` for the authenticated browser fixture. The preview and production use the existing deployment variables. For drawings above 262,144 pixels, the exact edited bitmap appears when the stroke completes. Lottie calls for a raster profile when the range contains visible cels.
+
+## M9.1 · Next implementation step
+
+Start with the existing fixed-grid package and its Godot 4.5.1 fixture. Define a shared frame and clip manifest for loose PNGs, fixed sheets and packed atlas pages. Preserve existing package imports. Verify unequal holds, blank frames, asymmetric trim and anchor stability using the pixel-flame clip. Keep integer-scaled frame timing identical across all layouts. See [the production studio roadmap](PRODUCTION_STUDIO_ROADMAP.md).
