@@ -3,6 +3,7 @@ import { studyFor } from "../studies";
 import { facetEdgeKey, signedPolygonArea, validFacetPolygon } from "./facet-geometry";
 import { layerTreeSchema } from "./layer-tree";
 import { appearanceSchema,swatchSchema } from "./appearance";
+import { drawingsSchema } from "./drawings";
 
 const coordinate = z.number().min(-1_000_000).max(1_000_000);
 export const pointSchema = z.strictObject({ x: coordinate, y: coordinate });
@@ -142,6 +143,7 @@ const documentContents = {
   parts: z.array(partSchema).max(128).default([]),
   layers: layerTreeSchema.optional(),
   swatches:z.array(swatchSchema).max(128).optional(),
+  drawings:drawingsSchema.optional(),
 };
 const documentSchema = z.discriminatedUnion("version", [
   z.strictObject({ version: z.literal(1), study: studyIdSchema, ...documentContents }),
@@ -225,10 +227,19 @@ export const rigStateSchema = documentSchema.superRefine((rig, context) => {
     }
     partIds.add(part.id);
   }
+  const drawingIds = new Set(rig.drawings?.layers.map(layer=>layer.id));
+  if (drawingIds.size && !rig.layers) context.addIssue({
+    code:"custom",path:["layers"],message:"Drawings require an artwork layer tree.",
+  });
   if (rig.layers) {
     const layers = rig.layers.nodes.flatMap(node=>node.kind==="part" ? [node.partId] : []);
     if (layers.length!==partIds.size || layers.some(id=>!partIds.has(id))) context.addIssue({
       code:"custom",path:["layers","nodes"],message:"Each artwork part needs one matching layer.",
+    });
+    const drawingLayers = rig.layers.nodes.flatMap(node=>node.kind==="drawing" ? [node.drawingId] : []);
+    if (drawingLayers.length!==drawingIds.size || new Set(drawingLayers).size!==drawingIds.size ||
+        drawingLayers.some(id=>!drawingIds.has(id))) context.addIssue({
+      code:"custom",path:["layers","nodes"],message:"Each raster drawing needs one matching layer.",
     });
     const closed = new Set(rig.parts.filter(part=>part.closed).map(part=>part.id));
     for (const node of rig.layers.nodes) {

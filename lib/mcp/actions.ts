@@ -13,6 +13,7 @@ import { pencilKnots, primitiveKnots, primitiveShapes } from "../rig/path-geomet
 import { bindMesh } from "../rig/skinning";
 import { viewportFrameFor } from "../rig/render";
 import { layerTreeFor } from "../rig/layer-tree";
+import { drawingIdSchema } from "../rig/drawings";
 
 const frame = z.int().min(0).max(35_999);
 const clipId = z.uuid();
@@ -30,6 +31,10 @@ export const inputs = {
   edit_document:z.strictObject({
     revision:z.int().min(0).max(2_147_483_646),
     commands:z.array(rigCommandSchema).min(1).max(100),
+  }),
+  read_drawing_cel:z.strictObject({
+    drawingId:drawingIdSchema,celId:drawingIdSchema,revision:z.int().min(0).optional(),
+    offset:z.int().min(0).max(40_000).default(0),limit:z.int().min(1).max(2000).default(300),
   }),
   bind_mesh_weights:z.strictObject({
     partId:partSchema.shape.id, boneId,
@@ -121,6 +126,9 @@ export class RigAgent {
       parts:state.parts,
       layers:layerTreeFor(state),
       swatches:state.swatches ?? [],
+      drawings:state.drawings?.layers.map(({cels,...drawing})=>({
+        ...drawing,cels:cels.map(cel=>({id:cel.id,runCount:cel.runs.length})),
+      })) ?? [],
     };
   }
 
@@ -154,8 +162,30 @@ export class RigAgent {
     const knots = pencilKnots(input.points,input.tolerance);
     return this.drawVector({part:{...input.part,knots,closed:false}});
   }
-  editDocument(input:z.infer<typeof inputs.edit_document>) {
-    return this.changeRig("Edit document",()=>input.commands,null,input.revision);
+  async editDocument(input:z.infer<typeof inputs.edit_document>) {
+    const exposureClips = new Map<string,number>();
+    for (const command of input.commands) if (command.type==="exposure.set") {
+      let frameCount=exposureClips.get(command.clipId);
+      if (frameCount===undefined) {
+        const clip=await this.library.getClipAnimation(this.userId,this.rigId,command.clipId);
+        if (!clip) throw new Error("The exposure clip does not belong to this rig.");
+        exposureClips.set(command.clipId,frameCount=clip.frameCount);
+      }
+      if (command.key.frame>=frameCount) throw new Error("The exposure is outside the clip.");
+    }
+    const edit = input.commands.findLast(command=>command.type==="cel.edit");
+    return this.changeRig("Edit document",()=>input.commands,edit ? {kind:"drawing",id:edit.drawingId}:null,input.revision);
+  }
+  async readDrawingCel(input:z.infer<typeof inputs.read_drawing_cel>) {
+    const {state,revision}=await this.snapshot();
+    if (input.revision!==undefined && input.revision!==revision) throw new Error("The drawing changed. Read its latest hierarchy.");
+    const drawing=state.drawings?.layers.find(item=>item.id===input.drawingId);
+    const cel=drawing?.cels.find(item=>item.id===input.celId);
+    if (!drawing || !cel) throw new Error("This cel does not belong to the current drawing.");
+    const runs=cel.runs.slice(input.offset,input.offset+input.limit);
+    const next=input.offset+runs.length;
+    return {drawingId:drawing.id,celId:cel.id,revision,width:drawing.width,height:drawing.height,
+      storage:drawing.storage,runs,nextOffset:next<cel.runs.length ? next : null};
   }
   bindWeights(input:z.infer<typeof inputs.bind_mesh_weights>) {
     return this.changeRig("Bind mesh weights",state=>{

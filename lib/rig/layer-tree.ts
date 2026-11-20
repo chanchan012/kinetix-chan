@@ -6,6 +6,7 @@ const nodeFields = {id:layerId,parentId:layerId.nullable(),hidden:z.boolean().op
   maskPartId:layerId.optional()};
 const layerNodeSchema = z.discriminatedUnion("kind",[
   z.strictObject({...nodeFields,kind:z.literal("part"),partId:layerId}),
+  z.strictObject({...nodeFields,kind:z.literal("drawing"),drawingId:layerId}),
   z.strictObject({...nodeFields,kind:z.literal("group"),name:z.string().trim().min(1).max(120)}),
 ]);
 export const layerTreeSchema = z.strictObject({version:z.literal(1),nodes:z.array(layerNodeSchema).max(256)})
@@ -39,11 +40,14 @@ export const layerTreeSchema = z.strictObject({version:z.literal(1),nodes:z.arra
 
 export type LayerTree = z.infer<typeof layerTreeSchema>;
 export type LayerNode = z.infer<typeof layerNodeSchema>;
-type LayerSource = Pick<KinetixRigState,"parts"|"layers">;
+type LayerSource = Pick<KinetixRigState,"parts"|"layers"|"drawings">;
 
 /** Derive earlier documents' root layer order from their original part array. */
 export function layerTreeFor(rig:LayerSource):LayerTree {
-  return rig.layers ?? {version:1,nodes:rig.parts.map(part=>partLayer(part.id))};
+  return rig.layers ?? {version:1,nodes:[
+    ...rig.parts.map(part=>partLayer(part.id)),
+    ...(rig.drawings?.layers ?? []).map(({id}):LayerNode=>({kind:"drawing",id,parentId:null,drawingId:id})),
+  ]};
 }
 
 export function partLayer(id:string):LayerNode {
@@ -80,11 +84,15 @@ export function inLayerSubtree(tree:LayerTree,id:string):Set<string> {
 
 export function orderedVisibleParts(rig:LayerSource,isolate?:string|null):VectorPart[] {
   if (!rig.layers && !isolate) return rig.parts;
+  const parts = new Map(rig.parts.map(part=>[part.id,part]));
+  return visibleLayerRows(rig,isolate).flatMap(({node})=>
+    node.kind==="part" ? [parts.get(node.partId)!] : []);
+}
+
+export function visibleLayerRows(rig:LayerSource,isolate?:string|null) {
   const tree = layerTreeFor(rig);
   const allowed = isolate ? inLayerSubtree(tree,isolate) : null;
-  const parts = new Map(rig.parts.map(part=>[part.id,part]));
-  return orderedLayers(tree).flatMap(({node,hidden})=>
-    node.kind==="part" && !hidden && (!allowed || allowed.has(node.id)) ? [parts.get(node.partId)!] : []);
+  return orderedLayers(tree).filter(({node,hidden})=>node.kind!=="group" && !hidden && (!allowed || allowed.has(node.id)));
 }
 
 export function editablePartIds(rig:LayerSource):Set<string> {
@@ -95,7 +103,7 @@ export function editablePartIds(rig:LayerSource):Set<string> {
 export function syncPartLayers(tree:LayerTree,parts:readonly VectorPart[]) {
   const ids = new Set(parts.map(part=>part.id));
   const existing = new Set(tree.nodes.flatMap(node=>node.kind==="part" ? [node.partId] : []));
-  if ([...existing].some(id=>!ids.has(id))) tree.nodes = tree.nodes.filter(node=>node.kind==="group" || ids.has(node.partId));
+  if ([...existing].some(id=>!ids.has(id))) tree.nodes = tree.nodes.filter(node=>node.kind!=="part" || ids.has(node.partId));
   for (const {id} of parts) if (!existing.has(id)) tree.nodes.push(partLayer(id));
   for (const node of tree.nodes) {
     if (node.maskPartId && !ids.has(node.maskPartId)) delete node.maskPartId;

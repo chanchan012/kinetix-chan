@@ -4,9 +4,10 @@ import { createRigState, type KinetixRigState, type Point, type VectorKnot, type
 import { deformMesh } from "./skinning";
 import { partMatrix } from "./part-transform";
 import { facetArtworkFaces } from "./facet-skinning";
-import { orderedLayers,orderedVisibleParts } from "./layer-tree";
+import { orderedLayers,visibleLayerRows } from "./layer-tree";
 import { defaultStroke,gradientAxis,resolvePaint,type Paint,type Swatch } from "./appearance";
 import { intersectRegions,pathRegions,regionPolygons } from "./path-boolean";
+import { celAt, type Cel, type Drawing, type DrawingSample } from "./drawings";
 
 export const viewportFrame = {x:-10,y:3,width:510,height:280};
 export const viewportFrameFor = (rig: KinetixRigState) => rig.version === 1 ? viewportFrame :
@@ -125,6 +126,7 @@ export function maskRegions(parts:Map<string,VectorPart>,ids:readonly string[],p
 export function drawRigArtwork(
   context: RigDrawingContext, rig: KinetixRigState, poses: Map<string, BonePose>, phase: number,
   reference = true, isolate?:string|null,
+  raster?:{sample:DrawingSample;paint:(drawing:Drawing,cel:Cel)=>void},
 ) {
   if (reference && !isolate && rig.study) {
     const root = poses.get("root");
@@ -138,17 +140,28 @@ export function drawRigArtwork(
     drawStudy(context, rig.study, phase, false);
     context.restore();
   }
-  const masks = partMasks(rig);
   const byId = new Map(rig.parts.map(part=>[part.id,part]));
+  const drawings = new Map(rig.drawings?.layers.map(drawing=>[drawing.id,drawing]));
   const cached = new Map<string,ReturnType<typeof pathRegions>>();
   const swatches = rig.swatches ?? [];
-  for (const part of orderedVisibleParts(rig,isolate)) {
+  for (const {node,masks} of visibleLayerRows(rig,isolate)) {
+    if (node.kind==="group") continue;
     context.save();
-    const stack = masks.get(part.id);
-    if (stack) {
-      tracePolygons(context,regionPolygons(maskRegions(byId,stack,poses,cached)));
+    if (masks.length) {
+      tracePolygons(context,regionPolygons(maskRegions(byId,masks,poses,cached)));
       context.clip("evenodd");
     }
+    if (node.kind==="drawing") {
+      const drawing = drawings.get(node.drawingId)!;
+      const cel = celAt(drawing,raster?.sample ?? {frame:0});
+      if (cel) {
+        if (!raster && cel.runs.length) throw new Error("This delivery format cannot render raster cels.");
+        raster?.paint(drawing,cel);
+      }
+      context.restore();
+      continue;
+    }
+    const part = byId.get(node.partId)!;
     const appearance = part.appearance;
     const opacity = appearance?.opacity ?? 1;
     context.globalAlpha *= opacity;

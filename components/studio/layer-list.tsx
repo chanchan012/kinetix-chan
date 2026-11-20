@@ -1,16 +1,19 @@
 "use client";
 
 import { useState,type CSSProperties } from "react";
-import { CaretDown, CaretUp, Eye, EyeSlash, FolderSimple, LockSimple, LockSimpleOpen } from "@phosphor-icons/react";
+import { CaretDown, CaretUp, Eye, EyeSlash, FolderSimple, GridFour, LockSimple, LockSimpleOpen } from "@phosphor-icons/react";
 import type { RigCommand } from "@/lib/rig/commands";
 import { inLayerSubtree,layerTreeFor,orderedLayers } from "@/lib/rig/layer-tree";
 import type { KinetixRigState } from "@/lib/rig/model";
 
-export function LayerList({rig,selectedParts,boneSelected,selectPart,isolate,setIsolate,edit}: {
+export function LayerList({rig,selectedParts,boneSelected,drawingId,selectPart,selectDrawing,makeDrawing,isolate,setIsolate,edit}: {
   rig:KinetixRigState;
   selectedParts:string[];
   boneSelected:boolean;
+  drawingId?:string;
   selectPart:(id:string|null)=>void;
+  selectDrawing:(id:string)=>void;
+  makeDrawing:(mode:"indexed"|"rgba")=>void;
   isolate:string|null;
   setIsolate:(id:string|null)=>void;
   edit:(label:string,command:RigCommand)=>boolean;
@@ -20,11 +23,14 @@ export function LayerList({rig,selectedParts,boneSelected,selectPart,isolate,set
   const tree = layerTreeFor(rig);
   const rows = orderedLayers(tree);
   const parts = new Map(rig.parts.map(part=>[part.id,part]));
-  const group = !boneSelected && selectedParts.length===0 && tree.nodes.find(node=>node.id===selectedGroup && node.kind==="group");
-  const active = group || tree.nodes.findLast(node=>node.kind==="part" && selectedParts.includes(node.partId));
-  const selectedNodes = rows.flatMap(row=>
-    row.node.kind==="part" && selectedParts.includes(row.node.partId) ? [row.node.id] : []);
-  if (!rows.length) return null;
+  const group = !boneSelected && !drawingId && selectedParts.length===0 &&
+    tree.nodes.find(node=>node.id===selectedGroup && node.kind==="group");
+  const active = group || tree.nodes.findLast(node=>
+    (node.kind==="drawing" && node.drawingId===drawingId) ||
+    (node.kind==="part" && selectedParts.includes(node.partId)));
+  const selectedNodes = rows.flatMap(({node})=>
+    (node.kind==="part" && selectedParts.includes(node.partId)) ||
+    (node.kind==="drawing" && node.drawingId===drawingId) ? [node.id] : []);
   const parents = new Set(tree.nodes.filter(node=>selectedNodes.includes(node.id)).map(node=>node.parentId));
   const siblings = active ? tree.nodes.filter(node=>node.parentId===active.parentId) : [];
   const index = active ? siblings.findIndex(node=>node.id===active.id) : -1;
@@ -32,15 +38,21 @@ export function LayerList({rig,selectedParts,boneSelected,selectPart,isolate,set
   const query = search.trim().toLowerCase();
   return <section className="studio-layer-list" aria-label="Artwork layers">
     <h3>Layers</h3>
+    <details className="studio-layer-actions">
+      <summary>Add drawing layer</summary>
+      <button onClick={()=>makeDrawing("indexed")}>Indexed drawing</button>
+      <button onClick={()=>makeDrawing("rgba")}>RGBA drawing</button>
+    </details>
     <label className="studio-layer-search"><span className="sr-only">Search layers</span>
       <input type="search" placeholder="Find layer" value={search} onChange={event=>setSearch(event.target.value)}/>
     </label>
     <ul>{rows.map(({node,depth,hidden,locked})=>{
       const part = node.kind==="part" ? parts.get(node.partId) : undefined;
-      const name = node.kind==="group" ? node.name : part?.name ?? "Path";
+      const drawing = node.kind==="drawing" ? rig.drawings?.layers.find(item=>item.id===node.drawingId) : undefined;
+      const name = node.kind==="group" ? node.name : drawing?.name ?? part?.name ?? "Path";
       const nameId = "layer-name-"+node.id;
       if (query && !name.toLowerCase().includes(query)) return null;
-      const selected = node.kind==="group" ? active?.id===node.id : selectedParts.includes(node.partId);
+      const selected = node.kind==="part" ? selectedParts.includes(node.partId) : active?.id===node.id;
       return <li key={node.id} className="studio-layer-row" data-hidden={hidden} data-locked={locked}>
         <button style={{"--depth":Math.min(depth,8)} as CSSProperties} aria-pressed={selected}
           onClick={()=>{
@@ -49,10 +61,11 @@ export function LayerList({rig,selectedParts,boneSelected,selectPart,isolate,set
               selectPart(null);
             } else {
               setSelectedGroup(null);
-              selectPart(node.partId);
+              if (node.kind==="drawing") selectDrawing(node.drawingId);
+              else selectPart(node.partId);
             }
           }}>
-          {node.kind==="group" ? <FolderSimple size={14}/> :
+          {node.kind==="group" ? <FolderSimple size={14}/> : node.kind==="drawing" ? <GridFour size={14}/> :
             <span className="studio-swatch" style={{backgroundColor:part?.facets?.faces[0].fill ?? part?.fill}}/>}
           <span id={nameId}>{name}</span>
         </button>
@@ -82,6 +95,16 @@ export function LayerList({rig,selectedParts,boneSelected,selectPart,isolate,set
             const name = event.currentTarget.value.trim();
             if (!name || (name!==active.name && !edit("Rename group",{type:"layer.rename",id:active.id,name}))) {
               event.currentTarget.value=active.name;
+            }
+          }}/></label>}
+        {active.kind==="drawing" && <label>Drawing name<input key={active.id+":"+(rig.drawings?.layers.find(item=>item.id===active.drawingId)?.name ?? "")}
+          defaultValue={rig.drawings?.layers.find(item=>item.id===active.drawingId)?.name} maxLength={120}
+          onKeyDown={event=>{ if (event.key==="Enter") event.currentTarget.blur(); }}
+          onBlur={event=>{
+            const name=event.currentTarget.value.trim();
+            const previous=rig.drawings?.layers.find(item=>item.id===active.drawingId)?.name ?? "Drawing";
+            if (!name || (name!==previous && !edit("Rename drawing",{type:"layer.rename",id:active.id,name}))) {
+              event.currentTarget.value=previous;
             }
           }}/></label>}
         <label>Parent group<select value={active.parentId ?? ""} onChange={event=>

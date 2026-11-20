@@ -104,6 +104,9 @@
 .studio-properties .studio-check { display:flex;align-items:center;gap:6px }
 .studio-properties button { padding:4px;border:1px solid var(--studio-line);border-radius:4px;font-size:12px }
 .studio-properties .studio-danger,.studio-empty { color:#743e2e }
+.studio-cel-fields { display:grid;gap:8px;min-width:0;margin:0;padding:0;border:0 }
+.studio-cel-fields select { display:block;width:100%;margin-top:4px }
+.studio-cel-fields [type=range] { padding:0 }
 .studio-field-pair { display:grid;gap:7px;grid-template-columns:repeat(2,minmax(0,1fr)) }
 .studio-history,.studio-empty { padding:4px 13px 12px;font-size:12px;overflow-wrap:anywhere }
 .studio-timeline { grid-area:timeline;background:var(--studio-panel);padding:6px clamp(8px,2vw,22px);min-width:0;min-height:0 }

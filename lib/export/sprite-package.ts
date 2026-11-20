@@ -3,7 +3,7 @@ import { strToU8, zipSync } from "fflate";
 import type { z } from "zod";
 import type { ExportQueue } from "../../db/exports";
 import { artboardFor, readRigState } from "../rig/model";
-import { exportSnapshotSchema, spritesheetGrid, supportedExport } from "./frames";
+import { exportDimensions, exportSnapshotSchema, spritesheetGrid, supportedExport } from "./frames";
 import { renderSpritesheet } from "./raster";
 import { spriteMaxFrames, type spritePackageRequest } from "./sprite-package-options";
 
@@ -20,13 +20,16 @@ export async function prepareSpritePackage(queue:Pick<ExportQueue,"inputs">, own
   const range = { startFrame:request.startFrame, endFrame:request.endFrame };
   const snapshot = exportSnapshotSchema.safeParse({
     rig, ...range, name:source.clip.name, fps:source.clip.fps,
-    frameCount:source.clip.frameCount, tracks:source.clip.tracks,
+    frameCount:source.clip.frameCount, tracks:source.clip.tracks,clipId:source.clip.id,scale:request.scale,
   });
   const count = request.endFrame - request.startFrame + 1;
   if (!snapshot.success || count > spriteMaxFrames || !supportedExport("spritesheet",snapshot.data)) {
     return {error:"unsupported_range",status:400} as const;
   }
-  const {width,height} = artboardFor(rig);
+  const {width,height} = exportDimensions(snapshot.data);
+  const sourceSize = artboardFor(rig);
+  const pivot = request.pivot ?? {x:sourceSize.width/2,y:sourceSize.height};
+  const scale = request.scale ?? 1;
   const {columns,rows} = spritesheetGrid(count,width,height);
   if (width * height * columns * rows > 16 * 1024 * 1024) return {error:"atlas_too_large",status:400} as const;
   const manifest = {
@@ -38,7 +41,7 @@ export async function prepareSpritePackage(queue:Pick<ExportQueue,"inputs">, own
     frames:Array.from({length:count},(_,index) => ({
       sourceFrame:request.startFrame + index,durationTicks:1,
       rect:{x:index % columns * width,y:Math.floor(index / columns) * height,width,height},
-      sourceSize:{width,height},trimOffset:{x:0,y:0},pivot:request.pivot ?? {x:width / 2,y:height},
+      sourceSize:{width,height},trimOffset:{x:0,y:0},pivot:{x:pivot.x*scale,y:pivot.y*scale},
     })),
   };
   if (request.preflight) return {manifest} as const;

@@ -11,4 +11,5 @@ export const spritePackageRequest = z.strictObject({
   loop: z.boolean().default(true),
   filter: z.enum(["nearest", "linear"]).default("nearest"),
   preflight: z.boolean().default(false),
+  scale: z.int().min(1).max(4).optional(),
 });

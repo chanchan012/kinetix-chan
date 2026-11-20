@@ -10,6 +10,8 @@ import { splitMeshTriangle } from "./skinning";
 import { groupLayers,layerId,layerTreeFor,moveLayer,orderedLayers,syncPartLayers,ungroupLayer,type LayerTree } from "./layer-tree";
 import { resolvePaint,swatchSchema } from "./appearance";
 import { booleanModes,booleanPath,pathRegions } from "./path-boolean";
+import { celRunsSchema, drawingFrameSchema, drawingIdSchema, drawingInputSchema, drawingStorageSchema, exposureSchema } from "./drawings";
+import { editCelPixels, pixelOperationSchema } from "./cel-tools";
 
 enablePatches();
 
@@ -62,6 +64,16 @@ export const rigCommandSchema = z.discriminatedUnion("type", [
   z.strictObject({ type:z.literal("parts.boolean"),ids:z.array(geometryId).min(2).max(128),mode:z.enum(booleanModes) }),
   z.strictObject({ type:z.literal("layer.move"),id:layerId,parentId:layerId.nullable(),index:z.int().min(0).max(256) }),
   z.strictObject({ type:z.literal("layer.duplicate"),id:layerId,prefix:facetPrefix }),
+  z.strictObject({type:z.literal("drawing.create"),drawing:drawingInputSchema}),
+  z.strictObject({type:z.literal("drawing.remove"),id:drawingIdSchema}),
+  z.strictObject({type:z.literal("drawing.palette"),id:drawingIdSchema,colors:drawingStorageSchema.options[1].shape.colors}),
+  z.strictObject({type:z.literal("drawing.rest"),id:drawingIdSchema,celId:drawingIdSchema.nullable()}),
+  z.strictObject({type:z.literal("cel.create"),drawingId:drawingIdSchema,id:drawingIdSchema,sourceId:drawingIdSchema.optional()}),
+  z.strictObject({type:z.literal("cel.replace"),drawingId:drawingIdSchema,id:drawingIdSchema,runs:celRunsSchema}),
+  z.strictObject({type:z.literal("cel.edit"),drawingId:drawingIdSchema,id:drawingIdSchema,operation:pixelOperationSchema}),
+  z.strictObject({type:z.literal("cel.remove"),drawingId:drawingIdSchema,id:drawingIdSchema}),
+  z.strictObject({type:z.literal("exposure.set"),drawingId:drawingIdSchema,clipId:z.uuid(),key:exposureSchema}),
+  z.strictObject({type:z.literal("exposure.remove"),drawingId:drawingIdSchema,clipId:z.uuid(),frame:drawingFrameSchema}),
   z.strictObject({ type: z.literal("artboard.update"), artboard: artboardSchema }),
 ]);
 export type RigCommand = z.infer<typeof rigCommandSchema>;
@@ -92,6 +104,13 @@ function requireUnlocked(rig:Draft<KinetixRigState>,ids:readonly string[]) {
 
 function sourceLayers(rig:Draft<KinetixRigState>):LayerTree {
   return rig.layers ?? (rig.layers=layerTreeFor(rig));
+}
+
+function editDrawing(rig:Draft<KinetixRigState>,id:string) {
+  const drawing = findById(rig.drawings?.layers ?? [],id,"Raster drawing");
+  const layer = orderedLayers(sourceLayers(rig)).find(({node})=>node.kind==="drawing" && node.drawingId===id);
+  if (layer?.locked) throw new Error("Unlock the drawing layer before editing it.");
+  return drawing;
 }
 
 function cloneValue<T extends object>(value:T):T {
@@ -318,6 +337,7 @@ function applyCommand(rig: Draft<KinetixRigState>, command: RigCommand) {
     case "layer.rename": {
       const node = findById(sourceLayers(rig).nodes,command.id,"Layer");
       if (node.kind==="group") node.name = command.name;
+      else if (node.kind==="drawing") editDrawing(rig,node.drawingId).name = command.name;
       else findById(rig.parts,node.partId,"Vector part").name = command.name;
       break;
     }
@@ -385,6 +405,10 @@ function applyCommand(rig: Draft<KinetixRigState>, command: RigCommand) {
           copiedParts.set(part.id,id);
           rig.parts.push({...duplicate,id,name:(part.name.slice(0,115)+" copy")});
           tree.nodes.push({...source,id,parentId,partId:id});
+        } else if (source.kind==="drawing") {
+          const drawing = findById(rig.drawings!.layers,source.drawingId,"Raster drawing");
+          rig.drawings!.layers.push({...cloneValue(drawing),id,name:drawing.name.slice(0,115)+" copy"});
+          tree.nodes.push({...source,id,parentId,drawingId:id});
         } else {
           const children = tree.nodes.filter(item=>item.parentId===source.id);
           tree.nodes.push({...source,id,parentId,name:(source.name.slice(0,115)+" copy")});
@@ -398,6 +422,76 @@ function applyCommand(rig: Draft<KinetixRigState>, command: RigCommand) {
         if (created.has(layer.id) && layer.maskPartId) layer.maskPartId=copiedParts.get(layer.maskPartId) ?? layer.maskPartId;
       }
       moveLayer(tree,id,node.parentId,siblings.indexOf(node)+1);
+      break;
+    }
+    case "drawing.create": {
+      const layers = sourceLayers(rig);
+      const catalog = rig.drawings ?? (rig.drawings={version:1,layers:[]});
+      const {id} = command.drawing;
+      catalog.layers.push({...command.drawing,cels:[],tracks:[],restCelId:null});
+      layers.nodes.push({kind:"drawing",id,parentId:null,drawingId:id});
+      break;
+    }
+    case "drawing.remove": {
+      editDrawing(rig,command.id);
+      rig.drawings!.layers = rig.drawings!.layers.filter(layer=>layer.id!==command.id);
+      const tree = sourceLayers(rig);
+      tree.nodes = tree.nodes.filter(node=>node.kind!=="drawing" || node.drawingId!==command.id);
+      break;
+    }
+    case "drawing.palette": {
+      const drawing = editDrawing(rig,command.id);
+      if (drawing.storage.mode!=="indexed") throw new Error("This drawing uses direct RGBA colors.");
+      drawing.storage.colors = command.colors;
+      break;
+    }
+    case "drawing.rest": {
+      editDrawing(rig,command.id).restCelId = command.celId;
+      break;
+    }
+    case "cel.create": {
+      const drawing = editDrawing(rig,command.drawingId);
+      const source = command.sourceId && findById(drawing.cels,command.sourceId,"Source cel");
+      drawing.cels.push({id:command.id,runs:source ? cloneValue(source.runs) : []});
+      break;
+    }
+    case "cel.replace": {
+      const drawing = editDrawing(rig,command.drawingId);
+      findById(drawing.cels,command.id,"Cel").runs = command.runs;
+      break;
+    }
+    case "cel.edit": {
+      const drawing = editDrawing(rig,command.drawingId);
+      const cel = findById(drawing.cels,command.id,"Cel");
+      cel.runs = editCelPixels(drawing,cel.runs,command.operation);
+      break;
+    }
+    case "cel.remove": {
+      const drawing = editDrawing(rig,command.drawingId);
+      findById(drawing.cels,command.id,"Cel");
+      if (drawing.restCelId===command.id || drawing.tracks.some(track=>track.keys.some(key=>key.celId===command.id))) {
+        throw new Error("Unlink this cel before deleting it.");
+      }
+      drawing.cels = drawing.cels.filter(cel=>cel.id!==command.id);
+      break;
+    }
+    case "exposure.set": {
+      const drawing = editDrawing(rig,command.drawingId);
+      const track = drawing.tracks.find(track=>track.clipId===command.clipId);
+      if (track) {
+        track.keys = track.keys.filter(key=>key.frame!==command.key.frame);
+        track.keys.push(command.key);
+        track.keys.sort((a,b)=>a.frame-b.frame);
+      } else drawing.tracks.push({clipId:command.clipId,keys:[command.key]});
+      break;
+    }
+    case "exposure.remove": {
+      const drawing = editDrawing(rig,command.drawingId);
+      const track = drawing.tracks.find(track=>track.clipId===command.clipId);
+      if (track) {
+        track.keys = track.keys.filter(key=>key.frame!==command.frame);
+        if (!track.keys.length) drawing.tracks = drawing.tracks.filter(item=>item.clipId!==command.clipId);
+      }
       break;
     }
     case "artboard.update":

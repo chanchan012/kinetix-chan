@@ -13,8 +13,12 @@ import { facetArtworkFaces,facetPointMappers } from "@/lib/rig/facet-skinning";
 import type { FacetViewportTool } from "./facet-tools";
 import { editablePartIds,orderedVisibleParts } from "@/lib/rig/layer-tree";
 import { regionPolygons } from "@/lib/rig/path-boolean";
+import { celAt, inkAt, rgbaInk, type Cel, type Drawing, type DrawingSample } from "@/lib/rig/drawings";
+import { editCelPixels, type CelStroke, type StrokeSample } from "@/lib/rig/cel-tools";
+import { createCelPreview } from "./cel-preview";
+import { celInk, type CelSettings, type PixelRegion } from "./cel-controls";
 
-export type Selection = { kind: "bone" | "part"; id: string } | null;
+export type Selection = { kind: "bone" | "part" | "drawing"; id: string } | null;
 export type SelectionMode = "marquee" | "lasso";
 export type Tool = "select" | "bone" | "pen" | "polygon" | "primitive" | "pencil" | "region" | "facet";
 export type Brush = { partId: string; boneId: string; radius: number; strength: number };
@@ -29,12 +33,17 @@ type Gesture =
   | { type: "region"; points:Point[] }
   | { type: "knot"; part: VectorPart; index: number; handle: KnotHandle; start:Point }
   | { type: "facetVertex"; part:VectorPart; vertexId:string; start:Point }
+  | { type:"celStroke"; op:CelStroke; drawingId:string; celId:string }
+  | { type:"celRegion"; start:Point; drawingId:string }
   | { type: "paint"; part: VectorPart; last: Point; brush: Brush };
 
 type Props = {
   rig: KinetixRigState;
   phase: number;
-  ghosts: { rig: KinetixRigState; phase: number }[];
+  sample:DrawingSample;
+  ghosts: { rig: KinetixRigState; phase: number; frame:number }[];
+  pixels:{drawing:Drawing;cel:Cel|undefined;settings:CelSettings;editable:boolean;update:(patch:Partial<CelSettings>)=>void}|null;
+  onionSettings:Pick<CelSettings,"previous"|"next"|"onionOpacity">;
   brush: Brush | null;
   remoteBones: ReadonlySet<string>;
   selected: Selection;
@@ -85,6 +94,18 @@ function circle(context: CanvasRenderingContext2D, point: Point, radius: number)
   context.stroke();
 }
 
+function pixelRegion(start:Point,end:Point,drawing:Drawing):PixelRegion|null {
+  const left=Math.max(0,Math.floor(Math.min(start.x,end.x)));
+  const top=Math.max(0,Math.floor(Math.min(start.y,end.y)));
+  const right=Math.min(drawing.width,Math.floor(Math.max(start.x,end.x))+1);
+  const bottom=Math.min(drawing.height,Math.floor(Math.max(start.y,end.y))+1);
+  return right>left && bottom>top ? {x:left,y:top,width:right-left,height:bottom-top} : null;
+}
+
+function pointerSample(point:Point,event:PointerEvent<HTMLCanvasElement>):StrokeSample {
+  return {...point,pressure:event.pointerType==="pen" ? event.pressure : 1};
+}
+
 function drawRulers(context:CanvasRenderingContext2D,camera:Point,scale:number,size:{width:number;height:number},dpr:number) {
   const width = 18;
   const interval = 60/scale;
@@ -124,10 +145,11 @@ function drawRulers(context:CanvasRenderingContext2D,camera:Point,scale:number,s
   context.restore();
 }
 
-export function Viewport({rig, phase, ghosts, brush, remoteBones, selected, selectedParts, selectedEdge, selectedNode, setNode,
+export function Viewport({rig, phase, sample, ghosts, pixels, onionSettings, brush, remoteBones, selected, selectedParts, selectedEdge, selectedNode, setNode,
   select, selectRegion, tool, primitive, facets, isolation, smoothing, selectionMode, snapping, rulers, reference, zoom, showBones,
   pen, addKnot, closePolygon, addDrawnPath, addBone, edit}: Props) {
   const canvas = useRef<HTMLCanvasElement>(null);
+  const paintCel = useMemo(createCelPreview,[]);
   const [size, setSize] = useState({ width: 0, height: 0 });
   const [gesture, setGesture] = useState<Gesture | null>(null);
   const [cursor, setCursor] = useState<Point | null>(null);
@@ -263,10 +285,51 @@ export function Viewport({rig, phase, ghosts, brush, remoteBones, selected, sele
       if (ghosts.length) {
         context.save();
         context.globalAlpha = 0.19;
-        for (const ghost of ghosts) drawRigArtwork(context, ghost.rig, evaluateRig(ghost.rig), ghost.phase, reference,isolation);
+        for (const ghost of ghosts) drawRigArtwork(context,ghost.rig,evaluateRig(ghost.rig),ghost.phase,reference,isolation,{
+          sample:{...sample,frame:ghost.frame},
+          paint:(drawing,cel)=>{
+            if (!cel.runs.length || celAt(drawing,sample)?.id===cel.id) return;
+            context.globalAlpha=onionSettings.onionOpacity;
+            paintCel(context,drawing,cel,ghost.frame<sample.frame ? onionSettings.previous : onionSettings.next);
+          },
+        });
         context.restore();
       }
-      drawRigArtwork(context, preview, poses, phase, reference,isolation);
+      drawRigArtwork(context,preview,poses,phase,reference,isolation,{
+        sample,paint:(drawing,cel)=>{
+          if (gesture?.type==="celStroke" && gesture.drawingId===drawing.id && gesture.celId===cel.id &&
+              drawing.width*drawing.height<=512*512) {
+            try {
+              const runs=editCelPixels(drawing,cel.runs,gesture.op);
+              if (runs.length) paintCel(context,drawing,{...cel,runs});
+              return;
+            } catch {}
+          }
+          if (cel.runs.length) paintCel(context,drawing,cel);
+        },
+      });
+      if (pixels?.settings.grid && scale*dpr>=5) {
+        const {width,height}=pixels.drawing;
+        const minX=Math.max(0,Math.floor(-camera.x/scale));
+        const maxX=Math.min(width,Math.ceil((size.width-camera.x)/scale));
+        const minY=Math.max(0,Math.floor(-camera.y/scale));
+        const maxY=Math.min(height,Math.ceil((size.height-camera.y)/scale));
+        context.beginPath();
+        for (let x=minX;x<=maxX;x++) { context.moveTo(x,minY);context.lineTo(x,maxY); }
+        for (let y=minY;y<=maxY;y++) { context.moveTo(minX,y);context.lineTo(maxX,y); }
+        context.lineWidth=1/(scale*dpr);
+        context.strokeStyle="#58606f4d";
+        context.stroke();
+      }
+      const region = pixels && gesture?.type==="celRegion" && cursor ? pixelRegion(gesture.start,cursor,pixels.drawing) :
+        pixels?.settings.tool==="region" ? pixels.settings.region : null;
+      if (region) {
+        context.lineWidth=1/scale;
+        context.strokeStyle="#168ab3";
+        context.setLineDash([4/scale,3/scale]);
+        context.strokeRect(region.x,region.y,region.width,region.height);
+        context.setLineDash([]);
+      }
       context.restore();
       const pixel = 1 / scale;
       context.lineWidth = 1.5 * pixel;
@@ -446,7 +509,7 @@ export function Viewport({rig, phase, ghosts, brush, remoteBones, selected, sele
       if (rulers) drawRulers(context,camera,scale,size,dpr);
     });
     return () => cancelAnimationFrame(frame);
-  }, [scale, size, camera.x, camera.y, preview, rig, authoredPoses, phase, reference, selected, selectedParts, selectedEdge, selectedNode,
+  }, [scale, size, camera.x, camera.y, preview, rig, authoredPoses, phase, sample, paintCel, pixels, onionSettings, reference, selected, selectedParts, selectedEdge, selectedNode,
     showBones, gesture, cursor, pen, ghosts, brush, remoteBones, primitive, facets, isolation, editingIds, selectionMode, rulers, guides,
     viewportFrame.x,viewportFrame.y,viewportFrame.width,viewportFrame.height]);
 
@@ -456,7 +519,36 @@ export function Viewport({rig, phase, ghosts, brush, remoteBones, selected, sele
     setSnapOverride(event.altKey);
     const tolerance = (event.pointerType === "touch" ? 15 : 10) / scale;
     let next: Gesture | undefined;
-    if (brush) {
+    if (pixels) {
+      const {drawing,cel,settings}=pixels;
+      const x=Math.floor(point.x);
+      const y=Math.floor(point.y);
+      if (!pixels.editable || x<0 || y<0 || x>=drawing.width || y>=drawing.height) return;
+      if (settings.tool==="region") {
+        next={type:"celRegion",start:point,drawingId:drawing.id};
+        setCursor(point);
+      } else {
+        if (!cel) return;
+        if (settings.tool==="sample") {
+          const ink=inkAt(cel.runs,x,y);
+          if (ink) {
+            if (drawing.storage.mode==="indexed") pixels.update({index:Math.floor(ink/256)});
+            else pixels.update({color:"#"+(rgbaInk(drawing.storage,ink)>>>8).toString(16).padStart(6,"0")});
+          }
+          return;
+        }
+        const ink=celInk(drawing,settings);
+        if (settings.tool==="fill") {
+          edit("Flood fill",{type:"cel.edit",drawingId:drawing.id,id:cel.id,
+            operation:{kind:"fill",x,y,ink,tolerance:settings.tolerance}});
+          return;
+        }
+        const {tool,size,opacity,stabilization,symmetry}=settings;
+        next={type:"celStroke",drawingId:drawing.id,celId:cel.id,
+          op:{kind:"stroke",tool,ink,size,opacity,stabilization,symmetry,points:[pointerSample(point,event)]}};
+        setCursor(point);
+      }
+    } else if (brush) {
       const part = rig.parts.find(item => item.id === brush.partId);
       if (!part?.mesh || !editingIds.has(part.id)) return;
       const mesh = paintMesh(part, authoredPoses, brush.boneId, point, brush.radius, brush.strength);
@@ -575,7 +667,17 @@ export function Viewport({rig, phase, ghosts, brush, remoteBones, selected, sele
   function end(event: PointerEvent<HTMLCanvasElement>) {
     if (!event.isPrimary || !gesture) return;
     const point = worldPoint(event);
-    if (gesture.type === "bone") {
+    if (gesture.type==="celRegion") {
+      if (pixels?.drawing.id===gesture.drawingId) pixels.update({region:pixelRegion(gesture.start,point,pixels.drawing)});
+    } else if (gesture.type==="celStroke") {
+      if (pixels?.editable && pixels?.drawing.id===gesture.drawingId && pixels.cel?.id===gesture.celId) {
+        const end=pointerSample(point,event);
+        const last=gesture.op.points.at(-1)!;
+        const points=distance(last,end)>0.15 ? [...gesture.op.points,{...end,pressure:last.pressure}] : gesture.op.points;
+        edit(gesture.op.tool==="eraser" ? "Erase pixels" : "Draw pixels",
+          {type:"cel.edit",drawingId:gesture.drawingId,id:gesture.celId,operation:{...gesture.op,points}});
+      }
+    } else if (gesture.type === "bone") {
       if (distance(point, gesture.start) * scale > 4) addBone(gesture.start, point);
     } else if (gesture.type === "pen") {
       addKnot(penKnot(gesture.start,drawingPoint(point,event.altKey),1/scale));
@@ -630,9 +732,19 @@ export function Viewport({rig, phase, ghosts, brush, remoteBones, selected, sele
   }
 
   return <canvas ref={canvas} className="studio-canvas" role="img" aria-label="Rig canvas" tabIndex={0} onKeyDown={nudge}
-    data-tool={brush ? "paint" : tool} onPointerDown={down} onPointerMove={event => {
+    data-tool={pixels || brush ? "paint" : tool} onPointerDown={down} onPointerMove={event => {
       if (!event.isPrimary || !scale || (!gesture && !brush)) return;
       const point = worldPoint(event);
+      if (gesture?.type==="celStroke") {
+        const sample=pointerSample(point,event);
+        setGesture(current=>{
+          if (current?.type!=="celStroke") return current;
+          const last=current.op.points.at(-1)!;
+          if (distance(last,sample)<0.15 && Math.abs(last.pressure-sample.pressure)<0.03) return current;
+          const previous=current.op.points.length<2046 ? current.op.points : current.op.points.filter((_,index)=>index%2===0);
+          return {...current,op:{...current.op,points:[...previous,sample]}};
+        });
+      }
       setSnapOverride(event.altKey);
       if (gesture?.type === "region" && selectionMode==="lasso") setGesture(current => {
         if (current?.type!=="region" || distance(current.points.at(-1)!,point)*scale<3) return current;
