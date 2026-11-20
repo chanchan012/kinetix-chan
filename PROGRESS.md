@@ -16,9 +16,19 @@ Implemented the application shell, interactive guest playground, Clerk access ro
 
 ## Active subgoal and next exact step
 
-The active implementation goal covers all 23 subgoals in [the production studio roadmap](docs/PRODUCTION_STUDIO_ROADMAP.md). M5.1 is deployed. The next step is the basic 7.1 object-position keys needed for the first playable asset. Add part X/Y channels to the shared evaluator, timeline and MCP, then use the same clip to verify the fixed-grid sprite package and Godot importer in 9.1 and 9.3.
+The active implementation goal covers all 23 subgoals in [the production studio roadmap](docs/PRODUCTION_STUDIO_ROADMAP.md). M5.1 and the first playable asset workflow are deployed. The first playable asset workflow delivers part position channels from 7.1, fixed-grid packages from 9.1, and the Godot sprite adapter from 9.3. Those three subgoals have further acceptance criteria in the roadmap.
+
+The next exact step is M5.2 precision editing. Introduce optional vector-part rotation, scale and pivot in the shared model. Apply the same transform in the viewport, hit testing, and renderers. Add the corresponding inspector controls and shared commands before testing precision selection and snaps on the logo fixture.
 
 Owner-managed Inngest Cloud activation is still open. After the signing and event keys are present in Vercel, redeploy, sync the existing endpoint, and verify a hosted thumbnail and animation export run. Saved still PNGs are served directly.
+
+## First playable asset · November 20, 2026
+
+- **Brief and build** added editable part X/Y animation channels, the revision-bound fixed-grid sprite ZIP, and the Godot 4.5.1 importer. The studio and MCP use the same animation sampler and exporter.
+- **Test** passed strict TypeScript, 37 Vitest tests with the Godot integration enabled, and 50 Playwright checks across four viewports, with six expected desktop-only skips. Godot played the imported animation, checked frame pixels and pivot, then retained a game-authored wrapper scene through a renamed and revised reimport.
+- **Merge** published feature commit `ff25f71` and main merge `d471edc`.
+- **Deploy** passed the local production build. Vercel preview and production are ready. The hosted smoke created a polygon and clip through MCP, validated preflight, matched browser and agent ZIP bytes, and opened Export on a phone-sized viewport.
+- **Document** records the package, the importer command, and the exact next precision-editing step.
 
 ## M5.1 release · November 20, 2026
 

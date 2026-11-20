@@ -110,4 +110,10 @@ From the dashboard, use **New design** and choose an artboard size. In the studi
 
 Run `npm run test:e2e -- --grep 'illustrator draws'` for the blank-design browser workflow. `npm test -- tests/unit/library.test.ts tests/unit/export.test.ts` covers the saved PNG, protected access, agent revision checks and export dimensions. M5.1 uses the existing deployment environment and JSONB column.
 
-For the next slice, extend the animation channel schema and sampler in `lib/rig/animation.ts` for part X/Y offsets, the selected-part channel controls in `components/studio/timeline.tsx`, and channel ownership validation in `lib/mcp/actions.ts`. Verify a loop on a blank design before adding the fixed-grid package and Godot importer. The full release order is tracked in [the roadmap](PRODUCTION_STUDIO_ROADMAP.md). Inngest Cloud activation is still open.
+## First playable asset
+
+Select a path in a saved clip and choose its X or Y keyframe channel. After the edits are saved, open **Export**, choose **Sprite package (ZIP)**, and set the range and pivot. See [engine export](ENGINE_EXPORT.md) for Godot setup and the MCP contract. The direct sprite ZIP needs the existing application services and runs without the Inngest worker.
+
+Run `npm run test:e2e -- --grep 'keys and plays artwork'` for the browser workflow. Set `KINETIX_GODOT_PATH` to a Godot 4.5.1 executable and run `npm test -- tests/unit/godot-sprite.test.ts` for headless playback and repeat reimport.
+
+Next, add M5.2 vector-part rotation, scale and pivot in `lib/rig/model.ts`, use the transform in `lib/rig/render.ts` and the viewport inverse mapping, and expose editable numeric properties in the studio. Use the dimensioned logo in [the roadmap](PRODUCTION_STUDIO_ROADMAP.md) to check pointer, keyboard and numeric alignment.

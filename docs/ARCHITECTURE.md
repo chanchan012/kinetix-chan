@@ -128,3 +128,11 @@ The dashboard creates a blank design by posting `{name,artboard}` to `/api/rigs`
 `GET /api/rigs/:id/artboard.png` renders the saved base pose for an authorized rig editor. It preserves transparency and exact pixel dimensions. Raster animation and Lottie use the same artboard geometry. Video pads odd sizes to even dimensions for YUV 4:2:0 encoding. Raster animation jobs enforce frame, image area and output size limits.
 
 MCP `viewport-bounds` returns the document dimensions. `rig-hierarchy` includes editable parts. `edit_document` applies up to 100 shared rig commands as a single transaction at an explicit revision and emits a room update. An edit at a stale revision fails before writing.
+
+## First playable asset · Path position and sprite delivery
+
+`part` tracks key the X and Y components of a vector part's local offset. Clip tracks use the existing revision-checked JSONB storage and the shared sampler for preview, raster export and Lottie. Existing clip tracks retain their original interpretation. The timeline selects a part from its key marker and uses the sampled value when inserting a key between existing keys.
+
+`POST /api/rigs/:id/sprite-package` and the scoped MCP tool `export_sprite_package` use an owner-authorized query that reads art and clip revisions together. Supply `clipId`, `revision`, `trackRevision`, and an inclusive zero-based frame range. Supply `preflight: true` to return the planned manifest. Rendering validates revisions again and returns the ZIP, or the same bytes as base64 through MCP.
+
+The ZIP contains `kinetix.json` and `atlas.png`. Manifest version 1 describes an unrotated, untrimmed fixed grid with straight alpha. Each frame rectangle, original size, trim offset and pivot uses pixels from the top-left. One duration tick equals one frame at the integer clip frame rate. Pivot defaults to bottom center and can be set on export. The manifest includes the atlas SHA-256 and stable rig and clip IDs. Direct rendering supports up to 96 frames, a 16-megapixel atlas, and a 1.5 MB archive. See [engine export](ENGINE_EXPORT.md) for importer behavior.
