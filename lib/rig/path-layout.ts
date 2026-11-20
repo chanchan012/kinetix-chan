@@ -2,6 +2,7 @@ import type { Point, VectorPart } from "./model";
 import type { BonePose } from "./kinematics";
 import { partParentSpace, partWorldSpace } from "./part-transform";
 import { deformMesh } from "./skinning";
+import { facetArtworkFaces } from "./facet-skinning";
 
 export type Axis = "x" | "y";
 export type Anchor = "min" | "center" | "max";
@@ -38,6 +39,7 @@ function cubicValue(a:number,b:number,c:number,d:number,t:number): number {
 }
 
 export function worldPartBounds(part:VectorPart,poses:Map<string,BonePose>): Bounds {
+  if (part.facets) return pointBounds(facetArtworkFaces(part,poses).flatMap(face=>face.polygons.flat()));
   if (part.mesh) return pointBounds(deformMesh(part,poses));
   const world = (point:Point) => partWorldSpace(point,part,poses);
   const points = part.knots.map(knot=>world(knot.point));

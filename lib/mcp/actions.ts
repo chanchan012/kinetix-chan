@@ -161,7 +161,7 @@ export class RigAgent {
       const mesh = {...(part.mesh ?? bindMesh(part,evaluateRig(state),input.boneId))};
       if (!mesh.bindings.some(binding=>binding.id===input.boneId)) throw new Error("Choose a bone with a bind transform.");
       if (!input.vertices?.length) {
-        mesh.vertices = mesh.vertices.map(vertex=>({...vertex,weights:[{boneId:input.boneId,weight:1}]}));
+        mesh.vertices = mesh.vertices.map(vertex=>({...vertex,splitFrom:undefined,weights:[{boneId:input.boneId,weight:1}]}));
       } else {
         const updates = new Map(input.vertices.map(vertex=>[vertex.index,vertex.weights]));
         if (updates.size !== input.vertices.length || [...updates.keys()].some(index=>index>=mesh.vertices.length)) {
@@ -171,7 +171,7 @@ export class RigAgent {
           const weights = updates.get(index);
           if (!weights) return vertex;
           const sum = weights.reduce((total,item)=>total+item.weight,0);
-          return {...vertex,weights:weights.map(weight=>({...weight,weight:weight.weight/sum}))};
+          return {...vertex,splitFrom:undefined,weights:weights.map(weight=>({...weight,weight:weight.weight/sum}))};
         });
       }
       return {type:"part.update",id:part.id,changes:{mesh}};

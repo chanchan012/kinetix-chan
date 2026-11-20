@@ -13,6 +13,88 @@ test.beforeEach(async ({page}) => {
   await clerk.signIn({page, emailAddress:process.env.KINETIX_TEST_EMAIL!});
 });
 
+test("an illustrator edits a three-color junction and subdivides its deformation mesh",async ({page},info)=>{
+  const response = await page.request.post("/api/rigs",{data:{
+    name:"Faceted artwork "+info.project.name,artboard:{name:"Facets",width:300,height:240,background:null},
+  }});
+  expect(response.status()).toBe(201);
+  const {id,revision,state} = await response.json();
+  const path = "/api/rigs/"+id;
+  try {
+    const part = {id:"surface",name:"Surface",parentId:null,offset:{x:0,y:0},closed:true,fill:"#ff0000",
+      knots:[{point:{x:90,y:70}},{point:{x:210,y:70}},{point:{x:210,y:190}},{point:{x:90,y:190}}]};
+    const bones = [{id:"joint",name:"Joint",parentId:null,length:22,offset:{x:30,y:30},rotation:0}];
+    expect((await page.request.patch(path+"/state",{data:{revision,state:{...state,bones,parts:[part]}}})).status()).toBe(200);
+    await page.goto("/studio/"+id);
+    await page.getByRole("button",{name:"Surface",exact:true}).click();
+    await page.getByRole("button",{name:"Make faceted artwork"}).click();
+    const tools = page.getByRole("region",{name:"Facet tools"});
+    const vertexA = tools.getByRole("combobox",{name:"Vertex 1",exact:true});
+    const vertexB = tools.getByRole("combobox",{name:"Vertex 2",exact:true});
+    const face = tools.getByRole("combobox",{name:"Active face"});
+    await vertexA.selectOption("vertex-1");
+    await vertexB.selectOption("vertex-3");
+    await tools.getByRole("button",{name:"Cut face",exact:true}).click();
+    await expect(face.locator("option")).toHaveCount(2);
+    await vertexA.selectOption("vertex-1");
+    await vertexB.selectOption("vertex-3");
+    await tools.getByRole("button",{name:"Split shared edge"}).click();
+    await vertexA.selectOption({label:"Vertex 5"});
+    const middle = await vertexA.inputValue();
+    await vertexB.selectOption("vertex-2");
+    await tools.getByRole("button",{name:"Cut face",exact:true}).click();
+    await expect(face.locator("option")).toHaveCount(3);
+    for (const [index,color] of [[0,"#ff0000"],[1,"#00b400"],[2,"#0022ff"]] as const) {
+      await face.selectOption({index});
+      await tools.getByLabel("Face color",{exact:true}).fill(color);
+    }
+    const canvas = page.getByRole("img",{name:"Rig canvas"});
+    const bounds = (await canvas.boundingBox())!;
+    const scale = Math.min(bounds.width/300,bounds.height/240);
+    const x = (world:number)=>bounds.x+bounds.width/2+(world-150)*scale;
+    const y = (world:number)=>bounds.y+bounds.height/2+(world-120)*scale;
+    await tools.getByRole("button",{name:"Vertex",exact:true}).click();
+    await page.mouse.move(x(150),y(130));
+    await page.mouse.down();
+    await page.mouse.move(x(135),y(145),{steps:6});
+    await page.mouse.up();
+    await expect(vertexA).toHaveValue(middle);
+    await expect.poll(async()=>Math.round(Number(await tools.getByLabel("Vertex X (px)").inputValue()))).toBe(135);
+    await tools.getByRole("button",{name:"Eyedropper"}).click();
+    await page.mouse.click(x(106),y(166));
+    await expect(tools.getByLabel("Drawing color",{exact:true})).toHaveValue("#0022ff");
+    await page.getByRole("button",{name:"Bind mesh",exact:true}).click();
+    const box = page.getByLabel("Deformation triangle",{exact:true});
+    const triangleCount = Number(await box.getAttribute("max"));
+    await page.getByRole("button",{name:"Split deformation triangle"}).click();
+    await expect(box).toHaveAttribute("max",String(triangleCount+2));
+    const getState = async () => (await (await page.request.get(path+"/state")).json()).state as KinetixRigState;
+    await expect.poll(async()=>(await getState()).parts[0]?.mesh?.triangles.length).toBe(triangleCount+2);
+    const result = (await getState()).parts[0];
+    expect(result.facets?.faces.map(item=>item.fill)).toEqual(["#ff0000","#00b400","#0022ff"]);
+    expect(result.facets?.faces.every(item=>item.vertices.includes(middle))).toBe(true);
+    expect(result.mesh?.vertices.at(-1)?.splitFrom).toHaveLength(3);
+    const samples = await page.evaluate(async route=>{
+      const blob = await (await fetch(route)).blob();
+      const image = await createImageBitmap(blob);
+      const exported = new OffscreenCanvas(image.width,image.height);
+      const ctx = exported.getContext("2d")!;
+      ctx.drawImage(image,0,0);
+      return [[188,126],[145,95],[106,166]].map(([x,y])=>Array.from(ctx.getImageData(x,y,1,1).data));
+    },path+"/artboard.png");
+    expect(samples).toEqual([[255,0,0,255],[0,180,0,255],[0,34,255,255]]);
+    await face.selectOption({index:2});
+    await tools.getByRole("button",{name:"Preview triangulation"}).click();
+    await expect(face.locator("option")).toHaveCount(3);
+    await tools.getByRole("button",{name:"Apply triangles"}).click();
+    await expect(face.locator("option")).toHaveCount(4);
+    await page.getByRole("button",{name:"Undo",exact:true}).click();
+    await expect(face.locator("option")).toHaveCount(3);
+  } finally {
+    expect((await page.request.delete(path)).status()).toBe(204);
+  }
+});
+
 test("an illustrator lays out shapes with region selection, rulers, and guide snapping", async ({page},info) => {
   const create = await page.request.post("/api/rigs",{data:{
     name:"Precision layout " + info.project.name,artboard:{name:"Marks",width:300,height:240,background:null},

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { studyFor } from "../studies";
+import { facetEdgeKey, signedPolygonArea, validFacetPolygon } from "./facet-geometry";
 
 const coordinate = z.number().min(-1_000_000).max(1_000_000);
 export const pointSchema = z.strictObject({ x: coordinate, y: coordinate });
@@ -12,6 +13,7 @@ const meshSchema = z.strictObject({
   vertices: z.array(z.strictObject({
     point: pointSchema,
     weights: z.array(z.strictObject({ boneId: identifier, weight: z.number().gt(0).max(1) })).min(1).max(4),
+    splitFrom:z.tuple([z.int().min(0),z.int().min(0),z.int().min(0)]).optional(),
   })).min(3).max(4096),
   triangles: z.array(z.tuple([z.int().min(0), z.int().min(0), z.int().min(0)])).min(1).max(8192),
 }).superRefine((mesh, context) => {
@@ -24,6 +26,9 @@ const meshSchema = z.strictObject({
     const sum = vertex.weights.reduce((total, influence) => total + influence.weight, 0);
     if (ids.size !== vertex.weights.length || [...ids].some(id => !bindingIds.has(id)) || Math.abs(sum - 1) > 1e-6) {
       context.addIssue({ code: "custom", path: ["vertices", index], message: "Vertex weights must use unique bound bones and sum to one." });
+    }
+    if (vertex.splitFrom && (vertex.splitFrom.some(source=>source>=index) || new Set(vertex.splitFrom).size!==3)) {
+      context.addIssue({code:"custom",path:["vertices",index,"splitFrom"],message:"A split vertex needs three earlier source vertices."});
     }
   }
   for (const [index, triangle] of mesh.triangles.entries()) {
@@ -57,6 +62,43 @@ export const knotSchema = z.strictObject({
   mode: z.enum(["corner","smooth"]).optional(),
 });
 const scaleComponent = z.number().min(-100).max(100).refine(value => Math.abs(value) >= 0.01);
+const color = z.string().regex(/^#[a-fA-F0-9]{6}$/);
+export const facetGraphSchema = z.strictObject({
+  vertices:z.array(z.strictObject({id:identifier,point:pointSchema})).min(3).max(512),
+  faces:z.array(z.strictObject({id:identifier,vertices:z.array(identifier).min(3).max(256),fill:color})).min(1).max(512),
+}).superRefine((graph,context) => {
+  const vertices = new Map(graph.vertices.map(vertex=>[vertex.id,vertex.point]));
+  const ids = new Set<string>();
+  const edges = new Map<string,number[]>();
+  if (vertices.size!==graph.vertices.length) context.addIssue({
+    code:"custom",path:["vertices"],message:"Facet vertex IDs must be unique.",
+  });
+  for (const [index,face] of graph.faces.entries()) {
+    const points = face.vertices.map(id=>vertices.get(id));
+    if (ids.has(face.id) || new Set(face.vertices).size!==face.vertices.length ||
+        points.some(point=>!point) || !validFacetPolygon(points as Point[])) {
+      context.addIssue({code:"custom",path:["faces",index],message:"Faces need unique IDs and a simple perimeter of existing vertices."});
+      continue;
+    }
+    ids.add(face.id);
+    const orientation = Math.sign(signedPolygonArea(points as Point[]));
+    face.vertices.forEach((vertex,i)=>{
+      const end = face.vertices[(i+1)%face.vertices.length];
+      const key = facetEdgeKey(vertex,end);
+      const directions = edges.get(key) ?? [];
+      directions.push((vertex<end ? 1 : -1)*orientation);
+      edges.set(key,directions);
+    });
+  }
+  if ([...edges.values()].some(directions=>directions.length>2 ||
+      (directions.length===2 && directions[0]===directions[1]))) context.addIssue({
+    code:"custom",path:["faces"],message:"A shared edge must join facets on opposite sides.",
+  });
+  if (graph.faces.reduce((sum,face)=>sum+face.vertices.length,0)>8192) context.addIssue({
+    code:"custom",path:["faces"],message:"Facet graphs support up to 8,192 face vertices.",
+  });
+});
+export type FacetGraph = z.infer<typeof facetGraphSchema>;
 export const partSchema = z.strictObject({
   id: identifier,
   name: z.string().trim().min(1).max(120),
@@ -66,9 +108,10 @@ export const partSchema = z.strictObject({
   scale: z.strictObject({ x: scaleComponent, y: scaleComponent }).optional(),
   pivot: pointSchema.optional(),
   knots: z.array(knotSchema).min(2).max(256),
-  fill: z.string().regex(/^#[a-fA-F0-9]{6}$/),
+  fill: color,
   closed: z.boolean(),
   mesh: meshSchema.optional(),
+  facets: facetGraphSchema.optional(),
 });
 
 export type Point = z.infer<typeof pointSchema>;
@@ -157,6 +200,9 @@ export const rigStateSchema = documentSchema.superRefine((rig, context) => {
     }
     if (part.mesh && (!part.closed || part.mesh.bindings.some(binding => !bones.has(binding.id)))) {
       context.addIssue({ code: "custom", path: ["parts", index, "mesh"], message: "A mesh requires a closed path and existing bones." });
+    }
+    if (part.facets && !part.closed) {
+      context.addIssue({code:"custom",path:["parts",index,"facets"],message:"Facets require a closed artwork part."});
     }
     partIds.add(part.id);
   }

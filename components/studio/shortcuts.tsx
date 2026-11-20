@@ -24,6 +24,7 @@ const shortcuts = [
   ["Select paths with marquee or lasso", "Q"],
   ["Override snapping while drawing or dragging", "Alt"],
   ["Finish path / Close shape", "Enter / Shift + Enter"],
+  ["Close a faceted face while drawing", "Enter"],
   ["Cancel tool or stroke setup", "Esc"],
   ["Toggle bones / Onion skin", "H / O"],
   ["Play or pause", "Space"],

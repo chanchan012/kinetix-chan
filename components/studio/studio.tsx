@@ -23,6 +23,7 @@ import { Presence } from "./presence";
 import { ClipManager } from "./clip-manager";
 import { ArtboardFields, readArtboardFields } from "../artboard-fields";
 import { Dialog } from "../dialog";
+import { FacetPanel,useFacetTool } from "./facet-tools";
 
 type Props = {
   actorId: string; rigId: string; name: string; initial: KinetixRigState; revision: number; clips: ClipTiming[];
@@ -84,10 +85,12 @@ export function Studio({actorId, rigId, name, initial, revision: initialRevision
   const dirty = saved !== rig;
   const bone = selected?.kind === "bone" ? rig.bones.find(item => item.id === selected.id) : undefined;
   const part = selected?.kind === "part" ? rig.parts.find(item => item.id === selected.id) : undefined;
+  const facetTool = useFacetTool(part,edit);
   const selectedParts = rig.parts.filter(item=>selectionIds.includes(item.id)).map(item=>item.id);
   function select(value:Selection) {
     setSelected(value);
     setSelectionIds(value?.kind==="part" ? [value.id] : []);
+    if (tool==="facet" && value?.id!==selected?.id) setTool("select");
   }
   function selectRegion(ids:string[]) {
     setSelectionIds(ids);
@@ -254,6 +257,7 @@ export function Studio({actorId, rigId, name, initial, revision: initialRevision
 
   function chooseTool(next: Tool) {
     if (next !== tool) setPen([]);
+    if (next !== "facet" && tool === "facet") facetTool.update({draft:[],triangulation:null});
     if (next === "bone") setShowBones(true);
     if (next === "select") setBrush(null);
     setTool(next);
@@ -280,6 +284,10 @@ export function Studio({actorId, rigId, name, initial, revision: initialRevision
         !(event.target instanceof HTMLElement && event.target.closest("button, a, summary"))) {
         event.preventDefault();
         finishPath(tool === "polygon" || event.shiftKey);
+      } else if (key === "enter" && tool==="facet" && facetTool.state.mode==="draw" && !event.repeat &&
+        !(event.target instanceof HTMLElement && event.target.closest("button, a, summary"))) {
+        event.preventDefault();
+        facetTool.viewport.closeFace();
       } else if (key === "h" && !event.repeat) {
         event.preventDefault();
         setShowBones(value => !value);
@@ -342,6 +350,7 @@ export function Studio({actorId, rigId, name, initial, revision: initialRevision
           {...{ phase, selected, selectedParts, selectedEdge, selectedNode, setNode, select, selectRegion, tool, primitive, smoothing,
             selectionMode, snapping, rulers, reference, zoom, showBones, pen, addBone, edit }}
           closePolygon={() => finishPath(true)}
+          facets={tool==="facet" && part?.facets ? facetTool.viewport : null}
           addDrawnPath={(closed,knots) => finishPath(closed,knots)}
           addKnot={knot => setPen(knots => knots.length < 256 ? [...knots, knot] : knots)}/></div>
         <div className="studio-stage-footer">
@@ -376,9 +385,18 @@ export function Studio({actorId, rigId, name, initial, revision: initialRevision
       <PanelHandle panel="inspector" size={layout.panels.inspector} label="Resize inspector" controls="studio-inspector" direction={-1}/>
       <aside className="studio-inspector" id="studio-inspector" aria-label="Inspector">
         <div className="studio-panel-title"><h2>Inspector</h2></div>
+        {part && selectedParts.length===1 && (part.facets ?
+          <FacetPanel key={part.id} part={{...part,facets:part.facets}} tool={facetTool} active={tool==="facet"}
+            activate={()=>chooseTool("facet")} edit={edit}/> :
+          part.closed && !part.knots.some(knot=>knot.incoming || knot.outgoing) &&
+            <div className="studio-properties"><button onClick={()=>{
+              if (edit("Make faceted artwork",{type:"facet.initialize",id:part.id,faceId:crypto.randomUUID()})) chooseTool("facet");
+            }}>Make faceted artwork</button></div>
+        )}
         {selectedParts.length > 1 ? <SelectionLayout ids={selectedParts} edit={edit} clear={() => select(null)}/> :
           <Inspector {...{ bone, part, rig, edit, selectedEdge, setEdge, selectedNode, setNode }} clear={() => select(null)}/>}
-        {part?.closed && selectedParts.length===1 && <WeightTools key={part.id} part={part} rig={rig} brush={activeBrush} setBrush={setBrush} edit={edit} report={setError}/>}
+        {part?.closed && selectedParts.length===1 && <WeightTools key={part.id} part={part} rig={rig} brush={activeBrush}
+          setBrush={value=>{ if (value) setTool("select"); setBrush(value); }} edit={edit} report={setError}/>}
         {last && <p className="studio-history" role="status">{last.actor.kind === "ai" ? "AI" : "Human"} · {last.label}</p>}
         {!last && room.lastEdit?.kind === "ai" && <p className="studio-history" role="status">AI · {room.lastEdit.label ?? "Edit rig"}</p>}
       </aside>
@@ -454,6 +472,7 @@ function WeightTools({part, rig, brush, setBrush, edit, report}: {
   edit: (label: string, ...commands: RigCommand[]) => boolean;
   report: (message: string) => void;
 }) {
+  const [triangle,setTriangle] = useState(1);
   const [selectedBone, setSelectedBone] = useState(part.parentId ?? rig.bones[0]?.id ?? "");
   const [radius, setRadius] = useState(34);
   const [strength, setStrength] = useState(0.6);
@@ -496,6 +515,11 @@ function WeightTools({part, rig, brush, setBrush, edit, report}: {
           mesh:{ ...mesh, bindings:[...mesh.bindings, { id:boneId, origin:bone.origin, angle:bone.angle }] },
         } });
       }}>Add influence</button>}
+      <label>Deformation triangle<input type="number" min={1} max={part.mesh.triangles.length} step={1} value={Number.isFinite(triangle)?triangle:""}
+        onChange={event=>setTriangle(event.currentTarget.valueAsNumber)}/></label>
+      <button disabled={!Number.isInteger(triangle) || triangle<1 || triangle>part.mesh.triangles.length ||
+        part.mesh.vertices.length>=4096 || part.mesh.triangles.length>8190}
+        onClick={()=>edit("Split deformation triangle",{type:"mesh.splitTriangle",id:part.id,index:triangle-1})}>Split deformation triangle</button>
       <button onClick={() => {
         setBrush(null);
         edit("Unbind mesh", { type:"part.update", id:part.id, changes:{ mesh:undefined } });
@@ -591,8 +615,8 @@ function PathProperties({part, rig, edit, clear, selectedEdge:edge, setEdge, sel
       if (!event.currentTarget.value.trim() || !edit("Rename path", { type: "part.update", id: part.id,
         changes: { name: event.currentTarget.value } })) event.currentTarget.value = part.name;
     }}/></label>
-    <label>Color<input type="color" value={part.fill} onChange={event =>
-      edit("Set path color", { type: "part.update", id: part.id, changes: { fill: event.target.value } })}/></label>
+    {!part.facets && <label>Color<input type="color" value={part.fill} onChange={event =>
+      edit("Set path color", { type: "part.update", id: part.id, changes: { fill: event.target.value } })}/></label>}
     <div className="studio-field-pair">
       <Numeric label="Position X (px)" value={part.offset.x} onCommit={x => transform("Move path",{offset:{...part.offset,x}})}/>
       <Numeric label="Position Y (px)" value={part.offset.y} onCommit={y => transform("Move path",{offset:{...part.offset,y}})}/>
@@ -610,14 +634,15 @@ function PathProperties({part, rig, edit, clear, selectedEdge:edge, setEdge, sel
       <button onClick={() => transform("Flip path horizontally",{scale:{...scale,x:-scale.x}})}>Flip horizontal</button>
       <button onClick={() => transform("Flip path vertically",{scale:{...scale,y:-scale.y}})}>Flip vertical</button>
     </div>
-    <label className="studio-check"><input type="checkbox" checked={part.closed} onChange={event =>
-      edit("Set path closure", { type: "part.update", id: part.id, changes: { closed: event.target.checked } })}/>Closed path</label>
+    {!part.facets && <label className="studio-check"><input type="checkbox" checked={part.closed} onChange={event =>
+      edit("Set path closure", { type: "part.update", id: part.id, changes: { closed: event.target.checked } })}/>Closed path</label>}
     <div className="studio-field-pair">
       <button disabled={order >= rig.parts.length - 1} onClick={() =>
         edit("Bring forward", { type: "part.reorder", id: part.id, direction: "forward" })}>Bring forward</button>
       <button disabled={order <= 0} onClick={() =>
         edit("Send backward", { type: "part.reorder", id: part.id, direction: "backward" })}>Send backward</button>
     </div>
+    {!part.facets && <>
     <div className="studio-field-pair">
       <label>Edge<select value={edge < edges ? edge : -1} onChange={event => setEdge(Number(event.target.value))}>
         <option value={-1}>Choose edge</option>
@@ -676,6 +701,7 @@ function PathProperties({part, rig, edit, clear, selectedEdge:edge, setEdge, sel
         }
       }}>Simplify path</button>
     </div>
+    </>}
     <button className="studio-danger" onClick={() => {
       if (edit("Delete path", { type: "part.remove", id: part.id })) clear();
     }}>Delete path</button>

@@ -1,15 +1,19 @@
 import { enablePatches, produceWithPatches, type Draft } from "immer";
 import { z } from "zod";
-import { artboardSchema, boneSchema, constraintSchema, guideSchema, orderedBones, partSchema, rigStateSchema, type KinetixRigState } from "./model";
+import { artboardSchema, boneSchema, constraintSchema, facetGraphSchema, guideSchema, orderedBones, partSchema, pointSchema, rigStateSchema, type KinetixRigState } from "./model";
 import { offsetForPartPivot } from "./part-transform";
 import { changeNodeMode, joinOpenParts, reverseKnots, simplifyPath, splitPathEdge } from "./path-geometry";
 import { layoutOffsets, translatedPartOffset } from "./path-layout";
 import { evaluateRig } from "./kinematics";
+import { cutFacetFace, mirrorFacets, splitFacetEdge, triangulateFacets, weldFacetVertices } from "./facet-geometry";
+import { splitMeshTriangle } from "./skinning";
 
 enablePatches();
 
 const boneId = boneSchema.shape.id;
 const constraintId = constraintSchema.shape.id;
+const geometryId = partSchema.shape.id;
+const facetPrefix = z.string().min(1).max(24).regex(/^[A-Za-z0-9_-]+$/);
 export const rigCommandSchema = z.discriminatedUnion("type", [
   z.strictObject({ type: z.literal("bone.create"), bone: boneSchema }),
   z.strictObject({ type: z.literal("bone.update"), id: boneId, changes: boneSchema.omit({ id: true }).partial() }),
@@ -32,6 +36,18 @@ export const rigCommandSchema = z.discriminatedUnion("type", [
   z.strictObject({ type: z.literal("parts.layout"), ids:z.array(partSchema.shape.id).min(2).max(128),
     axis:z.enum(["x","y"]),mode:z.enum(["min","center","max","distribute"]) }),
   z.strictObject({ type: z.literal("artboard.guides"), guides:z.array(guideSchema).max(64) }),
+  z.strictObject({ type: z.literal("facet.initialize"), id:geometryId, faceId:geometryId }),
+  z.strictObject({ type: z.literal("facet.add"), id:geometryId, faceId:geometryId, fill:partSchema.shape.fill,
+    vertices:z.array(z.strictObject({id:geometryId,point:pointSchema.optional()})).min(3).max(256) }),
+  z.strictObject({ type: z.literal("facet.move"), id:geometryId, vertexId:geometryId, point:pointSchema }),
+  z.strictObject({ type: z.literal("facet.paint"), id:geometryId, faceId:geometryId, fill:partSchema.shape.fill }),
+  z.strictObject({ type: z.literal("facet.splitEdge"), id:geometryId, a:geometryId, b:geometryId, vertexId:geometryId,
+    progress:z.number().gt(0).lt(1).optional() }),
+  z.strictObject({ type: z.literal("facet.cut"), id:geometryId, faceId:geometryId, a:geometryId, b:geometryId, nextFaceId:geometryId }),
+  z.strictObject({ type: z.literal("facet.weld"), id:geometryId, retained:geometryId, removed:geometryId }),
+  z.strictObject({ type: z.literal("facet.mirror"), id:geometryId, axis:z.enum(["x","y"]), at:z.number().min(-1_000_000).max(1_000_000), prefix:facetPrefix }),
+  z.strictObject({ type: z.literal("facet.triangulate"), id:geometryId, faceId:geometryId.optional(), prefix:facetPrefix }),
+  z.strictObject({ type: z.literal("mesh.splitTriangle"), id:geometryId, index:z.int().min(0).max(8191) }),
   z.strictObject({ type: z.literal("artboard.update"), artboard: artboardSchema }),
 ]);
 export type RigCommand = z.infer<typeof rigCommandSchema>;
@@ -46,6 +62,12 @@ function findById<T extends { id: string }>(items: readonly T[], id: string, lab
   const item = items.find(entry => entry.id === id);
   if (!item) throw new Error(label + " does not exist.");
   return item;
+}
+
+function facetPart(rig:Draft<KinetixRigState>,id:string) {
+  const part = findById(rig.parts,id,"Facet part");
+  if (!part.facets) throw new Error("Choose faceted artwork.");
+  return {part,graph:part.facets};
 }
 
 function applyCommand(rig: Draft<KinetixRigState>, command: RigCommand) {
@@ -185,6 +207,67 @@ function applyCommand(rig: Draft<KinetixRigState>, command: RigCommand) {
       if (rig.version !== 2) throw new Error("Guides require a design artboard.");
       rig.guides = command.guides;
       break;
+    case "facet.initialize": {
+      const part = findById(rig.parts,command.id,"Vector part");
+      if (part.facets || !part.closed || part.knots.some(knot=>knot.incoming || knot.outgoing)) {
+        throw new Error("Choose a closed polygon without curved segments.");
+      }
+      const vertices = part.knots.map((knot,index)=>({id:"vertex-"+(index+1),point:{...knot.point}}));
+      part.facets = {vertices,faces:[{id:command.faceId,fill:part.fill,vertices:vertices.map(vertex=>vertex.id)}]};
+      break;
+    }
+    case "facet.add": {
+      const {graph} = facetPart(rig,command.id);
+      for (const vertex of command.vertices) {
+        const existing = graph.vertices.some(item=>item.id===vertex.id);
+        if (vertex.point && !existing) graph.vertices.push({id:vertex.id,point:vertex.point});
+        else if (vertex.point || !existing) throw new Error("Use an existing vertex or supply a point for a new one.");
+      }
+      graph.faces.push({id:command.faceId,fill:command.fill,vertices:command.vertices.map(vertex=>vertex.id)});
+      break;
+    }
+    case "facet.move": {
+      const {graph} = facetPart(rig,command.id);
+      findById(graph.vertices,command.vertexId,"Facet vertex").point = command.point;
+      break;
+    }
+    case "facet.paint": {
+      const {graph} = facetPart(rig,command.id);
+      findById(graph.faces,command.faceId,"Facet face").fill = command.fill;
+      break;
+    }
+    case "facet.splitEdge": {
+      const {part,graph} = facetPart(rig,command.id);
+      part.facets = splitFacetEdge(graph,command.a,command.b,command.vertexId,command.progress);
+      break;
+    }
+    case "facet.cut": {
+      const {part,graph} = facetPart(rig,command.id);
+      part.facets = cutFacetFace(graph,command.faceId,command.a,command.b,command.nextFaceId);
+      break;
+    }
+    case "facet.weld": {
+      const {part,graph} = facetPart(rig,command.id);
+      part.facets = weldFacetVertices(graph,command.retained,command.removed);
+      break;
+    }
+    case "facet.mirror": {
+      const {part,graph} = facetPart(rig,command.id);
+      part.facets = mirrorFacets(graph,command.axis,command.at,command.prefix);
+      break;
+    }
+    case "facet.triangulate": {
+      const {part,graph} = facetPart(rig,command.id);
+      if (command.faceId) findById(graph.faces,command.faceId,"Facet face");
+      part.facets = facetGraphSchema.parse(triangulateFacets(graph,command.prefix,command.faceId));
+      break;
+    }
+    case "mesh.splitTriangle": {
+      const part = findById(rig.parts,command.id,"Vector part");
+      if (!part.mesh) throw new Error("Bind a mesh before splitting a triangle.");
+      part.mesh = splitMeshTriangle(part.mesh,command.index);
+      break;
+    }
     case "artboard.update":
       if (rig.version !== 2) throw new Error("Artboard settings require a blank design document.");
       rig.artboard = command.artboard;
