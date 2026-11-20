@@ -16,7 +16,17 @@ Implemented the application shell, interactive guest playground, Clerk access ro
 
 ## Active subgoal and next exact step
 
-All four implementation milestones and the workspace UI follow-up are deployed. The remaining service activation is owner-managed Inngest Cloud. After the signing and event keys are present in Vercel, redeploy, sync the existing endpoint, and verify a hosted thumbnail and export run. The local Inngest workflow produced and downloaded all five export formats.
+The active implementation goal covers all 23 subgoals in [the production studio roadmap](docs/PRODUCTION_STUDIO_ROADMAP.md). M5.1 is deployed. The next step is the basic 7.1 object-position keys needed for the first playable asset. Add part X/Y channels to the shared evaluator, timeline and MCP, then use the same clip to verify the fixed-grid sprite package and Godot importer in 9.1 and 9.3.
+
+Owner-managed Inngest Cloud activation is still open. After the signing and event keys are present in Vercel, redeploy, sync the existing endpoint, and verify a hosted thumbnail and animation export run. Saved still PNGs are served directly.
+
+## M5.1 release · November 20, 2026
+
+- **Brief and build** added a versioned blank design with named custom artboards, polygon drawing, vertex drags, edge insertion, fills, stacking, and saved still PNGs. MCP reads artboard bounds and accepts revision-checked document commands.
+- **Test** passed strict TypeScript, 35 Vitest tests and 46 Playwright checks across four viewports. Six desktop-only combinations were skipped as intended. The new check drew and edited three parts, undid a vertex move, reopened the saved design and downloaded a 240 × 360 RGBA PNG.
+- **Merge** published feature commit `161f04e` and main merge `15f8ec1`.
+- **Deploy** passed the local production build, Vercel preview and production. A signed-in phone browser created a 96 × 151 design, observed an MCP polygon and edge split in the open studio, and downloaded a matching RGBA PNG. The temporary fixtures were removed.
+- **Document** records the format, authenticated PNG route, MCP commands, verification commands and next implementation step.
 
 ## Workspace UI follow-up · November 20, 2026
 

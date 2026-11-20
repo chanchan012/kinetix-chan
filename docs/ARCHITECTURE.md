@@ -118,3 +118,13 @@ Agent mutations reuse owner-checked revisions and publish AI presence and rig or
 Dashboard cards link to the authenticated studio. Owners rename or delete rigs from the card menu, and Motion studies opens a separate dialog of the existing study links. The studio timeline opens clip management against the existing `/api/rigs/:id/clips` routes. Its clip picker refreshes against the animation endpoint after changes and SSE notifications. Newly created clips become active, and deleting the active clip returns the timeline to study playback. Save pending keyframe edits to enable clip management.
 
 The canvas carries floating drawing and contextual controls. The hierarchy, inspector and timeline use pointer- and keyboard-operable resize separators. At widths of 720 pixels and below the side panels sit beneath the canvas and share a separator. Panel sizes are local to the open studio. Header avatars show current session presence and remote selections from the existing room protocol. This release adds no schema, API, or MCP contract changes.
+
+## M5.1 · Blank designs and artboards
+
+`rigs.state` accepts version 2 blank designs with `study: null`, an artboard and the existing bone, constraint and part lists. The artboard permits a 16–4096 pixel width and height, a named canvas and an optional solid background. Version 1 study rigs keep their camera framing and 512 × 320 export size. Existing study-only rows still resolve through the legacy reader. Library saves guard the document kind and revision in the same write.
+
+The dashboard creates a blank design by posting `{name,artboard}` to `/api/rigs`. Create a polygon with straight vertices and adjust it through the same path entries as the Bézier pen. The command store supports artboard settings, stack order and straight-edge midpoint insertion with undo. Revising a skinned path's vertices clears its mesh binding under the existing binding behavior.
+
+`GET /api/rigs/:id/artboard.png` renders the saved base pose for an authorized rig editor. It preserves transparency and exact pixel dimensions. Raster animation and Lottie use the same artboard geometry. Video pads odd sizes to even dimensions for YUV 4:2:0 encoding. Raster animation jobs enforce frame, image area and output size limits.
+
+MCP `viewport-bounds` returns the document dimensions. `rig-hierarchy` includes editable parts. `edit_document` applies up to 100 shared rig commands as a single transaction at an explicit revision and emits a room update. An edit at a stale revision fails before writing.

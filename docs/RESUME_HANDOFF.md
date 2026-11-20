@@ -104,4 +104,10 @@ Run `npm run test:e2e -- --grep 'member manages clips'` to verify direct navigat
 
 Run `npm run test:e2e -- --project=desktop --grep "MCP agent"` for the live agent workflow. Use `npm run typecheck`, `npm test`, `npm run test:e2e` and `npm run build` before further releases. Playwright uses one worker against the local host's shared Upstash limit. Teardown removes rigs owned by the temporary Clerk fixture account before deleting that account.
 
-The implementation milestones are deployed. The remaining operational handoff is the Inngest Cloud activation described above.
+## M5.1 · Blank designs and artboards
+
+From the dashboard, use **New design** and choose an artboard size. In the studio press **G**, click to place vertices, and click the first point or choose **Close polygon**. Use the Inspector for fills, ordering, and splitting straight edges. Open **Artboard** to resize or set the background. Save, then choose **Download saved artboard PNG** in Export.
+
+Run `npm run test:e2e -- --grep 'illustrator draws'` for the blank-design browser workflow. `npm test -- tests/unit/library.test.ts tests/unit/export.test.ts` covers the saved PNG, protected access, agent revision checks and export dimensions. M5.1 uses the existing deployment environment and JSONB column.
+
+For the next slice, extend the animation channel schema and sampler in `lib/rig/animation.ts` for part X/Y offsets, the selected-part channel controls in `components/studio/timeline.tsx`, and channel ownership validation in `lib/mcp/actions.ts`. Verify a loop on a blank design before adding the fixed-grid package and Godot importer. The full release order is tracked in [the roadmap](PRODUCTION_STUDIO_ROADMAP.md). Inngest Cloud activation is still open.
