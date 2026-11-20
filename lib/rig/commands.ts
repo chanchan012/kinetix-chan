@@ -1,4 +1,4 @@
-import { enablePatches, produceWithPatches, type Draft } from "immer";
+import { current, enablePatches, isDraft, produceWithPatches, type Draft } from "immer";
 import { z } from "zod";
 import { artboardSchema, boneSchema, constraintSchema, facetGraphSchema, guideSchema, orderedBones, partSchema, pointSchema, rigStateSchema, type KinetixRigState } from "./model";
 import { offsetForPartPivot } from "./part-transform";
@@ -7,6 +7,9 @@ import { layoutOffsets, translatedPartOffset } from "./path-layout";
 import { evaluateRig } from "./kinematics";
 import { cutFacetFace, mirrorFacets, splitFacetEdge, triangulateFacets, weldFacetVertices } from "./facet-geometry";
 import { splitMeshTriangle } from "./skinning";
+import { groupLayers,layerId,layerTreeFor,moveLayer,orderedLayers,syncPartLayers,ungroupLayer,type LayerTree } from "./layer-tree";
+import { resolvePaint,swatchSchema } from "./appearance";
+import { booleanModes,booleanPath,pathRegions } from "./path-boolean";
 
 enablePatches();
 
@@ -48,6 +51,17 @@ export const rigCommandSchema = z.discriminatedUnion("type", [
   z.strictObject({ type: z.literal("facet.mirror"), id:geometryId, axis:z.enum(["x","y"]), at:z.number().min(-1_000_000).max(1_000_000), prefix:facetPrefix }),
   z.strictObject({ type: z.literal("facet.triangulate"), id:geometryId, faceId:geometryId.optional(), prefix:facetPrefix }),
   z.strictObject({ type: z.literal("mesh.splitTriangle"), id:geometryId, index:z.int().min(0).max(8191) }),
+  z.strictObject({ type:z.literal("layer.group"), id:layerId,
+    name:z.string().trim().min(1).max(120),members:z.array(layerId).min(1).max(128) }),
+  z.strictObject({ type:z.literal("layer.ungroup"),id:layerId }),
+  z.strictObject({ type:z.literal("layer.rename"),id:layerId,name:z.string().trim().min(1).max(120) }),
+  z.strictObject({ type:z.literal("layer.flags"),id:layerId,hidden:z.boolean().optional(),locked:z.boolean().optional() }),
+  z.strictObject({ type:z.literal("layer.mask"),id:layerId,partId:geometryId.nullable() }),
+  z.strictObject({ type:z.literal("swatch.set"),swatch:swatchSchema }),
+  z.strictObject({ type:z.literal("swatch.remove"),id:geometryId }),
+  z.strictObject({ type:z.literal("parts.boolean"),ids:z.array(geometryId).min(2).max(128),mode:z.enum(booleanModes) }),
+  z.strictObject({ type:z.literal("layer.move"),id:layerId,parentId:layerId.nullable(),index:z.int().min(0).max(256) }),
+  z.strictObject({ type:z.literal("layer.duplicate"),id:layerId,prefix:facetPrefix }),
   z.strictObject({ type: z.literal("artboard.update"), artboard: artboardSchema }),
 ]);
 export type RigCommand = z.infer<typeof rigCommandSchema>;
@@ -70,7 +84,22 @@ function facetPart(rig:Draft<KinetixRigState>,id:string) {
   return {part,graph:part.facets};
 }
 
+function requireUnlocked(rig:Draft<KinetixRigState>,ids:readonly string[]) {
+  if (!rig.layers) return;
+  const locked = orderedLayers(rig.layers).some(row=>row.locked && row.node.kind==="part" && ids.includes(row.node.partId));
+  if (locked) throw new Error("Unlock the artwork layer before editing it.");
+}
+
+function sourceLayers(rig:Draft<KinetixRigState>):LayerTree {
+  return rig.layers ?? (rig.layers=layerTreeFor(rig));
+}
+
+function cloneValue<T extends object>(value:T):T {
+  return structuredClone(isDraft(value) ? current(value as Draft<T>) : value);
+}
+
 function applyCommand(rig: Draft<KinetixRigState>, command: RigCommand) {
+  if ("id" in command && /^(part|facet|mesh)\./.test(command.type)) requireUnlocked(rig,[command.id]);
   switch (command.type) {
     case "bone.create":
       rig.bones.push(command.bone);
@@ -118,6 +147,14 @@ function applyCommand(rig: Draft<KinetixRigState>, command: RigCommand) {
       break;
     case "part.reorder": {
       const part = findById(rig.parts, command.id, "Vector part");
+      if (rig.layers) {
+        const node = rig.layers.nodes.find(item=>item.kind==="part" && item.partId===part.id)!;
+        const siblings = rig.layers.nodes.filter(item=>item.parentId===node.parentId);
+        const index = siblings.indexOf(node)+(command.direction==="forward" ? 1 : -1);
+        if (index<0 || index>=siblings.length) throw new Error("The part is already at this end of the stack.");
+        moveLayer(rig.layers,node.id,node.parentId,index);
+        break;
+      }
       const index = rig.parts.indexOf(part);
       const next = index + (command.direction === "forward" ? 1 : -1);
       if (next < 0 || next >= rig.parts.length) throw new Error("The part is already at this end of the stack.");
@@ -149,6 +186,7 @@ function applyCommand(rig: Draft<KinetixRigState>, command: RigCommand) {
     }
     case "part.cut": {
       const part = findById(rig.parts,command.id,"Vector part");
+      if (part.contours?.length) throw new Error("Choose a path with a single contour to cut.");
       const index = command.index;
       const knot = part.knots[index];
       if (!knot) throw new Error("This path node does not exist.");
@@ -173,6 +211,7 @@ function applyCommand(rig: Draft<KinetixRigState>, command: RigCommand) {
     case "part.join": {
       const target = findById(rig.parts,command.id,"Vector part");
       const source = findById(rig.parts,command.sourceId,"Vector part");
+      requireUnlocked(rig,[source.id]);
       target.knots = joinOpenParts(target,source);
       rig.parts = rig.parts.filter(part=>part.id!==source.id);
       break;
@@ -186,6 +225,7 @@ function applyCommand(rig: Draft<KinetixRigState>, command: RigCommand) {
       break;
     }
     case "parts.translate": {
+      requireUnlocked(rig,command.ids);
       const poses = evaluateRig(rig);
       for (const id of new Set(command.ids)) {
         const part = findById(rig.parts,id,"Vector part");
@@ -194,6 +234,7 @@ function applyCommand(rig: Draft<KinetixRigState>, command: RigCommand) {
       break;
     }
     case "parts.layout": {
+      requireUnlocked(rig,command.ids);
       const parts = [...new Set(command.ids)].map(id=>findById(rig.parts,id,"Vector part"));
       if (parts.length < (command.mode==="distribute" ? 3 : 2)) {
         throw new Error("Select at least two paths to align or three to distribute.");
@@ -209,7 +250,7 @@ function applyCommand(rig: Draft<KinetixRigState>, command: RigCommand) {
       break;
     case "facet.initialize": {
       const part = findById(rig.parts,command.id,"Vector part");
-      if (part.facets || !part.closed || part.knots.some(knot=>knot.incoming || knot.outgoing)) {
+      if (part.facets || part.contours?.length || !part.closed || part.knots.some(knot=>knot.incoming || knot.outgoing)) {
         throw new Error("Choose a closed polygon without curved segments.");
       }
       const vertices = part.knots.map((knot,index)=>({id:"vertex-"+(index+1),point:{...knot.point}}));
@@ -268,6 +309,97 @@ function applyCommand(rig: Draft<KinetixRigState>, command: RigCommand) {
       part.mesh = splitMeshTriangle(part.mesh,command.index);
       break;
     }
+    case "layer.group":
+      groupLayers(sourceLayers(rig),command.id,command.name,command.members);
+      break;
+    case "layer.ungroup":
+      ungroupLayer(sourceLayers(rig),command.id);
+      break;
+    case "layer.rename": {
+      const node = findById(sourceLayers(rig).nodes,command.id,"Layer");
+      if (node.kind==="group") node.name = command.name;
+      else findById(rig.parts,node.partId,"Vector part").name = command.name;
+      break;
+    }
+    case "layer.flags": {
+      const node = findById(sourceLayers(rig).nodes,command.id,"Layer");
+      if (command.hidden!==undefined) node.hidden=command.hidden;
+      if (command.locked!==undefined) node.locked=command.locked;
+      break;
+    }
+    case "layer.mask": {
+      const node = findById(sourceLayers(rig).nodes,command.id,"Layer");
+      if (command.partId) {
+        const mask = findById(rig.parts,command.partId,"Mask path");
+        if (!pathRegions(mask,evaluateRig(rig)).length) throw new Error("Choose a mask with a filled area.");
+        node.maskPartId = command.partId;
+      }
+      else delete node.maskPartId;
+      break;
+    }
+    case "swatch.set": {
+      const swatches = rig.swatches ?? (rig.swatches=[]);
+      const index = swatches.findIndex(entry=>entry.id===command.swatch.id);
+      if (index<0) swatches.push(command.swatch);
+      else swatches[index]=command.swatch;
+      break;
+    }
+    case "swatch.remove": {
+      const swatches = rig.swatches ?? [];
+      findById(swatches,command.id,"Swatch");
+      for (const part of rig.parts) {
+        const fill = part.appearance?.fill;
+        const stroke = part.appearance?.stroke;
+        if (fill?.kind==="swatch" && fill.id===command.id) part.appearance!.fill=cloneValue(resolvePaint(fill,swatches));
+        if (stroke?.paint.kind==="swatch" && stroke.paint.id===command.id) stroke.paint=cloneValue(resolvePaint(stroke.paint,swatches));
+      }
+      rig.swatches = swatches.filter(entry=>entry.id!==command.id);
+      break;
+    }
+    case "parts.boolean": {
+      const ids = [...new Set(command.ids)];
+      if (ids.length<2) throw new Error("Choose at least two closed paths.");
+      requireUnlocked(rig,ids);
+      const source = ids.map(id=>findById(rig.parts,id,"Path"));
+      const [target] = source;
+      Object.assign(target,booleanPath(source,command.mode,evaluateRig(rig)),{mesh:undefined,facets:undefined});
+      rig.parts=rig.parts.filter(part=>part.id===target.id || !ids.includes(part.id));
+      break;
+    }
+    case "layer.move":
+      moveLayer(sourceLayers(rig),command.id,command.parentId,command.index);
+      break;
+    case "layer.duplicate": {
+      const tree = sourceLayers(rig);
+      const node = findById(tree.nodes,command.id,"Layer");
+      const {prefix} = command;
+      let serial = 0;
+      const copiedParts = new Map<string,string>();
+      const created = new Set<string>();
+      function copy(source:typeof node,parentId:string|null) {
+        const id = prefix+"-"+serial++;
+        created.add(id);
+        if (source.kind==="part") {
+          const part = findById(rig.parts,source.partId,"Vector part");
+          const duplicate = cloneValue(part);
+          copiedParts.set(part.id,id);
+          rig.parts.push({...duplicate,id,name:(part.name.slice(0,115)+" copy")});
+          tree.nodes.push({...source,id,parentId,partId:id});
+        } else {
+          const children = tree.nodes.filter(item=>item.parentId===source.id);
+          tree.nodes.push({...source,id,parentId,name:(source.name.slice(0,115)+" copy")});
+          for (const child of children) copy(child,id);
+        }
+        return id;
+      }
+      const siblings = tree.nodes.filter(item=>item.parentId===node.parentId);
+      const id = copy(node,node.parentId);
+      for (const layer of tree.nodes) {
+        if (created.has(layer.id) && layer.maskPartId) layer.maskPartId=copiedParts.get(layer.maskPartId) ?? layer.maskPartId;
+      }
+      moveLayer(tree,id,node.parentId,siblings.indexOf(node)+1);
+      break;
+    }
     case "artboard.update":
       if (rig.version !== 2) throw new Error("Artboard settings require a blank design document.");
       rig.artboard = command.artboard;
@@ -279,7 +411,10 @@ function applyCommand(rig: Draft<KinetixRigState>, command: RigCommand) {
 export function editRig(rig: KinetixRigState, commands: readonly RigCommand[]) {
   const validated = z.array(rigCommandSchema).min(1).max(100).parse(commands);
   const result = produceWithPatches(rig, draft => {
-    for (const command of validated) applyCommand(draft, command);
+    for (const command of validated) {
+      applyCommand(draft, command);
+      if (draft.layers) syncPartLayers(draft.layers,draft.parts);
+    }
   });
   rigStateSchema.parse(result[0]);
   return result;

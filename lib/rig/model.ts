@@ -1,6 +1,8 @@
 import { z } from "zod";
 import { studyFor } from "../studies";
 import { facetEdgeKey, signedPolygonArea, validFacetPolygon } from "./facet-geometry";
+import { layerTreeSchema } from "./layer-tree";
+import { appearanceSchema,swatchSchema } from "./appearance";
 
 const coordinate = z.number().min(-1_000_000).max(1_000_000);
 export const pointSchema = z.strictObject({ x: coordinate, y: coordinate });
@@ -109,6 +111,8 @@ export const partSchema = z.strictObject({
   pivot: pointSchema.optional(),
   knots: z.array(knotSchema).min(2).max(256),
   fill: color,
+  appearance: appearanceSchema.optional(),
+  contours:z.array(z.array(knotSchema).min(3).max(2048)).max(128).optional(),
   closed: z.boolean(),
   mesh: meshSchema.optional(),
   facets: facetGraphSchema.optional(),
@@ -136,6 +140,8 @@ const documentContents = {
   bones: z.array(boneSchema).max(512),
   constraints: z.array(constraintSchema).max(128),
   parts: z.array(partSchema).max(128).default([]),
+  layers: layerTreeSchema.optional(),
+  swatches:z.array(swatchSchema).max(128).optional(),
 };
 const documentSchema = z.discriminatedUnion("version", [
   z.strictObject({ version: z.literal(1), study: studyIdSchema, ...documentContents }),
@@ -194,6 +200,10 @@ export const rigStateSchema = documentSchema.superRefine((rig, context) => {
     constrained.add(constraint.lowerId);
   }
   const partIds = new Set<string>();
+  const swatches = new Set(rig.swatches?.map(swatch=>swatch.id));
+  if (swatches.size!==(rig.swatches?.length ?? 0)) context.addIssue({
+    code:"custom",path:["swatches"],message:"Swatch IDs must be unique.",
+  });
   for (const [index, part] of rig.parts.entries()) {
     if (partIds.has(part.id) || (part.parentId !== null && !bones.has(part.parentId))) {
       context.addIssue({ code: "custom", path: ["parts", index], message: "Parts require unique IDs and an existing parent." });
@@ -204,7 +214,28 @@ export const rigStateSchema = documentSchema.superRefine((rig, context) => {
     if (part.facets && !part.closed) {
       context.addIssue({code:"custom",path:["parts",index,"facets"],message:"Facets require a closed artwork part."});
     }
+    if (part.contours && (!part.closed || part.mesh || part.facets ||
+        part.contours.reduce((count,ring)=>count+ring.length,part.knots.length)>4096)) {
+      context.addIssue({code:"custom",path:["parts",index,"contours"],message:"Compound paths require closed vector artwork and up to 4096 nodes."});
+    }
+    for (const paint of [part.appearance?.fill,part.appearance?.stroke?.paint]) {
+      if (paint?.kind==="swatch" && !swatches.has(paint.id)) context.addIssue({
+        code:"custom",path:["parts",index,"appearance"],message:"Choose an existing swatch.",
+      });
+    }
     partIds.add(part.id);
+  }
+  if (rig.layers) {
+    const layers = rig.layers.nodes.flatMap(node=>node.kind==="part" ? [node.partId] : []);
+    if (layers.length!==partIds.size || layers.some(id=>!partIds.has(id))) context.addIssue({
+      code:"custom",path:["layers","nodes"],message:"Each artwork part needs one matching layer.",
+    });
+    const closed = new Set(rig.parts.filter(part=>part.closed).map(part=>part.id));
+    for (const node of rig.layers.nodes) {
+      if (node.maskPartId && (!closed.has(node.maskPartId) || (node.kind==="part" && node.maskPartId===node.partId))) {
+        context.addIssue({code:"custom",path:["layers","nodes"],message:"A clipping mask requires another closed path."});
+      }
+    }
   }
 });
 

@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type PointerEvent } from "react";
 import { evaluateRig, rotatePoint } from "@/lib/rig/kinematics";
 import { artboardFor, type KinetixRigState, type Point, type VectorKnot, type VectorPart } from "@/lib/rig/model";
-import { drawArtboardBackground, drawRigArtwork, inPartSpace, traceMesh, tracePart, tracePolygons, viewportFrameFor } from "@/lib/rig/render";
+import { drawArtboardBackground, drawRigArtwork, inPartSpace, maskRegions, partMasks, traceMesh, tracePart, tracePolygons, viewportFrameFor } from "@/lib/rig/render";
 import { partSpace, partWorldSpace } from "@/lib/rig/part-transform";
 import { deformMesh, paintMesh } from "@/lib/rig/skinning";
 import type { RigCommand } from "@/lib/rig/commands";
@@ -11,6 +11,8 @@ import { movePathKnot, pencilKnots, primitiveKnots, type KnotHandle, type Primit
 import { pointBounds, pointInPolygon, translatedPartOffset, worldPartBounds, type Axis } from "@/lib/rig/path-layout";
 import { facetArtworkFaces,facetPointMappers } from "@/lib/rig/facet-skinning";
 import type { FacetViewportTool } from "./facet-tools";
+import { editablePartIds,orderedVisibleParts } from "@/lib/rig/layer-tree";
+import { regionPolygons } from "@/lib/rig/path-boolean";
 
 export type Selection = { kind: "bone" | "part"; id: string } | null;
 export type SelectionMode = "marquee" | "lasso";
@@ -45,6 +47,7 @@ type Props = {
   tool: Tool;
   primitive: PrimitiveShape;
   facets: FacetViewportTool | null;
+  isolation: string | null;
   smoothing: number;
   selectionMode: SelectionMode;
   snapping: boolean;
@@ -122,7 +125,7 @@ function drawRulers(context:CanvasRenderingContext2D,camera:Point,scale:number,s
 }
 
 export function Viewport({rig, phase, ghosts, brush, remoteBones, selected, selectedParts, selectedEdge, selectedNode, setNode,
-  select, selectRegion, tool, primitive, facets, smoothing, selectionMode, snapping, rulers, reference, zoom, showBones,
+  select, selectRegion, tool, primitive, facets, isolation, smoothing, selectionMode, snapping, rulers, reference, zoom, showBones,
   pen, addKnot, closePolygon, addDrawnPath, addBone, edit}: Props) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const [size, setSize] = useState({ width: 0, height: 0 });
@@ -130,6 +133,10 @@ export function Viewport({rig, phase, ghosts, brush, remoteBones, selected, sele
   const [cursor, setCursor] = useState<Point | null>(null);
   const [snapOverride,setSnapOverride] = useState(false);
   const authoredPoses = useMemo(() => evaluateRig(rig), [rig]);
+  const editingIds = useMemo(()=>{
+    const editable = editablePartIds(rig);
+    return new Set(orderedVisibleParts(rig,isolation).filter(part=>editable.has(part.id)).map(part=>part.id));
+  },[rig,isolation]);
   const viewportFrame = viewportFrameFor(rig);
   const guides = (rig.version===2 && rig.guides) || noGuides;
   const scale = Math.min(size.width / viewportFrame.width, size.height / viewportFrame.height) * zoom;
@@ -256,10 +263,10 @@ export function Viewport({rig, phase, ghosts, brush, remoteBones, selected, sele
       if (ghosts.length) {
         context.save();
         context.globalAlpha = 0.19;
-        for (const ghost of ghosts) drawRigArtwork(context, ghost.rig, evaluateRig(ghost.rig), ghost.phase, reference);
+        for (const ghost of ghosts) drawRigArtwork(context, ghost.rig, evaluateRig(ghost.rig), ghost.phase, reference,isolation);
         context.restore();
       }
-      drawRigArtwork(context, preview, poses, phase, reference);
+      drawRigArtwork(context, preview, poses, phase, reference,isolation);
       context.restore();
       const pixel = 1 / scale;
       context.lineWidth = 1.5 * pixel;
@@ -298,12 +305,13 @@ export function Viewport({rig, phase, ghosts, brush, remoteBones, selected, sele
       }
       if (selectedParts.length>1) {
         context.strokeStyle = "#216885";
-        for (const item of preview.parts.filter(item=>selectedParts.includes(item.id))) {
+        for (const item of preview.parts.filter(item=>selectedParts.includes(item.id) && editingIds.has(item.id))) {
           const {min,max} = worldPartBounds(item,poses);
           context.strokeRect(min.x,min.y,max.x-min.x,max.y-min.y);
         }
       }
-      const part = selected?.kind === "part" && selectedParts.length<=1 ? preview.parts.find(item => item.id === selected.id) : undefined;
+      const part = selected?.kind === "part" && selectedParts.length<=1 && editingIds.has(selected.id) ?
+        preview.parts.find(item => item.id === selected.id) : undefined;
       if (part?.facets && !brush && (facets || !part.mesh)) {
         const graph = facets?.triangulation ?? part.facets;
         const map = facetPointMappers(part,poses).world;
@@ -439,7 +447,7 @@ export function Viewport({rig, phase, ghosts, brush, remoteBones, selected, sele
     });
     return () => cancelAnimationFrame(frame);
   }, [scale, size, camera.x, camera.y, preview, rig, authoredPoses, phase, reference, selected, selectedParts, selectedEdge, selectedNode,
-    showBones, gesture, cursor, pen, ghosts, brush, remoteBones, primitive, facets, selectionMode, rulers, guides,
+    showBones, gesture, cursor, pen, ghosts, brush, remoteBones, primitive, facets, isolation, editingIds, selectionMode, rulers, guides,
     viewportFrame.x,viewportFrame.y,viewportFrame.width,viewportFrame.height]);
 
   function down(event: PointerEvent<HTMLCanvasElement>) {
@@ -450,13 +458,13 @@ export function Viewport({rig, phase, ghosts, brush, remoteBones, selected, sele
     let next: Gesture | undefined;
     if (brush) {
       const part = rig.parts.find(item => item.id === brush.partId);
-      if (!part?.mesh) return;
+      if (!part?.mesh || !editingIds.has(part.id)) return;
       const mesh = paintMesh(part, authoredPoses, brush.boneId, point, brush.radius, brush.strength);
       next = { type: "paint", part: { ...part, mesh }, last: point, brush };
       setCursor(point);
     } else if (tool==="facet") {
       const part = facets && rig.parts.find(item=>item.id===facets.partId);
-      if (!facets || !part || !part.facets) return;
+      if (!facets || !part || !part.facets || !editingIds.has(part.id)) return;
       const mapper = facetPointMappers(part,authoredPoses);
       const graph = part.facets;
       const world = new Map(graph.vertices.map(vertex=>[vertex.id,mapper.world(vertex.point)]));
@@ -498,7 +506,7 @@ export function Viewport({rig, phase, ghosts, brush, remoteBones, selected, sele
     } else if (tool === "region") {
       next = { type: tool,points:[point] };
     } else {
-      const part = selected?.kind === "part" ? rig.parts.find(item => item.id === selected.id) : undefined;
+      const part = selected?.kind === "part" && editingIds.has(selected.id) ? rig.parts.find(item => item.id === selected.id) : undefined;
       if (part && !part.mesh && !part.facets && selectedParts.length<=1) {
         for (const [index, knot] of part.knots.entries()) {
           const handle = (["point", "incoming", "outgoing"] as const).find(key => {
@@ -534,19 +542,29 @@ export function Viewport({rig, phase, ghosts, brush, remoteBones, selected, sele
         context.save();
         context.resetTransform();
         context.lineWidth = 2 * tolerance;
-        const hit = [...rig.parts].reverse().find(item => {
+        const masks=partMasks(rig);
+        const partsById=new Map(rig.parts.map(part=>[part.id,part]));
+        const maskCache=new Map();
+        const hit = orderedVisibleParts(rig,isolation).toReversed().find(item => {
+          if (!editingIds.has(item.id)) return false;
+          const stack=masks.get(item.id);
+          if (stack) {
+            tracePolygons(context,regionPolygons(maskRegions(partsById,stack,authoredPoses,maskCache)));
+            if (!context.isPointInPath(point.x,point.y,"evenodd")) return false;
+          }
           if (item.facets) return facetArtworkFaces(item,authoredPoses).some(face=>face.polygons.some(polygon=>pointInPolygon(point,polygon)));
           if (item.mesh) {
             traceMesh(context, deformMesh(item, authoredPoses), item.mesh.triangles);
             return context.isPointInPath(point.x, point.y);
           }
           inPartSpace(context,item,authoredPoses,() => tracePart(context,item));
-          return item.closed ? context.isPointInPath(point.x, point.y) : context.isPointInStroke(point.x, point.y);
+          return item.closed ? context.isPointInPath(point.x,point.y,item.contours?"evenodd":"nonzero") :
+            context.isPointInStroke(point.x,point.y);
         });
         context.restore();
         const preserveGroup = hit && selectedParts.length>1 && selectedParts.includes(hit.id);
         if (!preserveGroup) select(hit ? { kind: "part", id: hit.id } : null);
-        if (hit) next = { type: "move", part: hit, ids:preserveGroup ? selectedParts : [hit.id], start: point };
+        if (hit) next = { type: "move",part:hit,ids:preserveGroup ? selectedParts.filter(id=>editingIds.has(id)) : [hit.id],start:point };
       }
     }
     if (!next) return;
@@ -578,6 +596,7 @@ export function Viewport({rig, phase, ghosts, brush, remoteBones, selected, sele
       const region = [...gesture.points,point];
       const {min,max} = pointBounds(region);
       const ids = rig.parts.filter(part=>{
+        if (!editingIds.has(part.id)) return false;
         const bounds = worldPartBounds(part,authoredPoses);
         if (selectionMode==="marquee") return bounds.min.x>=min.x && bounds.max.x<=max.x &&
           bounds.min.y>=min.y && bounds.max.y<=max.y;
@@ -603,10 +622,11 @@ export function Viewport({rig, phase, ghosts, brush, remoteBones, selected, sele
     const step = nudges[event.key];
     if (!step || tool !== "select" || brush || gesture || !(event.metaKey || event.ctrlKey) || event.altKey ||
         selected?.kind !== "part") return;
-    if (!selectedParts.length) return;
+    const ids = selectedParts.filter(id=>editingIds.has(id));
+    if (!ids.length) return;
     event.preventDefault();
     const amount = event.shiftKey ? 10 : 1;
-    edit("Nudge path",{type:"parts.translate",ids:selectedParts,delta:{x:step.x*amount,y:step.y*amount}});
+    edit("Nudge path",{type:"parts.translate",ids,delta:{x:step.x*amount,y:step.y*amount}});
   }
 
   return <canvas ref={canvas} className="studio-canvas" role="img" aria-label="Rig canvas" tabIndex={0} onKeyDown={nudge}

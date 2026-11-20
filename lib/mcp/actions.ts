@@ -12,6 +12,7 @@ import { artboardFor, boneSchema, constraintSchema, partSchema, pointSchema, rea
 import { pencilKnots, primitiveKnots, primitiveShapes } from "../rig/path-geometry";
 import { bindMesh } from "../rig/skinning";
 import { viewportFrameFor } from "../rig/render";
+import { layerTreeFor } from "../rig/layer-tree";
 
 const frame = z.int().min(0).max(35_999);
 const clipId = z.uuid();
@@ -118,6 +119,8 @@ export class RigAgent {
       rigId:id,name,revision,bones:state.bones,ikConstraints:state.constraints,
       slots:state.parts.map(part=>({id:part.id,name:part.name,parentId:part.parentId,vertices:part.mesh?.vertices.length ?? 0})),
       parts:state.parts,
+      layers:layerTreeFor(state),
+      swatches:state.swatches ?? [],
     };
   }
 

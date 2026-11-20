@@ -1,6 +1,10 @@
 import type { Study } from "./studies";
 
-type G = Pick<CanvasRenderingContext2D, "arc" | "beginPath" | "closePath" | "fill" | "lineTo" | "lineWidth" | "moveTo" | "restore" | "rotate" | "save" | "stroke" | "translate"> & { fillStyle: unknown; strokeStyle: unknown };
+type G = Pick<CanvasRenderingContext2D, "arc" | "beginPath" | "closePath" | "lineTo" | "lineWidth" | "moveTo" | "restore" | "rotate" | "save" | "stroke" | "translate"> & {
+  fillStyle: unknown;
+  strokeStyle: unknown;
+  fill(): void;
+};
 type Point = [number, number];
 
 // Each facet uses the same local space as its articulated parent.
