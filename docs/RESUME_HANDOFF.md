@@ -86,6 +86,16 @@ Next, implement 4.1 around the existing owner-scoped rig state API and store. Ne
 
 ## Resume after 4.1
 
-The `0004_rig_collaborators.sql` migration is applied to Kinetix Neon. The existing Upstash and Clerk credentials cover the room and account lookup. No new deployment keys are needed. Validate the two-account workflow with `npm run test:e2e -- --project desktop tests/e2e/collaboration.spec.ts`. The existing unit suite covers the rate limit and owner/editor rules.
+The `0004_rig_collaborators.sql` migration is applied to Kinetix Neon. The existing Upstash and Clerk credentials cover the room and account lookup. No new deployment keys are needed. Validate the two-account workflow with `npm run test:e2e -- --project=desktop --grep "another account"`. The existing unit suite covers the rate limit and owner/editor rules.
 
 For 4.2, use `lib/realtime/protocol.ts` for attributed events and `RoomBus` to publish committed agent edits. Expose only the rig bound to an MCP credential. Reuse the model, command, animation and export modules to keep studio and agent behavior aligned.
+
+## Resume after 4.2
+
+The `0005_rig_tokens.sql` migration is applied. Open an owned rig in Studio and select **MCP**. Create a named credential and copy the configuration while the dialog is open. HTTP clients use Streamable HTTP at `https://kinetix-chan.vercel.app/api/mcp` with `Authorization: Bearer <rig-credential>`.
+
+For a stdio client, run `node scripts/kinetix-mcp.mjs` from an installed checkout, or point the client at the script's absolute path. Set `KINETIX_MCP_TOKEN` in that client's environment. `KINETIX_MCP_URL` optionally selects another HTTPS endpoint or a localhost development endpoint. These are client settings. Existing Vercel deployment variables cover the hosted API.
+
+Run `npm run test:e2e -- --project=desktop --grep "MCP agent"` for the live agent workflow. Use `npm run typecheck`, `npm test`, `npm run test:e2e` and `npm run build` before further releases. Playwright uses one worker against the local host's shared Upstash limit. Teardown removes rigs owned by the temporary Clerk fixture account before deleting that account.
+
+The implementation milestones are deployed. The remaining operational handoff is the Inngest Cloud activation described above.

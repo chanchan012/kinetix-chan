@@ -16,7 +16,15 @@ Implemented the application shell, interactive guest playground, Clerk access ro
 
 ## Active subgoal and next exact step
 
-1.1, 1.2, the authenticated workspace release, M2, M3, and 4.1 are deployed. Next development subgoal is 4.2. Add rig-scoped MCP credentials, register the shared resources and tools on the Hono and stdio transports, and verify that an agent's edits arrive in the studio through the existing room. Hosted export and thumbnail execution await owner-managed Inngest credentials and endpoint sync.
+All four implementation milestones are deployed. The remaining service activation is owner-managed Inngest Cloud. After the signing and event keys are present in Vercel, redeploy, sync the existing endpoint, and verify a hosted thumbnail and export run. The local Inngest workflow produced and downloaded all five export formats.
+
+## Subgoal 4.2 release · November 20, 2026
+
+- **Brief and build** added a Hono MCP v2 endpoint, stdio bridge, and studio setup dialog. The server exposes ten tools and three resources. Owners create revocable rig credentials. Agent edits and clips appear in the studio through the live room.
+- **Test** passed strict TypeScript, 33 Vitest tests and 42 Playwright checks across four viewport profiles. Six runs of the two desktop-only integration tests were intentionally skipped. The agent test built and skinned a leg, generated a walk cycle, baked IK, verified stdio, denied cross-rig access and revoked its credential. The browser suite runs serially against the shared Upstash bucket.
+- **Merge** published feature commit `b38ed40` and main merge `3610783` to GitHub.
+- **Deploy** applied `0005_rig_tokens.sql` and passed the production build. Vercel marked the [feature preview](https://kinetix-chan-a4o3jmike-chanchans-projects-aada625f.vercel.app) and [production](https://kinetix-chan.vercel.app) ready. The live smoke check discovered the catalogue, read current hierarchy and timeline data, observed agent edits in the open studio, and verified that revocation returns 401.
+- **Document** records the transport configuration, supported operations, verification commands and remaining Inngest activation.
 
 ## Subgoal 4.1 release · November 20, 2026
 

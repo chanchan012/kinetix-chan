@@ -34,10 +34,6 @@ The checked-in migration is `drizzle/0000_foundation.sql`. Rigs have UUID primar
 
 Vercel builds feature previews and production from the GitHub repository chanchan012/kinetix-chan. Both targets use the same page guards and the Kinetix Clerk development instance. Vercel holds deployment credentials for Clerk, the existing kinora Redis database and the kinetix Neon database.
 
-## Later milestones
-
-MCP resources and tools belong to Subgoal 4.2.
-
 ## Subgoal 1.2
 
 The landing page links to `/dashboard` and `/studio/studies/[id]`. Both page implementations call `auth.protect()` before rendering. The proxy preserves the requested local path and query when sending a visitor to sign in. Direct sign-in defaults to the dashboard. Members can create a rig from a study, rename or delete it, and manage its animation clips. The dashboard has a fixed viewport shell with an internally scrollable library.
@@ -108,3 +104,11 @@ Owners can grant editor access to another verified Clerk account through the stu
 Hono serves `POST /api/rigs/:id/presence` and `GET /api/rigs/:id/events`. Connection snapshots carry current presence and the latest revision. Upstash hashes cache short-lived presence and small saved state documents, and Pub/Sub delivers changes to SSE subscribers. Server-side session identity determines the actor type and ID. Reconnecting reads the revision from Neon, and membership changes close revoked streams.
 
 The studio debounces writes to the existing revision-checked state endpoint. A clean session fetches a newer saved document after a room change. A dirty session keeps its local edits and exposes a conflict. Polling snapshots and automatic SSE reconnects recover missed notifications. Remote refresh establishes a fresh local undo history.
+
+## Subgoal 4.2
+
+`/api/mcp` uses the Hono adapter and MCP TypeScript SDK v2 with stateless Streamable HTTP. The owner-only `/api/rigs/:id/mcp-credentials` API lists, issues and revokes credentials. `rig_tokens` stores only the SHA-256 digest and expiry of the random credential. A credential is shown once at issuance, expires in 30 days, and is bound to one rig.
+
+The stdio bridge in `scripts/kinetix-mcp.mjs` forwards tool and resource requests to the same authenticated endpoint. Both transports expose `rig-hierarchy`, `timeline-summary`, and `viewport-bounds`. Tool schemas live in `lib/mcp/actions.ts`. Tools create bones, attach IK, draw and bind vectors, create clips, insert keys, set easing, generate procedural cycles, bake IK and queue Lottie exports.
+
+Agent mutations reuse owner-checked revisions and publish AI presence and rig or timeline events. The studio follows new and changed clips without a page reload. Local edits retain their draft on a revision conflict, and both rig state and keyframes autosave. IK baking inserts pose keys and a clip-local enable channel, so the saved rig keeps its original constraint.
