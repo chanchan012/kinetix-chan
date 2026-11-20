@@ -24,6 +24,9 @@ import { ClipManager } from "./clip-manager";
 import { ArtboardFields, readArtboardFields } from "../artboard-fields";
 import { Dialog } from "../dialog";
 import { FacetPanel,useFacetTool } from "./facet-tools";
+import { LayerList } from "./layer-list";
+import { AppearanceControls } from "./appearance-controls";
+import { editablePartIds,layerTreeFor } from "@/lib/rig/layer-tree";
 
 type Props = {
   actorId: string; rigId: string; name: string; initial: KinetixRigState; revision: number; clips: ClipTiming[];
@@ -58,6 +61,7 @@ export function Studio({actorId, rigId, name, initial, revision: initialRevision
   const [snapping,setSnapping] = useState(false);
   const [rulers,setRulers] = useState(false);
   const [guidesOpen,setGuidesOpen] = useState(false);
+  const [isolatedLayer,setIsolate] = useState<string|null>(null);
   const [pen, setPen] = useState<VectorKnot[]>([]);
   const [showBones, setShowBones] = useState(true);
   const [reference, setReference] = useState(true);
@@ -85,6 +89,8 @@ export function Studio({actorId, rigId, name, initial, revision: initialRevision
   const dirty = saved !== rig;
   const bone = selected?.kind === "bone" ? rig.bones.find(item => item.id === selected.id) : undefined;
   const part = selected?.kind === "part" ? rig.parts.find(item => item.id === selected.id) : undefined;
+  const isolation = isolatedLayer && layerTreeFor(rig).nodes.some(node=>node.id===isolatedLayer) ? isolatedLayer : null;
+  const editablePath = !part || editablePartIds(rig).has(part.id);
   const facetTool = useFacetTool(part,edit);
   const selectedParts = rig.parts.filter(item=>selectionIds.includes(item.id)).map(item=>item.id);
   function select(value:Selection) {
@@ -101,7 +107,7 @@ export function Studio({actorId, rigId, name, initial, revision: initialRevision
   const setEdge = (index:number) => setEdgeSelection(part && index >= 0 ? {partId:part.id,index} : null);
   const selectedNode = part && nodeSelection?.partId === part.id ? Math.min(nodeSelection.index,part.knots.length-1) : -1;
   const setNode = (index:number) => setNodeSelection(part ? {partId:part.id,index} : null);
-  const activeBrush = part && selectedParts.length === 1 && brush?.partId === part.id && part.mesh && tool === "select" &&
+  const activeBrush = part && editablePath && selectedParts.length === 1 && brush?.partId === part.id && part.mesh && tool === "select" &&
     part.mesh.bindings.some(binding => binding.id === brush.boneId) ? brush : null;
   const pose = useMemo(() => sampleRig(rig,animation.tracks,animation.frame), [rig,animation]);
   const phase = animation.frame / animation.frames;
@@ -330,7 +336,7 @@ export function Studio({actorId, rigId, name, initial, revision: initialRevision
     <div className="studio-grid" ref={layout.ref} style={layout.style}>
       <aside className="studio-hierarchy" id="studio-hierarchy" aria-label="Rig hierarchy">
         <div className="studio-panel-title"><h2>Hierarchy</h2><span>{rig.bones.length} bones</span></div>
-        <Hierarchy rig={rig} selected={selected} selectedParts={selectedParts} select={select}/>
+        <Hierarchy rig={rig} selected={selected} selectedParts={selectedParts} select={select} isolation={isolation} setIsolate={setIsolate} edit={edit}/>
       </aside>
       <PanelHandle panel="hierarchy" size={layout.panels.hierarchy} label="Resize hierarchy" controls="studio-hierarchy"/>
       <PanelHandle panel="split" size={layout.panels.split} label="Resize side panels" controls="studio-hierarchy studio-inspector"/>
@@ -347,10 +353,10 @@ export function Studio({actorId, rigId, name, initial, revision: initialRevision
           </select></label>
         </div>
         <div className="studio-artboard"><Viewport rig={pose} brush={activeBrush} ghosts={ghosts} remoteBones={remoteBones}
-          {...{ phase, selected, selectedParts, selectedEdge, selectedNode, setNode, select, selectRegion, tool, primitive, smoothing,
+          {...{ phase, selected, selectedParts, selectedEdge, selectedNode, setNode, select, selectRegion, tool, primitive, smoothing,isolation,
             selectionMode, snapping, rulers, reference, zoom, showBones, pen, addBone, edit }}
           closePolygon={() => finishPath(true)}
-          facets={tool==="facet" && part?.facets ? facetTool.viewport : null}
+          facets={tool==="facet" && part?.facets && editablePath ? facetTool.viewport : null}
           addDrawnPath={(closed,knots) => finishPath(closed,knots)}
           addKnot={knot => setPen(knots => knots.length < 256 ? [...knots, knot] : knots)}/></div>
         <div className="studio-stage-footer">
@@ -385,17 +391,19 @@ export function Studio({actorId, rigId, name, initial, revision: initialRevision
       <PanelHandle panel="inspector" size={layout.panels.inspector} label="Resize inspector" controls="studio-inspector" direction={-1}/>
       <aside className="studio-inspector" id="studio-inspector" aria-label="Inspector">
         <div className="studio-panel-title"><h2>Inspector</h2></div>
-        {part && selectedParts.length===1 && (part.facets ?
+        {part && editablePath && selectedParts.length===1 && (part.facets ?
           <FacetPanel key={part.id} part={{...part,facets:part.facets}} tool={facetTool} active={tool==="facet"}
             activate={()=>chooseTool("facet")} edit={edit}/> :
-          part.closed && !part.knots.some(knot=>knot.incoming || knot.outgoing) &&
+          part.closed && !part.contours?.length && !part.knots.some(knot=>knot.incoming || knot.outgoing) &&
             <div className="studio-properties"><button onClick={()=>{
               if (edit("Make faceted artwork",{type:"facet.initialize",id:part.id,faceId:crypto.randomUUID()})) chooseTool("facet");
             }}>Make faceted artwork</button></div>
         )}
-        {selectedParts.length > 1 ? <SelectionLayout ids={selectedParts} edit={edit} clear={() => select(null)}/> :
-          <Inspector {...{ bone, part, rig, edit, selectedEdge, setEdge, selectedNode, setNode }} clear={() => select(null)}/>}
-        {part?.closed && selectedParts.length===1 && <WeightTools key={part.id} part={part} rig={rig} brush={activeBrush}
+        {!editablePath ? <p className="studio-empty">Show and unlock the layer to edit it on the canvas.</p> :
+          selectedParts.length > 1 ? <SelectionLayout rig={rig} ids={selectedParts} edit={edit} clear={() => select(null)}
+            selectPart={id=>select({kind:"part",id})}/> :
+            <Inspector {...{ bone, part, rig, edit, selectedEdge, setEdge, selectedNode, setNode }} clear={() => select(null)}/>}
+        {part?.closed && !part.contours?.length && editablePath && selectedParts.length===1 && <WeightTools key={part.id} part={part} rig={rig} brush={activeBrush}
           setBrush={value=>{ if (value) setTool("select"); setBrush(value); }} edit={edit} report={setError}/>}
         {last && <p className="studio-history" role="status">{last.actor.kind === "ai" ? "AI" : "Human"} · {last.label}</p>}
         {!last && room.lastEdit?.kind === "ai" && <p className="studio-history" role="status">AI · {room.lastEdit.label ?? "Edit rig"}</p>}
@@ -458,11 +466,30 @@ const alignments = [
   ["x","distribute","Distribute horizontally"],["y","distribute","Distribute vertically"],
 ] as const;
 
-function SelectionLayout({ids,edit,clear}: {ids:string[];edit:Edit;clear:()=>void}) {
+function SelectionLayout({rig,ids,edit,clear,selectPart}: {
+  rig:KinetixRigState;ids:string[];edit:Edit;clear:()=>void;selectPart:(id:string)=>void;
+}) {
+  const [chosen,setChosen] = useState(ids[0]);
+  const base = ids.includes(chosen) ? chosen : ids[0];
+  const selected = ids.map(id=>rig.parts.find(part=>part.id===id)!);
+  const closed = selected.every(part=>part.closed);
   return <div className="studio-properties">
     <p>{ids.length} paths selected</p>
     {alignments.map(([axis,mode,label])=><button key={label} disabled={mode==="distribute" && ids.length<3}
       onClick={() => edit(label,{type:"parts.layout",ids,axis,mode})}>{label}</button>)}
+    {closed && <details className="studio-appearance">
+      <summary>Combine paths</summary>
+      <div className="studio-paint-fields">
+        <label>Base path<select value={base} onChange={event=>setChosen(event.target.value)}>
+          {selected.map(part=><option key={part.id} value={part.id}>{part.name}</option>)}
+        </select></label>
+        {([
+          ["compound","Make compound path"],["union","Union"],["subtract","Subtract"],["intersect","Intersect"],["exclude","Exclude"],
+        ] as const).map(([mode,label])=><button key={mode} onClick={()=>{
+          if (edit(label,{type:"parts.boolean",ids:[base,...ids.filter(id=>id!==base)],mode})) selectPart(base);
+        }}>{label}</button>)}
+      </div>
+    </details>}
     <button onClick={clear}>Clear selection</button>
   </div>;
 }
@@ -528,8 +555,9 @@ function WeightTools({part, rig, brush, setBrush, edit, report}: {
   </section>;
 }
 
-function Hierarchy({rig, selected, selectedParts, select}: {
+function Hierarchy({rig, selected, selectedParts, select, isolation, setIsolate, edit}: {
   rig: KinetixRigState; selected: Selection; selectedParts:string[]; select: (value: Selection) => void;
+  isolation:string|null;setIsolate:(id:string|null)=>void;edit:Edit;
 }) {
   const depths = new Map<string, number>();
   return <div className="studio-tree">
@@ -540,9 +568,8 @@ function Hierarchy({rig, selected, selectedParts, select}: {
         aria-pressed={selected?.kind === "bone" && selected.id === bone.id} onClick={() => select({ kind: "bone", id: bone.id })}>
         <BoneIcon size={14}/><span>{bone.name}</span></button></li>;
     })}</ul>
-    {rig.parts.length > 0 && <><h3>Paths</h3><ul>{rig.parts.map(part => <li key={part.id}>
-      <button aria-pressed={selectedParts.includes(part.id)} onClick={() => select({ kind: "part", id: part.id })}>
-        <span className="studio-swatch" style={{ backgroundColor: part.fill }}/><span>{part.name}</span></button></li>)}</ul></>}
+    <LayerList {...{rig,selectedParts,setIsolate,edit}} isolate={isolation} boneSelected={selected?.kind==="bone"}
+      selectPart={id=>select(id ? {kind:"part",id} : null)}/>
     {selected && <button className="studio-deselect" onClick={() => select(null)}>Clear selection</button>}
   </div>;
 }
@@ -601,7 +628,10 @@ function PathProperties({part, rig, edit, clear, selectedEdge:edge, setEdge, sel
   selectedEdge:number; setEdge:(index:number)=>void;
   selectedNode:number; setNode:(index:number)=>void;
 }) {
-  const order = rig.parts.indexOf(part);
+  const {nodes} = layerTreeFor(rig);
+  const layer = nodes.find(node=>node.kind==="part" && node.partId===part.id);
+  const siblings = nodes.filter(node=>node.parentId===layer?.parentId);
+  const order = siblings.findIndex(node=>node.id===layer?.id);
   const edges = part.closed ? part.knots.length : part.knots.length-1;
   const canSplit = edge >= 0 && edge < edges && part.knots.length < 256;
   const [joinSource,setJoinSource] = useState("");
@@ -615,8 +645,7 @@ function PathProperties({part, rig, edit, clear, selectedEdge:edge, setEdge, sel
       if (!event.currentTarget.value.trim() || !edit("Rename path", { type: "part.update", id: part.id,
         changes: { name: event.currentTarget.value } })) event.currentTarget.value = part.name;
     }}/></label>
-    {!part.facets && <label>Color<input type="color" value={part.fill} onChange={event =>
-      edit("Set path color", { type: "part.update", id: part.id, changes: { fill: event.target.value } })}/></label>}
+    <AppearanceControls part={part} swatches={rig.swatches ?? []} edit={edit}/>
     <div className="studio-field-pair">
       <Numeric label="Position X (px)" value={part.offset.x} onCommit={x => transform("Move path",{offset:{...part.offset,x}})}/>
       <Numeric label="Position Y (px)" value={part.offset.y} onCommit={y => transform("Move path",{offset:{...part.offset,y}})}/>
@@ -634,10 +663,10 @@ function PathProperties({part, rig, edit, clear, selectedEdge:edge, setEdge, sel
       <button onClick={() => transform("Flip path horizontally",{scale:{...scale,x:-scale.x}})}>Flip horizontal</button>
       <button onClick={() => transform("Flip path vertically",{scale:{...scale,y:-scale.y}})}>Flip vertical</button>
     </div>
-    {!part.facets && <label className="studio-check"><input type="checkbox" checked={part.closed} onChange={event =>
+    {!part.facets && !part.contours?.length && <label className="studio-check"><input type="checkbox" checked={part.closed} onChange={event =>
       edit("Set path closure", { type: "part.update", id: part.id, changes: { closed: event.target.checked } })}/>Closed path</label>}
     <div className="studio-field-pair">
-      <button disabled={order >= rig.parts.length - 1} onClick={() =>
+      <button disabled={order >= siblings.length - 1} onClick={() =>
         edit("Bring forward", { type: "part.reorder", id: part.id, direction: "forward" })}>Bring forward</button>
       <button disabled={order <= 0} onClick={() =>
         edit("Send backward", { type: "part.reorder", id: part.id, direction: "backward" })}>Send backward</button>
@@ -673,7 +702,7 @@ function PathProperties({part, rig, edit, clear, selectedEdge:edge, setEdge, sel
         setNode(-1);
       }
     }}>Reverse path</button>
-    <button disabled={selectedNode < 0 || (!part.closed && (selectedNode === 0 || selectedNode === part.knots.length-1))}
+    <button disabled={Boolean(part.contours?.length) || selectedNode < 0 || (!part.closed && (selectedNode === 0 || selectedNode === part.knots.length-1))}
       onClick={() => {
         if (part.mesh && !window.confirm("Cut the path and remove its mesh binding?")) return;
         if (edit("Cut path",{type:"part.cut",id:part.id,index:selectedNode,newId:crypto.randomUUID()})) {

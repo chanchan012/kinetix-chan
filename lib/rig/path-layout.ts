@@ -1,4 +1,4 @@
-import type { Point, VectorPart } from "./model";
+import type { Point, VectorKnot, VectorPart } from "./model";
 import type { BonePose } from "./kinematics";
 import { partParentSpace, partWorldSpace } from "./part-transform";
 import { deformMesh } from "./skinning";
@@ -42,11 +42,17 @@ export function worldPartBounds(part:VectorPart,poses:Map<string,BonePose>): Bou
   if (part.facets) return pointBounds(facetArtworkFaces(part,poses).flatMap(face=>face.polygons.flat()));
   if (part.mesh) return pointBounds(deformMesh(part,poses));
   const world = (point:Point) => partWorldSpace(point,part,poses);
-  const points = part.knots.map(knot=>world(knot.point));
-  for (let index=0;index<(part.closed ? part.knots.length : part.knots.length-1);index++) {
-    const next = (index+1)%part.knots.length;
-    const first = part.knots[index].outgoing;
-    const last = part.knots[next].incoming;
+  const points = contourBoundsPoints(part.knots,part.closed,world);
+  for (const contour of part.contours ?? []) points.push(...contourBoundsPoints(contour,true,world));
+  return pointBounds(points);
+}
+
+function contourBoundsPoints(knots:VectorKnot[],closed:boolean,world:(point:Point)=>Point) {
+  const points = knots.map(knot=>world(knot.point));
+  for (let index=0;index<(closed ? knots.length : knots.length-1);index++) {
+    const next = (index+1)%knots.length;
+    const first = knots[index].outgoing;
+    const last = knots[next].incoming;
     if (!first && !last) continue;
     const start = points[index];
     const end = points[next];
@@ -57,7 +63,7 @@ export function worldPartBounds(part:VectorPart,poses:Map<string,BonePose>): Bou
       x:cubicValue(start.x,a.x,b.x,end.x,t),y:cubicValue(start.y,a.y,b.y,end.y,t),
     });
   }
-  return pointBounds(points);
+  return points;
 }
 
 export function translatedPartOffset(part:VectorPart,delta:Point,poses:Map<string,BonePose>): Point {

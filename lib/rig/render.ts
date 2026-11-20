@@ -1,18 +1,27 @@
 import { drawStudy } from "../artwork";
 import type { BonePose } from "./kinematics";
-import { createRigState, type KinetixRigState, type Point, type VectorPart } from "./model";
+import { createRigState, type KinetixRigState, type Point, type VectorKnot, type VectorPart } from "./model";
 import { deformMesh } from "./skinning";
 import { partMatrix } from "./part-transform";
 import { facetArtworkFaces } from "./facet-skinning";
+import { orderedLayers,orderedVisibleParts } from "./layer-tree";
+import { defaultStroke,gradientAxis,resolvePaint,type Paint,type Swatch } from "./appearance";
+import { intersectRegions,pathRegions,regionPolygons } from "./path-boolean";
 
 export const viewportFrame = {x:-10,y:3,width:510,height:280};
 export const viewportFrameFor = (rig: KinetixRigState) => rig.version === 1 ? viewportFrame :
   { x: 0, y: 0, width: rig.artboard.width, height: rig.artboard.height };
 
 export type RigDrawingContext = Pick<CanvasRenderingContext2D,
-  "arc" | "beginPath" | "bezierCurveTo" | "closePath" | "fill" | "lineTo" |
-  "lineWidth" | "moveTo" | "restore" | "rotate" | "save" | "stroke" | "transform" | "translate"
-> & { fillStyle: unknown; strokeStyle: unknown };
+  "arc" | "beginPath" | "bezierCurveTo" | "closePath" | "lineTo" | "globalAlpha" |
+  "lineWidth" | "lineCap" | "lineJoin" | "miterLimit" | "lineDashOffset" | "setLineDash" |
+  "moveTo" | "restore" | "rotate" | "save" | "stroke" | "transform" | "translate"
+> & {
+  fillStyle: unknown; strokeStyle: unknown;
+  createLinearGradient(x0:number,y0:number,x1:number,y1:number):Pick<CanvasGradient,"addColorStop">;
+  fill(rule?:CanvasFillRule):void;
+  clip(rule?:CanvasFillRule):void;
+};
 
 export function drawArtboardBackground(context: RigDrawingContext, rig: KinetixRigState) {
   if (rig.version !== 2 || !rig.artboard.background) return;
@@ -28,13 +37,18 @@ export function drawArtboardBackground(context: RigDrawingContext, rig: KinetixR
 }
 
 export function tracePart(context: RigDrawingContext, part: VectorPart) {
-  const first = part.knots[0];
   context.beginPath();
+  traceContour(context,part.knots,part.closed);
+  for (const contour of part.contours ?? []) traceContour(context,contour,true);
+}
+
+function traceContour(context:RigDrawingContext,knots:VectorKnot[],closed:boolean) {
+  const first = knots[0];
   context.moveTo(first.point.x, first.point.y);
-  const segments = part.closed ? part.knots.length : part.knots.length - 1;
+  const segments = closed ? knots.length : knots.length - 1;
   for (let index = 0; index < segments; index++) {
-    const start = part.knots[index];
-    const end = part.knots[(index + 1) % part.knots.length];
+    const start = knots[index];
+    const end = knots[(index + 1) % knots.length];
     if (start.outgoing || end.incoming) {
       const a = start.outgoing ?? start.point;
       const b = end.incoming ?? end.point;
@@ -43,7 +57,7 @@ export function tracePart(context: RigDrawingContext, part: VectorPart) {
       context.lineTo(end.point.x, end.point.y);
     }
   }
-  if (part.closed) context.closePath();
+  if (closed) context.closePath();
 }
 
 export function inPartSpace(
@@ -79,11 +93,40 @@ export function tracePolygons(context:RigDrawingContext,polygons:readonly (reado
   }
 }
 
+function styleFor(context:RigDrawingContext,part:VectorPart,paint:Paint,poses:Map<string,BonePose>,swatches:readonly Swatch[]) {
+  const value = resolvePaint(paint,swatches);
+  if (value.kind==="solid") return value.color;
+  const [from,to] = gradientAxis(part,value,poses);
+  const gradient = context.createLinearGradient(from.x,from.y,to.x,to.y);
+  for (const stop of value.stops) gradient.addColorStop(stop.offset,stop.color);
+  return gradient;
+}
+
+export function partMasks(rig:KinetixRigState) {
+  const masks = new Map<string,string[]>();
+  if (rig.layers) for (const {node,masks:stack} of orderedLayers(rig.layers)) {
+    if (node.kind==="part" && stack.length) masks.set(node.partId,stack);
+  }
+  return masks;
+}
+
+export function maskRegions(parts:Map<string,VectorPart>,ids:readonly string[],poses:Map<string,BonePose>,
+  cached:Map<string,ReturnType<typeof pathRegions>>) {
+  const shapes = ids.map(id=>{
+    const known = cached.get(id);
+    if (known) return known;
+    const geometry = pathRegions(parts.get(id)!,poses);
+    cached.set(id,geometry);
+    return geometry;
+  });
+  return shapes.reduce(intersectRegions);
+}
+
 export function drawRigArtwork(
   context: RigDrawingContext, rig: KinetixRigState, poses: Map<string, BonePose>, phase: number,
-  reference = true,
+  reference = true, isolate?:string|null,
 ) {
-  if (reference && rig.study) {
+  if (reference && !isolate && rig.study) {
     const root = poses.get("root");
     const rest = createRigState(rig.study).bones[0].offset;
     context.save();
@@ -95,33 +138,54 @@ export function drawRigArtwork(
     drawStudy(context, rig.study, phase, false);
     context.restore();
   }
-  for (const part of rig.parts) {
-    if (part.facets) {
+  const masks = partMasks(rig);
+  const byId = new Map(rig.parts.map(part=>[part.id,part]));
+  const cached = new Map<string,ReturnType<typeof pathRegions>>();
+  const swatches = rig.swatches ?? [];
+  for (const part of orderedVisibleParts(rig,isolate)) {
+    context.save();
+    const stack = masks.get(part.id);
+    if (stack) {
+      tracePolygons(context,regionPolygons(maskRegions(byId,stack,poses,cached)));
+      context.clip("evenodd");
+    }
+    const appearance = part.appearance;
+    const opacity = appearance?.opacity ?? 1;
+    context.globalAlpha *= opacity;
+    const fill = appearance?.fill === undefined ? {kind:"solid" as const,color:part.fill} : appearance.fill;
+    const stroke = appearance?.stroke === undefined && !part.closed ? defaultStroke(part.fill) : appearance?.stroke;
+    if (part.facets && appearance?.fill===undefined) {
       const faces = facetArtworkFaces(part,poses);
-      tracePolygons(context,faces.flatMap(face=>face.polygons));
-      context.fillStyle = faces[0].fill;
-      context.fill();
+      if (opacity===1) {
+        tracePolygons(context,faces.flatMap(face=>face.polygons));
+        context.fillStyle = faces[0].fill;
+        context.fill();
+      }
       for (const face of faces) {
         tracePolygons(context,face.polygons);
         context.fillStyle = face.fill;
         context.fill();
       }
-      continue;
-    }
-    if (part.mesh) {
-      traceMesh(context, deformMesh(part, poses), part.mesh.triangles);
-      context.fillStyle = part.fill;
-      context.fill();
-      continue;
-    }
-    inPartSpace(context, part, poses, () => tracePart(context, part));
-    if (part.closed) {
-      context.fillStyle = part.fill;
-      context.fill();
     } else {
-      context.strokeStyle = part.fill;
-      context.lineWidth = 2;
+      if (part.facets) tracePolygons(context,facetArtworkFaces(part,poses).flatMap(face=>face.polygons));
+      else if (part.mesh) traceMesh(context,deformMesh(part,poses),part.mesh.triangles);
+      else inPartSpace(context,part,poses,()=>tracePart(context,part));
+      if (part.closed && fill) {
+        context.fillStyle = styleFor(context,part,fill,poses,swatches);
+        context.fill(part.contours ? "evenodd" : "nonzero");
+      }
+    }
+    if (stroke) {
+      if (part.facets || part.mesh) tracePolygons(context,regionPolygons(pathRegions(part,poses)));
+      context.strokeStyle = styleFor(context,part,stroke.paint,poses,swatches);
+      context.lineWidth = stroke.width;
+      context.lineCap = stroke.cap;
+      context.lineJoin = stroke.join;
+      context.miterLimit = stroke.miter;
+      context.setLineDash(stroke.dash);
+      context.lineDashOffset = stroke.offset ?? 0;
       context.stroke();
     }
+    context.restore();
   }
 }

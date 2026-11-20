@@ -13,6 +13,153 @@ test.beforeEach(async ({page}) => {
   await clerk.signIn({page, emailAddress:process.env.KINETIX_TEST_EMAIL!});
 });
 
+test("an illustrator groups, hides, locks, isolates, and duplicates artwork layers",async ({page},info)=>{
+  const create = await page.request.post("/api/rigs",{data:{
+    name:"Layered badge "+info.project.name,artboard:{name:"Badge",width:200,height:180,background:null},
+  }});
+  expect(create.status()).toBe(201);
+  const {id,revision,state} = await create.json();
+  const path = "/api/rigs/"+id;
+  try {
+    const rectangle = (id:string,name:string,fill:string,low:number,high:number) => ({
+      id,name,parentId:null,offset:{x:0,y:0},fill,closed:true,
+      knots:[{point:{x:low,y:low}},{point:{x:high,y:low}},{point:{x:high,y:high}},{point:{x:low,y:high}}],
+    });
+    expect((await page.request.patch(path+"/state",{data:{revision,state:{...state,parts:[
+      rectangle("badge","Badge","#ff0000",40,130),rectangle("shine","Shine","#0022ff",75,110),
+    ]}}})).status()).toBe(200);
+    await page.goto("/studio/"+id);
+    const layers = page.getByRole("region",{name:"Artwork layers"});
+    const nameButton = (name:string) => layers.getByRole("button",{name,exact:true});
+    const row = (name:string) => nameButton(name).locator("xpath=..");
+    await nameButton("Badge").click();
+    await nameButton("Group selected").click();
+    await layers.getByLabel("Group name").fill("Logo");
+    await layers.getByLabel("Group name").press("Enter");
+    await nameButton("Shine").click();
+    await layers.getByLabel("Parent group").selectOption({label:"Logo"});
+    await row("Logo").getByRole("button",{name:"Hide layer"}).click({timeout:8000});
+    const saved = async () => (await (await page.request.get(path+"/state")).json()).state as KinetixRigState;
+    await expect.poll(async()=>(await saved()).layers?.nodes.find(node=>node.kind==="group")?.hidden).toBe(true);
+    const hiddenAlpha = await page.evaluate(async route=>{
+      const image = await createImageBitmap(await (await fetch(route)).blob());
+      const ctx = new OffscreenCanvas(image.width,image.height).getContext("2d")!;
+      ctx.drawImage(image,0,0);
+      return ctx.getImageData(90,90,1,1).data[3];
+    },path+"/artboard.png");
+    expect(hiddenAlpha).toBe(0);
+    await row("Logo").getByRole("button",{name:"Show layer"}).click();
+    await row("Logo").getByRole("button",{name:"Lock layer"}).click();
+    await nameButton("Shine").click();
+    await expect(page.getByText("Show and unlock the layer to edit it on the canvas.")).toBeVisible();
+    await row("Logo").getByRole("button",{name:"Unlock layer"}).click();
+    await nameButton("Isolate layer").click();
+    await expect(nameButton("Exit isolation")).toBeVisible();
+    await nameButton("Exit isolation").click();
+    await nameButton("Logo").click();
+    await nameButton("Duplicate layer").click();
+    await expect(nameButton("Logo copy")).toBeVisible();
+    await layers.getByRole("searchbox",{name:"Search layers"}).fill("Shine");
+    await expect(nameButton("Shine")).toBeVisible();
+    await expect(nameButton("Shine copy")).toBeVisible();
+    await expect(nameButton("Badge")).toHaveCount(0);
+  } finally {
+    expect((await page.request.delete(path)).status()).toBe(204);
+  }
+});
+
+test("an illustrator delivers a badge with a cutout, clipped gradient, and linked fills",async ({page},info)=>{
+  const create = await page.request.post("/api/rigs",{data:{
+    name:"Badge appearance "+info.project.name,artboard:{name:"Badge",width:300,height:240,background:null},
+  }});
+  expect(create.status()).toBe(201);
+  const {id,revision,state} = await create.json();
+  const path = "/api/rigs/"+id;
+  try {
+    const box = (id:string,name:string,left:number,top:number,right:number,bottom:number) => ({
+      id,name,parentId:null,offset:{x:0,y:0},fill:"#008844",closed:true,
+      knots:[{point:{x:left,y:top}},{point:{x:right,y:top}},{point:{x:right,y:bottom}},{point:{x:left,y:bottom}}],
+    });
+    const parts = [
+      box("badge","Badge",95,76,205,152),box("hole","Cutout",126,103,173,138),
+      box("shine","Highlight",60,69,246,94),box("tag","Tag",130,174,170,194),
+    ];
+    expect((await page.request.patch(path+"/state",{data:{revision,state:{...state,parts}}})).status()).toBe(200);
+    await page.goto("/studio/"+id);
+    const layers = page.getByRole("region",{name:"Artwork layers"});
+    const layer = (name:string) => layers.getByRole("button",{name,exact:true});
+    const highlight = layer("Highlight").locator("xpath=..");
+    await highlight.getByRole("button",{name:"Hide layer"}).click();
+    await page.getByRole("button",{name:"Region select",exact:true}).click();
+    const canvas = (await page.getByRole("img",{name:"Rig canvas"}).boundingBox())!;
+    const scale = Math.min(canvas.width/300,canvas.height/240);
+    const x = (world:number)=>canvas.x+canvas.width/2+(world-150)*scale;
+    const y = (world:number)=>canvas.y+canvas.height/2+(world-120)*scale;
+    await page.mouse.move(x(88),y(70));
+    await page.mouse.down();
+    await page.mouse.move(x(212),y(159),{steps:6});
+    await page.mouse.up();
+    const inspector = page.getByRole("complementary",{name:"Inspector"});
+    await expect(inspector.getByText("2 paths selected")).toBeVisible();
+    await inspector.getByText("Combine paths",{exact:true}).click();
+    await inspector.getByLabel("Base path").selectOption("badge");
+    await inspector.getByRole("button",{name:"Subtract",exact:true}).click();
+    await expect(layer("Cutout")).toHaveCount(0);
+
+    const appearance = inspector.locator("details").filter({has:page.getByText("Appearance",{exact:true})});
+    const openAppearance = async () => {
+      if (await appearance.getAttribute("open")===null) await appearance.locator("summary").click();
+    };
+    await openAppearance();
+    await appearance.getByRole("button",{name:"Manage swatches"}).click();
+    const swatches = page.getByRole("dialog",{name:"Swatches"});
+    await swatches.getByRole("button",{name:"Save current paint as swatch"}).click();
+    await swatches.getByLabel("Swatch name",{exact:true}).fill("Brand");
+    await swatches.getByLabel("Swatch name",{exact:true}).press("Enter");
+    await swatches.getByRole("button",{name:"Close dialog"}).click();
+    await appearance.getByLabel("Fill type").selectOption("swatch");
+    await layer("Tag").click();
+    await openAppearance();
+    await appearance.getByLabel("Fill type").selectOption("swatch");
+    await highlight.getByRole("button",{name:"Show layer"}).click();
+    await layer("Highlight").click();
+    await layers.getByLabel("Clipping mask").selectOption("badge");
+    await openAppearance();
+    await appearance.getByLabel("Fill type").selectOption("linear");
+    await appearance.getByLabel("Fill stop 1",{exact:true}).fill("#000000");
+
+    await layer("Badge").click();
+    await openAppearance();
+    await appearance.getByRole("button",{name:"Manage swatches"}).click();
+    await swatches.getByLabel("Swatch color",{exact:true}).fill("#6600cc");
+    await swatches.getByRole("button",{name:"Close dialog"}).click();
+
+    const saved = async () => (await (await page.request.get(path+"/state")).json()).state as KinetixRigState;
+    await expect.poll(async()=>(await saved()).swatches?.[0]?.paint).toEqual({kind:"solid",color:"#6600cc"});
+    const pixels = () => page.evaluate(async route=>{
+      const response = await fetch(route,{cache:"no-store"});
+      if (!response.ok) throw new Error("Artwork export returned "+response.status);
+      const image = await createImageBitmap(await response.blob());
+      const context = new OffscreenCanvas(image.width,image.height).getContext("2d")!;
+      context.drawImage(image,0,0);
+      return [[106,124],[150,180],[150,118],[85,84],[108,84],[189,84]].map(([x,y])=>
+        Array.from(context.getImageData(x,y,1,1).data));
+    },path+"/artboard.png");
+    const changed = await pixels();
+    expect(changed.slice(0,4)).toEqual([[102,0,204,255],[102,0,204,255],[0,0,0,0],[0,0,0,0]]);
+    expect(changed[4][3]).toBe(255);
+    expect(changed[4][0]).toBeLessThan(changed[5][0]);
+    await page.getByRole("button",{name:"Undo",exact:true}).click();
+    await expect.poll(async()=>(await saved()).swatches?.[0]?.paint).toEqual({kind:"solid",color:"#008844"});
+    expect((await pixels()).slice(0,2)).toEqual([[0,136,68,255],[0,136,68,255]]);
+    await page.reload();
+    await expect(layer("Badge")).toBeVisible();
+    expect((await pixels())[2][3]).toBe(0);
+  } finally {
+    expect((await page.request.delete(path)).status()).toBe(204);
+  }
+});
+
 test("an illustrator edits a three-color junction and subdivides its deformation mesh",async ({page},info)=>{
   const response = await page.request.post("/api/rigs",{data:{
     name:"Faceted artwork "+info.project.name,artboard:{name:"Facets",width:300,height:240,background:null},
