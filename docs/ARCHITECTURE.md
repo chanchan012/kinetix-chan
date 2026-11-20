@@ -112,3 +112,9 @@ The studio debounces writes to the existing revision-checked state endpoint. A c
 The stdio bridge in `scripts/kinetix-mcp.mjs` forwards tool and resource requests to the same authenticated endpoint. Both transports expose `rig-hierarchy`, `timeline-summary`, and `viewport-bounds`. Tool schemas live in `lib/mcp/actions.ts`. Tools create bones, attach IK, draw and bind vectors, create clips, insert keys, set easing, generate procedural cycles, bake IK and queue Lottie exports.
 
 Agent mutations reuse owner-checked revisions and publish AI presence and rig or timeline events. The studio follows new and changed clips without a page reload. Local edits retain their draft on a revision conflict, and both rig state and keyframes autosave. IK baking inserts pose keys and a clip-local enable channel, so the saved rig keeps its original constraint.
+
+## Dashboard and studio workspace
+
+Dashboard cards link to the authenticated studio. Owners rename or delete rigs from the card menu, and Motion studies opens a separate dialog of the existing study links. The studio timeline opens clip management against the existing `/api/rigs/:id/clips` routes. Its clip picker refreshes against the animation endpoint after changes and SSE notifications. Newly created clips become active, and deleting the active clip returns the timeline to study playback. Save pending keyframe edits to enable clip management.
+
+The canvas carries floating drawing and contextual controls. The hierarchy, inspector and timeline use pointer- and keyboard-operable resize separators. At widths of 720 pixels and below the side panels sit beneath the canvas and share a separator. Panel sizes are local to the open studio. Header avatars show current session presence and remote selections from the existing room protocol. This release adds no schema, API, or MCP contract changes.

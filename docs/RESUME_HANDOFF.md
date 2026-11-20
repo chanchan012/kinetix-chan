@@ -41,7 +41,7 @@ npm run build
 
 Playwright starts Next on localhost:3181. Use the same hostname throughout Clerk sign-in. On Windows with Chrome installed, set `$env:PLAYWRIGHT_CHANNEL='chrome'`. The suite requires network access to Clerk, Upstash and Neon. Setup checks for development-instance keys, creates a unique Clerk test user and deletes it in teardown. Session credentials stay out of browser trace artifacts.
 
-The 1440×900, 768×1024, 375×667 and 844×390 profiles exercise landing, sign-in, sign-up, redirects with return destinations, private API rejection, authenticated dashboard and motion playback. The rig/clip editing UI test uses a real session and fixture HTTP responses. Vitest exercises actual SQL against embedded PostgreSQL, including ownership and thumbnail persistence.
+The 1440×900, 768×1024, 375×667 and 844×390 profiles exercise landing, sign-in, sign-up, redirects with return destinations, private API rejection, authenticated dashboard and motion playback. The rig and clip editing UI test uses a real Clerk session and makes requests to the local app and configured Neon database. Vitest exercises actual SQL against embedded PostgreSQL, including ownership and thumbnail persistence.
 
 ## Known caveats
 
@@ -54,7 +54,7 @@ Production is https://kinetix-chan.vercel.app. Both Vercel release targets use t
 
 Both SQL migrations are applied. Vercel Production uses the pooled Neon URL. The release branches `feature/1.2-dashboard` and `feature/authenticated-workspace` have branch-scoped sensitive DATABASE_URL entries for the existing `kinetix_dashboard_preview` role in the kinetix database. Configure the appropriate database scope before testing a new feature deployment.
 
-The owner is managing the Inngest keys. After setting them, redeploy Vercel Production and sync https://kinetix-chan.vercel.app/api/inngest in Inngest Cloud. Confirm that the `kinetix-motion-studio` app lists `render-animation-thumbnails`; create a clip in the signed-in dashboard and verify the scheduled run stores its PNG. Before signing-key configuration the cloud endpoint returned HTTP 500. Local SDK discovery and the actual render/persistence path have passed; hosted execution is pending.
+The owner is managing the Inngest keys. After setting them, redeploy Vercel Production and sync https://kinetix-chan.vercel.app/api/inngest in Inngest Cloud. Confirm that the `kinetix-motion-studio` app lists `render-animation-thumbnails`, create a clip with **Manage clips** in the studio timeline, and verify the scheduled run stores its PNG. Before signing-key configuration the cloud endpoint returned HTTP 500. Local SDK discovery and the actual render and persistence path have passed. Hosted execution is pending.
 
 For local background jobs, use `INNGEST_DEV=1` in .env.local, start Next, then run `npx inngest-cli@latest dev -u http://localhost:3000/api/inngest`. Unit tests use embedded PostgreSQL and real migrations. Member UI tests use mocked HTTP responses; the PostgreSQL/API suite tests actual writes and access boundaries separately.
 
@@ -66,7 +66,7 @@ Subgoal 2.1 adds no environment variables or SQL migrations. Its feature branch 
 
 ## Resume after 2.2
 
-Open a saved rig from the dashboard detail dialog with **Open studio**. The route lives at `app/studio/[id]/page.tsx`. Integrate animation sampling in `components/studio/timeline.tsx` and `components/studio/viewport.tsx`; reuse `lib/rig/render.ts` for path drawing and transform conventions. The inspector and canvas edit the same per-rig store. Click **Save** or use Ctrl/Cmd+S to persist the revision.
+Open a saved rig by clicking its dashboard card. The route lives at `app/studio/[id]/page.tsx`. Animation sampling is integrated in `components/studio/timeline.tsx` and `components/studio/viewport.tsx`, with path drawing and transforms in `lib/rig/render.ts`. The inspector and canvas edit the same per-rig store. Click **Save** or use Ctrl/Cmd+S to persist the revision.
 
 Subgoal 2.2 adds no environment variables or SQL migrations. The live preview uses the scoped Neon role. Browser tests cover studio pointer gestures and persistent saves, with viewport screenshots in ignored `test-results/`. Track editing, onion skinning and mesh weight painting are the next subgoal.
 
@@ -95,6 +95,12 @@ For 4.2, use `lib/realtime/protocol.ts` for attributed events and `RoomBus` to p
 The `0005_rig_tokens.sql` migration is applied. Open an owned rig in Studio and select **MCP**. Create a named credential and copy the configuration while the dialog is open. HTTP clients use Streamable HTTP at `https://kinetix-chan.vercel.app/api/mcp` with `Authorization: Bearer <rig-credential>`.
 
 For a stdio client, run `node scripts/kinetix-mcp.mjs` from an installed checkout, or point the client at the script's absolute path. Set `KINETIX_MCP_TOKEN` in that client's environment. `KINETIX_MCP_URL` optionally selects another HTTPS endpoint or a localhost development endpoint. These are client settings. Existing Vercel deployment variables cover the hosted API.
+
+## Workspace UI follow-up
+
+No new environment variables or migrations are needed. Use **Motion studies** on the dashboard, **Manage clips** in the timeline, and **?** in the studio to open the keyboard guide. On smaller screens the hierarchy and inspector share a resize handle. Use arrow keys on a focused separator for precise resizing.
+
+Run `npm run test:e2e -- --grep 'member manages clips'` to verify direct navigation after rig creation, clip editing in the studio, and rename and delete from the rig card. Run the full browser suite for direct navigation from existing cards, viewport and resize assertions, and human and MCP presence.
 
 Run `npm run test:e2e -- --project=desktop --grep "MCP agent"` for the live agent workflow. Use `npm run typecheck`, `npm test`, `npm run test:e2e` and `npm run build` before further releases. Playwright uses one worker against the local host's shared Upstash limit. Teardown removes rigs owned by the temporary Clerk fixture account before deleting that account.
 

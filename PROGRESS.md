@@ -16,7 +16,15 @@ Implemented the application shell, interactive guest playground, Clerk access ro
 
 ## Active subgoal and next exact step
 
-All four implementation milestones are deployed. The remaining service activation is owner-managed Inngest Cloud. After the signing and event keys are present in Vercel, redeploy, sync the existing endpoint, and verify a hosted thumbnail and export run. The local Inngest workflow produced and downloaded all five export formats.
+All four implementation milestones and the workspace UI follow-up are deployed. The remaining service activation is owner-managed Inngest Cloud. After the signing and event keys are present in Vercel, redeploy, sync the existing endpoint, and verify a hosted thumbnail and export run. The local Inngest workflow produced and downloaded all five export formats.
+
+## Workspace UI follow-up · November 20, 2026
+
+- **Brief and build** moved motion studies into a dashboard dialog, linked rig cards directly to the studio, and placed owner actions in a card menu. The studio now manages clips in the timeline and adds floating controls, resizable panels, header presence, and keyboard shortcuts.
+- **Test** passed strict TypeScript, 33 Vitest tests, and 42 Playwright checks across the full run and corrected clip-management rerun. The two desktop-only integration checks were skipped on the other three profiles.
+- **Merge** published feature commit `34f1c3e` and main merge `bc8ad0c` to [GitHub](https://github.com/chanchan012/kinetix-chan).
+- **Deploy** passed the local Next.js production build. Vercel marked the [feature preview](https://kinetix-chan-c1uupx8fa-chanchans-projects-aada625f.vercel.app) and [production](https://kinetix-chan.vercel.app) ready. A signed-in phone-sized browser verified the studies dialog, direct rig navigation, header presence, timeline resize handle, keyboard guide, clip creation, and viewport fit. Temporary fixtures were removed.
+- **Document** records the dashboard and studio behavior, focused regression command, and remaining Inngest activation.
 
 ## Subgoal 4.2 release · November 20, 2026
 
