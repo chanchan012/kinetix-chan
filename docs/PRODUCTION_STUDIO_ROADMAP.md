@@ -14,7 +14,7 @@ The 23 subgoals in M5–M9 cover three production workflows. A creator can start
 
 ### Verified starting point
 
-Blank custom artboards, precision paths, shared polygon facets, nested layers and vector appearance are deployed alongside indexed and RGBA cels, basic rigging, mesh weights, clip editing and scoped MCP. Version 2 bundles export multiple clips as loose PNGs, fixed grids or packed atlas pages. The browser player and the Godot 4.5.1 adapter verify placement and timing across all three layouts. Godot also verifies reimport across a clip rename and retains version 1 fixed-grid playback. Hosted Inngest rendering still needs verification after the production keys are present. See [implementation progress](../PROGRESS.md) and the [sprite export contract](ENGINE_EXPORT.md).
+Blank custom artboards, precision paths, shared polygon facets, nested layers and vector appearance are deployed alongside indexed and RGBA cels, basic rigging, mesh weights, clip editing and scoped MCP. Studio and MCP import layered SVG artwork into editable paths. Version 2 bundles export multiple clips as loose PNGs, fixed grids or packed atlas pages. The browser player and the Godot 4.5.1 adapter verify placement and timing across all three layouts. Godot also verifies reimport across a clip rename and retains version 1 fixed-grid playback. Hosted Inngest rendering still needs verification after the production keys are present. See [implementation progress](../PROGRESS.md) and the [sprite export contract](ENGINE_EXPORT.md).
 
 ## M5 · Draw original artwork
 
@@ -158,7 +158,7 @@ Add a searchable command palette, discoverable and remappable shortcuts, numeric
 ## Release order
 
 1. **First playable asset · verified.** Basic artboards and timing from 5.1 and 7.1, a fixed-grid profile from 9.1, and a Godot 4.5.1 adapter from 9.3. The revision-bound preflight and repeat import are the baseline for later profiles.
-2. **Illustration and sprite production · active.** The layered badge, drawn cels, version 2 portable layouts and Godot multi-clip import are verified. Add editable SVG exchange before certifying Unity and web sprite profiles.
+2. **Illustration and sprite production · active.** The layered badge, drawn cels, version 2 portable layouts, Godot multi-clip import and editable SVG import are verified. Start with PNG sequence import before certifying Unity and web sprite profiles.
 3. **Runtime characters.** Finish M6 and expanded clip authoring from 7.1, ship named shared-rig versions, and connect the 7.6 player to the 9.2 runtime contract. Certify sprite and runtime profiles independently with the playable character fixture.
 4. **Full animation production.** Finish M7 and M8. Connect storyboards, dialogue, compositing and take review to approved master delivery. Verify hosted rendering, audio sync, alpha and portable project recovery.
 5. **Broader engine coverage.** Finish 9.3 and 9.4 with Unreal and GameMaker sprite importers, a custom-engine conformance kit, certified version ranges and automated reimport fixtures. Publish the versioned coverage matrix with each release.
@@ -170,7 +170,7 @@ These are release slices within the existing subgoals. Each includes the editor 
 | Order | Slice and dependencies | Target areas | Evidence required to advance |
 | --- | --- | --- | --- |
 | 1 · Verified | Godot version 2 sprite import (9.3), building on released 9.1 | `integrations/godot`, `tests/engine`, sprite contract | A clean Godot 4.5.1 project imports all three layouts, plays multiple clips, preserves clip references on rename and keeps existing assets after a corrupt import. Retain the version 1 fixture. |
-| 2 · Active | SVG exchange (8.1) | Shared asset reader, studio asset panel, MCP asset tools | A layered SVG becomes editable artwork. Compare transformed and clipped shapes in an independent renderer and undo the import as one edit. Follow with sequence import and portable project reopen as separate slices. |
+| 2 · Active | Asset exchange (8.1) | Shared asset readers, Studio layers, MCP import tools | Editable SVG import is verified against an independent renderer, single-step undo, and identical Studio and MCP PNG exports. Next verify sequence import by restoring frame timing and transparency, then reopen a portable project in a clean workspace. |
 | 3 | Unity, then Phaser and PixiJS sprites (9.3), using the same portable fixtures | Engine adapters, starter scenes, playback and reimport tests | Qualify each adapter independently. Confirm trimmed placement, held frames, cue counts and preserved references on the specified engine and package versions. |
 | 4 | Production character (6.1–6.4, 7.1), followed by runtime delivery (9.2, 7.6) | Rig and timeline commands, pose evaluator, runtime schema and loader | Ship skeleton controls, mesh correction, asset reuse, and game metadata as separate slices. Finish with both sprite and runtime versions of the playable character and verify pose, root motion and event fidelity in the target scene. |
 | 5 | Short production sequence (7.2–7.5, 8.2–8.4) | Compositions, exposure and audio tools, review, hosted renderer | Ship composition and text, audio and exposure, procedural bake, and sequence editing as separate slices. Certify a reviewed master with dialogue and alpha deliverables after hosted rendering is verified. |

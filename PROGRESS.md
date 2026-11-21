@@ -16,11 +16,19 @@ Implemented the application shell, interactive guest playground, Clerk access ro
 
 ## Active subgoal and next exact step
 
-The active implementation goal covers all 23 subgoals in [the production studio roadmap](docs/PRODUCTION_STUDIO_ROADMAP.md). The original M5.1 through M5.5 slices, M9.1 and Godot sprite import within M9.3 are deployed. Part position channels from M7.1 are deployed. The revised roadmap adds drawing workflow follow-ons within M5.5, a complete MCP authoring session, format fidelity rules and per-engine import and reimport checkpoints. Unity, Phaser, PixiJS, Unreal and GameMaker remain in M9.3.
+The active implementation goal covers all 23 subgoals in [the production studio roadmap](docs/PRODUCTION_STUDIO_ROADMAP.md). The original M5.1 through M5.5 slices, part position channels from M7.1, editable SVG import from M8.1, M9.1 and Godot sprite import within M9.3 are deployed. The roadmap includes drawing workflow follow-ons within M5.5, a complete MCP authoring session, format fidelity rules and per-engine import and reimport checkpoints. Unity, Phaser, PixiJS, Unreal and GameMaker remain in M9.3.
 
-The next exact step is editable SVG exchange within M8.1. Add a layered SVG fixture and build a shared parser for its `viewBox`, group transforms, compound holes, fills and gradients. Map the parsed data to existing `part.create` and layer commands with one-step undo. Then wire the same import to Studio and scoped MCP and check renderer fidelity against the fixture.
+The next exact step is PNG sequence import within M8.1. Add a fixture using `sequence.json` from the existing export, variable exposures and a transparent frame. Validate file names, dimensions and timing. Convert frame samples into editable RGBA cels and a destination clip using the source timebase. Verify that reopening and re-exporting preserves the pixels and frame timing.
 
 Owner-managed Inngest Cloud activation is still open. After the signing and event keys are present in Vercel, redeploy, sync the existing endpoint, and verify a hosted thumbnail and animation export run. Saved still PNGs are served directly.
+
+## M8.1 editable SVG import · November 21, 2026
+
+- **Brief and build** added editable SVG import under Studio Layers and scoped MCP `import_svg`. Imports preserve layered Bézier geometry, compound fill rules, solid paint, linear gradient alpha and vector clips. Studio shows a rendered preflight and applies the import in one undoable batch. The release also contains positioned Studio controls within the mobile shell.
+- **Test** passed 74 Vitest checks including Godot, with 82 Playwright checks passed on four viewport profiles and six expected desktop-only skips. The SVG fixture compared exported pixels with an independent renderer. The authenticated browser test edited the imported paths, reopened the project and verified byte-identical PNGs from Studio and MCP.
+- **Merge** published `7e9a3f5` on `codex/m8-1-svg-exchange` and merged it as `677fac7` on `main`.
+- **Deploy** passed the local Next.js Webpack build. Vercel marked the [feature preview](https://kinetix-chan-71wourhs2-chanchans-projects-aada625f.vercel.app) and [production](https://kinetix-chan.vercel.app) ready. All six authenticated production checks passed across desktop and mobile. They covered editable SVG import, export queueing and viewport containment during editing.
+- **Document** records the SVG capabilities, API contract, limits and exact PNG sequence continuation in [the resume handoff](docs/RESUME_HANDOFF.md#m81--editable-svg-import). No new environment variables or database migrations are required.
 
 ## M9.3 Godot sprite adapter · November 21, 2026
 
