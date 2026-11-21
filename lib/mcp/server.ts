@@ -23,12 +23,17 @@ export function createStudioMcp(agent:RigAgent) {
     const spriteExport=name==="export_sprite_package" || name==="export_sprite_bundle";
     const archiveExport=name==="export_project_archive";
     server.registerTool(name,{description,inputSchema,annotations:{
-      readOnlyHint:spriteExport || archiveExport || name==="read_drawing_cel",
+      readOnlyHint:spriteExport || archiveExport || name==="read_drawing_cel" || name==="read_image_asset",
       destructiveHint:["edit_document","bind_mesh_weights","generate_procedural_cycle","bake_ik_to_keyframes"].includes(name),
-      idempotentHint:spriteExport || archiveExport || name==="read_drawing_cel",openWorldHint:false,
+      idempotentHint:spriteExport || archiveExport || name==="read_drawing_cel" || name==="read_image_asset",openWorldHint:false,
     }},async (raw:unknown):Promise<CallToolResult> => {
       try {
         const data = await run(schema.parse(raw));
+        if (name==="read_image_asset" && "imageData" in data && typeof data.imageData==="string" && "asset" in data) {
+          const {imageData,...receipt}=data;
+          const {mimeType}=receipt.asset as {mimeType:string};
+          return {content:[{type:"text",text:JSON.stringify(receipt)},{type:"image",mimeType,data:imageData}],structuredContent:receipt};
+        }
         if ((name==="import_png_sequence" || name==="import_sprite_bundle") && "previewPng" in data && typeof data.previewPng==="string") {
           const {previewPng,...receipt}=data;
           return {content:[{type:"text",text:JSON.stringify(receipt)},{type:"image",mimeType:"image/png",data:previewPng}],
@@ -56,6 +61,11 @@ export function createStudioMcp(agent:RigAgent) {
     inputs.import_png_sequence,input=>agent.importPngSequence(input));
   tool("import_sprite_bundle","Preflight or import a base64 Kinetix v2 sprite bundle as saved clips and editable cels with source timing and companion metadata.",
     inputs.import_sprite_bundle,input=>agent.importSpriteAtlas(input));
+  tool("import_image_asset","Import a base64 still PNG or WebP. To replace or relink an image for all its placements, reuse its asset ID.",
+    inputs.import_image_asset,input=>agent.importImageAsset(input));
+  tool("place_image_asset","Place a saved image as a studio reference or as renderable artwork. Edit positioning and bone attachment through edit_document.",
+    inputs.place_image_asset,input=>agent.placeImageAsset(input));
+  tool("read_image_asset","Read an image asset and its validated bytes from the bound project.",inputs.read_image_asset,input=>agent.readImageAsset(input));
   tool("read_drawing_cel","Read a revision-pinned page of a cel's pixel runs as [row, left, width, ink].",inputs.read_drawing_cel,input=>agent.readDrawingCel(input));
   tool("bind_mesh_weights","Bind a closed vector part and assign up to four influences to specified vertices.",inputs.bind_mesh_weights,input=>agent.bindWeights(input));
   tool("create_animation_clip","Create a saved clip with a frame rate and duration in frames.",inputs.create_animation_clip,input=>agent.createClip(input));

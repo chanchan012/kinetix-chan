@@ -8,6 +8,7 @@ import { orderedLayers,visibleLayerRows } from "./layer-tree";
 import { defaultStroke,gradientAxis,resolvePaint,type Paint,type Swatch } from "./appearance";
 import { intersectRegions,pathRegions,regionPolygons } from "./path-boolean";
 import { celAt, type Cel, type Drawing, type DrawingSample } from "./drawings";
+import type { ImageAsset,ImagePlacement } from "./images";
 
 export const viewportFrame = {x:-10,y:3,width:510,height:280};
 export const viewportFrameFor = (rig: KinetixRigState) => rig.version === 1 ? viewportFrame :
@@ -130,7 +131,7 @@ export function maskRegions(parts:Map<string,VectorPart>,ids:readonly string[],p
 export function drawRigArtwork(
   context: RigDrawingContext, rig: KinetixRigState, poses: Map<string, BonePose>, phase: number,
   reference = true, isolate?:string|null,
-  raster?:{sample:DrawingSample;paint:(drawing:Drawing,cel:Cel)=>void},
+  raster?:{sample:DrawingSample;paint:(drawing:Drawing,cel:Cel)=>void;paintImage?:ImagePainter;includeReferences?:boolean},
 ) {
   if (reference && !isolate && rig.study) {
     const root = poses.get("root");
@@ -146,10 +147,13 @@ export function drawRigArtwork(
   }
   const byId = new Map(rig.parts.map(part=>[part.id,part]));
   const drawings = new Map(rig.drawings?.layers.map(drawing=>[drawing.id,drawing]));
+  const images=new Map(rig.images?.assets.map(asset=>[asset.id,asset]));
   const cached = new Map<string,ReturnType<typeof pathRegions>>();
   const swatches = rig.swatches ?? [];
   for (const {node,masks} of visibleLayerRows(rig,isolate)) {
     if (node.kind==="group") continue;
+    if (node.kind==="image" && (!raster?.paintImage || !node.placement.opacity ||
+      (node.placement.mode==="reference" && !raster.includeReferences))) continue;
     context.save();
     if (masks.length) {
       tracePolygons(context,regionPolygons(maskRegions(byId,masks,poses,cached)));
@@ -162,6 +166,21 @@ export function drawRigArtwork(
         if (!raster && cel.runs.length) throw new Error("This delivery format cannot render raster cels.");
         raster?.paint(drawing,cel);
       }
+      context.restore();
+      continue;
+    }
+    if (node.kind==="image") {
+      const {placement}=node;
+      const {boneId,x,y,rotation,opacity}=placement;
+      const pose=boneId ? poses.get(boneId) : undefined;
+      if (pose) {
+        context.translate(pose.origin.x,pose.origin.y);
+        context.rotate(pose.angle);
+      }
+      context.translate(x,y);
+      context.rotate(rotation);
+      context.globalAlpha*=opacity;
+      raster?.paintImage?.(images.get(placement.assetId)!,placement);
       context.restore();
       continue;
     }
@@ -210,3 +229,5 @@ export function drawRigArtwork(
     context.restore();
   }
 }
+
+export type ImagePainter=(asset:ImageAsset,placement:ImagePlacement)=>void;

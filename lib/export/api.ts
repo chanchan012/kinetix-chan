@@ -12,6 +12,7 @@ import { prepareSpritePackage } from "./sprite-package";
 import { spritePackageRequest } from "./sprite-package-options";
 import { prepareSpriteBundle } from "./sprite-bundle";
 import { spriteBundleRequest } from "./sprite-bundle-options";
+import { hasMissingArtworkImages } from "../rig/layer-tree";
 const missing = {error:"not_found"} as const;
 
 export function exportApi(repository: () => Library) {
@@ -45,6 +46,7 @@ export function exportApi(repository: () => Library) {
       const row = await repository().open(c.get("userId")!,c.req.param("id"));
       if (!row) return c.json(missing,404);
       const rig = readRigState(row.state);
+      if (hasMissingArtworkImages(rig)) return c.json({error:"missing_image_assets",message:"Relink missing artwork images in Image assets before exporting."},422);
       const png = renderPngFrame({rig,name:row.name,tracks:[],fps:24,frameCount:referenceFrameCount(rig),startFrame:0,endFrame:0});
       c.header("Content-Type","image/png");
       c.header("Content-Disposition",'attachment; filename="kinetix-artboard.png"');

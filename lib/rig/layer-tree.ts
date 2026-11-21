@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { KinetixRigState,VectorPart } from "./model";
+import { imagePlacementSchema } from "./images";
 
 export const layerId = z.string().min(1).max(64).regex(/^[a-zA-Z0-9_-]+$/);
 const nodeFields = {id:layerId,parentId:layerId.nullable(),hidden:z.boolean().optional(),locked:z.boolean().optional(),
@@ -7,6 +8,7 @@ const nodeFields = {id:layerId,parentId:layerId.nullable(),hidden:z.boolean().op
 const layerNodeSchema = z.discriminatedUnion("kind",[
   z.strictObject({...nodeFields,kind:z.literal("part"),partId:layerId}),
   z.strictObject({...nodeFields,kind:z.literal("drawing"),drawingId:layerId}),
+  z.strictObject({...nodeFields,kind:z.literal("image"),placement:imagePlacementSchema}),
   z.strictObject({...nodeFields,kind:z.literal("group"),name:z.string().trim().min(1).max(120)}),
 ]);
 export const layerTreeSchema = z.strictObject({version:z.literal(1),nodes:z.array(layerNodeSchema).max(256)})
@@ -40,6 +42,7 @@ export const layerTreeSchema = z.strictObject({version:z.literal(1),nodes:z.arra
 
 export type LayerTree = z.infer<typeof layerTreeSchema>;
 export type LayerNode = z.infer<typeof layerNodeSchema>;
+export type ImageLayer = Extract<LayerNode,{kind:"image"}>;
 type LayerSource = Pick<KinetixRigState,"parts"|"layers"|"drawings">;
 
 /** Derive earlier documents' root layer order from their original part array. */
@@ -93,6 +96,17 @@ export function visibleLayerRows(rig:LayerSource,isolate?:string|null) {
   const tree = layerTreeFor(rig);
   const allowed = isolate ? inLayerSubtree(tree,isolate) : null;
   return orderedLayers(tree).filter(({node,hidden})=>node.kind!=="group" && !hidden && (!allowed || allowed.has(node.id)));
+}
+
+export function renderedImages(rig:KinetixRigState) {
+  return visibleLayerRows(rig).flatMap(({node})=>
+    node.kind==="image" && node.placement.mode==="artwork" && node.placement.opacity>0 ? [node] : []);
+}
+
+export function hasMissingArtworkImages(rig:KinetixRigState) {
+  const embedded=new Set(rig.images?.sources.map(source=>source.sha256));
+  const loaded=new Set(rig.images?.assets.filter(asset=>embedded.has(asset.sha256)).map(asset=>asset.id));
+  return renderedImages(rig).some(node=>!loaded.has(node.placement.assetId));
 }
 
 export function editablePartIds(rig:LayerSource):Set<string> {

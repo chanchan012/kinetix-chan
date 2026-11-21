@@ -29,9 +29,10 @@ import { SvgImportDialog } from "./svg-import-dialog";
 import { SequenceImportDialog,type RasterImportMode } from "./sequence-import-dialog";
 import type { AtlasImportInput,AtlasReceipt,SequenceImportInput,SequenceReceipt } from "@/lib/import/sequence-options";
 import { AppearanceControls } from "./appearance-controls";
-import { editablePartIds,layerTreeFor,visibleLayerRows } from "@/lib/rig/layer-tree";
+import { editablePartIds,layerTreeFor,orderedLayers,visibleLayerRows } from "@/lib/rig/layer-tree";
 import { CelControls, defaultCelSettings, type CelSettings } from "./cel-controls";
 import { celAt, type Drawing } from "@/lib/rig/drawings";
+import { ImageAssetsDialog,ImagePlacementControls } from "./image-assets";
 
 type Props = {
   actorId: string; rigId: string; name: string; initial: KinetixRigState; revision: number; clips: ClipTiming[];
@@ -71,6 +72,7 @@ export function Studio({actorId, rigId, name, initial, revision: initialRevision
   const [pen, setPen] = useState<VectorKnot[]>([]);
   const [showBones, setShowBones] = useState(true);
   const [reference, setReference] = useState(true);
+  const [showImageReferences,setShowImageReferences]=useState(true);
   const [zoom, setZoom] = useState(1);
   const [animation, setAnimation] = useState<FramePreview>({ frame: 0, frames: referenceFrameCount(initial), tracks: [], onion: false });
   const [timelineDirty, setTimelineDirty] = useState(false);
@@ -80,6 +82,7 @@ export function Studio({actorId, rigId, name, initial, revision: initialRevision
   const [exportOpen, setExportOpen] = useState(false);
   const [importOpen,setImportOpen] = useState(false);
   const [rasterImport,setRasterImport] = useState<RasterImportMode|null>(null);
+  const [imageAssets,setImageAssets]=useState<{assetId?:string}|null>(null);
   const [shareOpen, setShareOpen] = useState(false);
   const [mcpOpen, setMcpOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
@@ -98,6 +101,7 @@ export function Studio({actorId, rigId, name, initial, revision: initialRevision
   const bone = selected?.kind === "bone" ? rig.bones.find(item => item.id === selected.id) : undefined;
   const part = selected?.kind === "part" ? rig.parts.find(item => item.id === selected.id) : undefined;
   const drawing = selected?.kind==="drawing" ? rig.drawings?.layers.find(item=>item.id===selected.id) : undefined;
+  const imagePlacement=selected?.kind==="image" ? orderedLayers(layerTreeFor(rig)).find(({node})=>node.id===selected.id) : undefined;
   const isolation = isolatedLayer && layerTreeFor(rig).nodes.some(node=>node.id===isolatedLayer) ? isolatedLayer : null;
   const editablePath = !part || editablePartIds(rig).has(part.id);
   const drawable = Boolean(drawing && !animation.playing && visibleLayerRows(rig,isolation).some(({node,locked})=>
@@ -107,7 +111,7 @@ export function Studio({actorId, rigId, name, initial, revision: initialRevision
   function select(value:Selection) {
     setSelected(value);
     setSelectionIds(value?.kind==="part" ? [value.id] : []);
-    if (value?.kind==="drawing") {
+    if (value?.kind==="drawing" || value?.kind==="image") {
       setTool("select");
       if (value.id!==selected?.id) updateCel({region:null});
     } else if (tool==="facet" && value?.id!==selected?.id) setTool("select");
@@ -410,7 +414,7 @@ export function Studio({actorId, rigId, name, initial, revision: initialRevision
         <div className="studio-panel-title"><h2>Hierarchy</h2><span>{rig.bones.length} bones</span></div>
         <Hierarchy rig={rig} selected={selected} selectedParts={selectedParts} select={select} isolation={isolation}
           setIsolate={setIsolate} edit={edit} makeDrawing={makeDrawing} openImport={()=>setImportOpen(true)}
-          openRasterImport={setRasterImport}/>
+          openRasterImport={setRasterImport} openImages={()=>setImageAssets({})}/>
       </aside>
       <PanelHandle panel="hierarchy" size={layout.panels.hierarchy} label="Resize hierarchy" controls="studio-hierarchy"/>
       <PanelHandle panel="split" size={layout.panels.split} label="Resize side panels" controls="studio-hierarchy studio-inspector"/>
@@ -430,7 +434,7 @@ export function Studio({actorId, rigId, name, initial, revision: initialRevision
           pixels={drawing && tool==="select" ? {drawing,cel:celAt(drawing,sample),settings:celSettings,update:updateCel,editable:drawable} : null}
           onionSettings={celSettings}
           {...{ phase, selected, selectedParts, selectedEdge, selectedNode, setNode, select, selectRegion, tool, primitive, smoothing,isolation,
-            selectionMode, snapping, rulers, reference, zoom, showBones, pen, addBone, edit }}
+            selectionMode, snapping, rulers, reference, showImageReferences, zoom, showBones, pen, addBone, edit }}
           closePolygon={() => finishPath(true)}
           facets={tool==="facet" && part?.facets && editablePath ? facetTool.viewport : null}
           addDrawnPath={(closed,knots) => finishPath(closed,knots)}
@@ -456,6 +460,8 @@ export function Studio({actorId, rigId, name, initial, revision: initialRevision
           </div> : <div className="studio-tool-group">
             <button title="Show or hide bones (H)" aria-pressed={showBones} onClick={() => setShowBones(value => !value)}>Bones</button>
             {rig.study && <button aria-pressed={reference} onClick={() => setReference(value => !value)}>Artwork</button>}
+            {rig.images?.assets.length ? <button aria-pressed={showImageReferences}
+              onClick={()=>setShowImageReferences(value=>!value)}>References</button> : null}
             {rig.version === 2 && <button onClick={() => setArtboardOpen(true)}>Artboard</button>}
             {rig.version === 2 && <button onClick={() => setGuidesOpen(true)}>Guides</button>}
             <button aria-pressed={rulers} onClick={() => setRulers(value=>!value)}>Rulers</button>
@@ -475,7 +481,9 @@ export function Studio({actorId, rigId, name, initial, revision: initialRevision
               if (edit("Make faceted artwork",{type:"facet.initialize",id:part.id,faceId:crypto.randomUUID()})) chooseTool("facet");
             }}>Make faceted artwork</button></div>
         )}
-        {drawing ? <CelControls key={drawing.id} drawing={drawing} sample={sample} settings={celSettings} update={updateCel}
+        {imagePlacement?.node.kind==="image" ? <ImagePlacementControls node={imagePlacement.node} rig={rig} locked={imagePlacement.locked}
+          edit={edit} manage={assetId=>setImageAssets({assetId})} clear={()=>select(null)}/> :
+          drawing ? <CelControls key={drawing.id} drawing={drawing} sample={sample} settings={celSettings} update={updateCel}
           editable={drawable} edit={edit} remove={()=>{
             if (window.confirm("Delete this drawing layer and all its cels?") &&
               edit("Delete drawing",{type:"drawing.remove",id:drawing.id})) select(null);
@@ -503,9 +511,12 @@ export function Studio({actorId, rigId, name, initial, revision: initialRevision
       return true;
     }}/>}
     {rasterImport && <SequenceImportDialog mode={rasterImport} revision={revision} applyBlocked={sequenceBlocked}
-      emptyArtboard={rig.version===2 && !rig.parts.length && !rig.bones.length && !rig.drawings?.layers.length}
+      emptyArtboard={rig.version===2 && !rig.parts.length && !rig.bones.length && !rig.drawings?.layers.length &&
+        !rig.layers?.nodes.some(node=>node.kind==="image")}
       check={async input=>(await sendRasterImport(rasterImport,input)).receipt}
       apply={input=>applyRasterImport(rasterImport,input)} close={()=>setRasterImport(null)}/>}
+    {imageAssets && <ImageAssetsDialog rig={rig} rigId={rigId} initialAsset={imageAssets.assetId} edit={edit}
+      place={id=>{select({kind:"image",id});setImageAssets(null);}} close={()=>setImageAssets(null)}/>}
     {shareOpen && <ShareDialog rigId={rigId} close={() => setShareOpen(false)}/>}
     {mcpOpen && <McpDialog rigId={rigId} close={() => setMcpOpen(false)}/>}
     {shortcutsOpen && <ShortcutsDialog close={() => setShortcutsOpen(false)}/>}
@@ -646,12 +657,13 @@ function WeightTools({part, rig, brush, setBrush, edit, report}: {
   </section>;
 }
 
-function Hierarchy({rig, selected, selectedParts, select, isolation, setIsolate, edit, makeDrawing, openImport, openRasterImport}: {
+function Hierarchy({rig, selected, selectedParts, select, isolation, setIsolate, edit, makeDrawing, openImport, openRasterImport,openImages}: {
   rig: KinetixRigState; selected: Selection; selectedParts:string[]; select: (value: Selection) => void;
   isolation:string|null;setIsolate:(id:string|null)=>void;edit:Edit;
   makeDrawing:(mode:"indexed"|"rgba")=>void;
   openImport:()=>void;
   openRasterImport:(mode:RasterImportMode)=>void;
+  openImages:()=>void;
 }) {
   const depths = new Map<string, number>();
   return <div className="studio-tree">
@@ -662,8 +674,9 @@ function Hierarchy({rig, selected, selectedParts, select, isolation, setIsolate,
         aria-pressed={selected?.kind === "bone" && selected.id === bone.id} onClick={() => select({ kind: "bone", id: bone.id })}>
         <BoneIcon size={14}/><span>{bone.name}</span></button></li>;
     })}</ul>
-    <LayerList {...{rig,selectedParts,setIsolate,edit,makeDrawing,openImport,openRasterImport}} isolate={isolation} boneSelected={selected?.kind==="bone"}
+    <LayerList {...{rig,selectedParts,setIsolate,edit,makeDrawing,openImport,openRasterImport,openImages}} isolate={isolation} boneSelected={selected?.kind==="bone"}
       drawingId={selected?.kind==="drawing" ? selected.id : undefined} selectDrawing={id=>select({kind:"drawing",id})}
+      imageId={selected?.kind==="image" ? selected.id : undefined} selectImage={id=>select({kind:"image",id})}
       selectPart={id=>select(id ? {kind:"part",id} : null)}/>
     {selected && <button className="studio-deselect" onClick={() => select(null)}>Clear selection</button>}
   </div>;

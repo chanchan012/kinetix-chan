@@ -37,7 +37,7 @@ export function previewImage(data:Buffer,width:number,height:number) {
 export function prepareRasterArtboard(rig:KinetixRigState,width:number,height:number,resize:boolean,notes:Set<string>):RigCommand[] {
   const artboard=artboardFor(rig);
   if (resize) {
-    if (rig.version!==2 || rig.parts.length || rig.bones.length || rig.drawings?.layers.length) {
+    if (rig.version!==2 || rig.parts.length || rig.bones.length || rig.drawings?.layers.length || rig.layers?.nodes.some(node=>node.kind==="image")) {
       throw new Error("Matching image dimensions requires an empty design artboard.");
     }
     if (width<16 || height<16) notes.add("The artboard uses the 16 px minimum on each side.");

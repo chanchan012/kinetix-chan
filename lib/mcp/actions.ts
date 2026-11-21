@@ -21,6 +21,8 @@ import { atlasImportInput,sequenceImportInput,type AtlasImportInput,type Sequenc
 import { importPngSequence,importSpriteAtlas } from "../import/sequence-service";
 import { exportProjectInput,reopenProjectInput,type ExportProjectInput,type ReopenProjectInput } from "../project/archive-options";
 import { exportProject,reopenProject } from "../project/archive-service";
+import { fitImagePlacement,imageBase64,imageFolder,imageId,imageName,imagePlacementSchema } from "../rig/images";
+import { inspectImage,verifyProjectImages } from "../import/image-inspection";
 
 const frame = z.int().min(0).max(35_999);
 const clipId = z.uuid();
@@ -46,6 +48,9 @@ export const inputs = {
   }),
   import_png_sequence:sequenceImportInput,
   import_sprite_bundle:atlasImportInput,
+  import_image_asset:z.strictObject({revision:z.int().min(0).max(2_147_483_646),id:imageId,name:imageName,folder:imageFolder.default(""),base64:imageBase64}),
+  place_image_asset:z.strictObject({revision:z.int().min(0).max(2_147_483_646),id:imageId,assetId:imageId,mode:imagePlacementSchema.shape.mode.default("reference")}),
+  read_image_asset:z.strictObject({id:imageId}),
   read_drawing_cel:z.strictObject({
     drawingId:drawingIdSchema,celId:drawingIdSchema,revision:z.int().min(0).optional(),
     offset:z.int().min(0).max(40_000).default(0),limit:z.int().min(1).max(2000).default(300),
@@ -107,7 +112,9 @@ export class RigAgent {
         throw new Error("The document has changed. Read its current revision before retrying.");
       }
       const command = build(current.state);
-      const [state] = editRig(current.state,Array.isArray(command) ? command : [command]);
+      const commands=Array.isArray(command) ? command : [command];
+      const [state] = editRig(current.state,commands);
+      if (commands.some(item=>item.type==="image.asset.put")) verifyProjectImages(state.images);
       const saved = await this.library.saveRigState(this.userId,this.rigId,current.revision,state);
       if (saved) {
         await this.live(bus=>bus.changed(this.rigId,{
@@ -138,6 +145,8 @@ export class RigAgent {
 
   async hierarchy() {
     const {id,name,revision,state} = await this.snapshot();
+    const loaded=new Set(state.images?.sources.map(source=>source.sha256));
+    const imageUses=layerTreeFor(state).nodes.flatMap(node=>node.kind==="image" ? [{id:node.id,assetId:node.placement.assetId}] : []);
     return {
       rigId:id,name,revision,bones:state.bones,ikConstraints:state.constraints,
       slots:state.parts.map(part=>({id:part.id,name:part.name,parentId:part.parentId,vertices:part.mesh?.vertices.length ?? 0})),
@@ -145,6 +154,8 @@ export class RigAgent {
       layers:layerTreeFor(state),
       swatches:state.swatches ?? [],
       ...(state.spriteSources && {spriteSources:state.spriteSources}),
+      imageAssets:state.images?.assets.map(asset=>({...asset,available:loaded.has(asset.sha256),
+        placements:imageUses.filter(use=>use.assetId===asset.id).map(use=>use.id)})) ?? [],
       drawings:state.drawings?.layers.map(({cels,...drawing})=>({
         ...drawing,cels:cels.map(cel=>({id:cel.id,runCount:cel.runs.length})),
       })) ?? [],
@@ -220,6 +231,26 @@ export class RigAgent {
       {kind:"ai",userId:this.userId,clientId:this.agent.id},this.room);
     if ("error" in result) throw new Error(result.message);
     return result.receipt;
+  }
+  async importImageAsset(input:z.output<typeof inputs.import_image_asset>) {
+    const {base64,revision:oldRevision,id,name,folder}=input;
+    const asset={...inspectImage(base64),id,name,folder};
+    const {revision,rigId}=await this.changeRig("Import or replace image asset",()=>({type:"image.asset.put",asset,base64}),null,oldRevision);
+    return {rigId,revision,asset};
+  }
+  async placeImageAsset(input:z.output<typeof inputs.place_image_asset>) {
+    return this.changeRig("Place image asset",state=>{
+      const asset=state.images?.assets.find(asset=>asset.id===input.assetId);
+      if (!asset) throw new Error("The image asset does not belong to this rig.");
+      return {type:"image.place",id:input.id,placement:fitImagePlacement(asset,artboardFor(state),input.mode)};
+    },{kind:"image",id:input.id},input.revision);
+  }
+  async readImageAsset(input:z.output<typeof inputs.read_image_asset>) {
+    const {state,revision}=await this.snapshot();
+    const asset=state.images?.assets.find(asset=>asset.id===input.id);
+    if (!asset) throw new Error("The image asset does not belong to this rig.");
+    const source=state.images?.sources.find(source=>source.sha256===asset.sha256);
+    return {asset,revision,available:Boolean(source),...(source && {imageData:source.base64})};
   }
   async readDrawingCel(input:z.infer<typeof inputs.read_drawing_cel>) {
     const {state,revision}=await this.snapshot();

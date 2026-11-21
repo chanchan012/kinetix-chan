@@ -1,6 +1,7 @@
 import { drawArtboardBackground, drawRigArtwork, type RigDrawingContext } from "../rig/render";
 import { sampleExportFrames, type ExportSnapshot } from "./frames";
 import { artboardFor } from "../rig/model";
+import { renderedImages } from "../rig/layer-tree";
 
 type Vec = [number, number];
 type Color = [number, number, number];
@@ -207,6 +208,7 @@ function buildLayer(marks: Mark[], index: number, frames: number) {
 }
 
 export function compileLottie(snapshot: ExportSnapshot) {
+  if (renderedImages(snapshot.rig).length) throw new Error("Image layers require a PNG, sprite or video export.");
   const paths: Mark[][] = [];
   let frames = 0;
   for (const frame of sampleExportFrames(snapshot)) {

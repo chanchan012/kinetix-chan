@@ -4,12 +4,13 @@ import { pipeline } from "node:stream/promises";
 import { createCanvas, type Canvas } from "@napi-rs/canvas";
 import ffmpeg from "@ffmpeg-installer/ffmpeg";
 import { strToU8, zipSync } from "fflate";
-import { drawArtboardBackground, drawRigArtwork } from "../rig/render";
+import { drawArtboardBackground, drawRigArtwork,type ImagePainter } from "../rig/render";
 import { artboardFor } from "../rig/model";
 import { paintCelRuns } from "../rig/drawings";
 import { exportDimensions, sampleExportFrames, spritesheetGrid, type ExportFrame, type ExportSnapshot } from "./frames";
+import { createImagePainter } from "./image-painter";
 
-function drawFrame(canvas: Canvas, frame: ExportFrame, opaque = false, scale=1) {
+function drawFrame(canvas: Canvas, frame: ExportFrame,paintImage:ImagePainter,opaque = false, scale=1) {
   const context = canvas.getContext("2d");
   context.clearRect(0, 0, canvas.width, canvas.height);
   if (opaque) {
@@ -20,7 +21,7 @@ function drawFrame(canvas: Canvas, frame: ExportFrame, opaque = false, scale=1) 
   context.scale(scale,scale);
   drawArtboardBackground(context, frame.rig);
   drawRigArtwork(context,frame.rig,frame.poses,frame.phase,true,null,{
-    sample:frame.sample,paint:(drawing,cel)=>paintCelRuns(context,drawing,cel),
+    sample:frame.sample,paint:(drawing,cel)=>paintCelRuns(context,drawing,cel),paintImage,
   });
   context.restore();
 }
@@ -30,7 +31,7 @@ export function renderPngFrame(snapshot: ExportSnapshot) {
   const canvas = createCanvas(width, height);
   const frame = sampleExportFrames(snapshot).next();
   if (frame.done) throw new Error("There is no frame to render.");
-  drawFrame(canvas, frame.value,false,snapshot.scale);
+  drawFrame(canvas, frame.value,createImagePainter(canvas.getContext("2d"),snapshot.rig),false,snapshot.scale);
   return canvas.toBuffer("image/png");
 }
 
@@ -39,8 +40,9 @@ export function* sampleRgbaFrames(snapshot:ExportSnapshot,indices?:readonly numb
   const {width,height}=exportDimensions(snapshot);
   const canvas=createCanvas(width,height);
   const context=canvas.getContext("2d");
+  const paintImage=createImagePainter(context,snapshot.rig);
   for (const frame of sampleExportFrames(snapshot,indices)) {
-    drawFrame(canvas,frame,false,snapshot.scale);
+    drawFrame(canvas,frame,paintImage,false,snapshot.scale);
     yield {sourceFrame:frame.sample.frame,rgba:context.getImageData(0,0,width,height).data};
   }
 }
@@ -52,9 +54,10 @@ export function renderSpritesheet(snapshot: ExportSnapshot) {
   const sheet = createCanvas(artboard.width * columns, artboard.height * rows);
   const context = sheet.getContext("2d");
   const canvas = createCanvas(artboard.width, artboard.height);
+  const paintImage=createImagePainter(canvas.getContext("2d"),snapshot.rig);
   let index = 0;
   for (const frame of sampleExportFrames(snapshot)) {
-    drawFrame(canvas,frame,false,snapshot.scale);
+    drawFrame(canvas,frame,paintImage,false,snapshot.scale);
     context.drawImage(canvas, index % columns * artboard.width, Math.floor(index / columns) * artboard.height);
     index++;
   }
@@ -65,9 +68,10 @@ export function renderPngSequence(snapshot: ExportSnapshot) {
   const {width, height} = exportDimensions(snapshot);
   const canvas = createCanvas(width, height);
   const files: Record<string, Uint8Array> = {};
+  const paintImage=createImagePainter(canvas.getContext("2d"),snapshot.rig);
   let number = snapshot.startFrame;
   for (const frame of sampleExportFrames(snapshot)) {
-    drawFrame(canvas,frame,false,snapshot.scale);
+    drawFrame(canvas,frame,paintImage,false,snapshot.scale);
     files["frames/" + String(number++ + 1).padStart(5, "0") + ".png"] = canvas.toBuffer("image/png");
   }
   files["sequence.json"] = strToU8(JSON.stringify({
@@ -80,8 +84,9 @@ function* rawFrames(snapshot: ExportSnapshot) {
   const artboard = artboardFor(snapshot.rig);
   const canvas = createCanvas(artboard.width, artboard.height);
   const context = canvas.getContext("2d");
+  const paintImage=createImagePainter(context,snapshot.rig);
   for (const frame of sampleExportFrames(snapshot)) {
-    drawFrame(canvas, frame, true);
+    drawFrame(canvas, frame,paintImage,true);
     const pixels = context.getImageData(0, 0, artboard.width, artboard.height).data;
     yield Buffer.from(pixels.buffer, pixels.byteOffset, pixels.byteLength);
   }

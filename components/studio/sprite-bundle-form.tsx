@@ -10,6 +10,7 @@ type Plan = {textureBytes:number;files:{file:string;width:number;height:number}[
 const errors:Record<string,string>={
   revision_conflict:"A saved revision changed. Reopen Export after the studio updates.",
   unsupported_range:"Choose valid frame ranges or a smaller pixel scale.",
+  missing_image_assets:"Relink missing artwork images before exporting.",
   imported_timing_unavailable:"Reopen Export to refresh the clip’s imported timing.",
   too_many_sprite_samples:"The selected clips need more than 96 rendered samples. Choose shorter ranges or fewer clips.",
   incompatible_pixel_scale:"Export clips with matching imported scales together and keep the final scale at 4× or less.",

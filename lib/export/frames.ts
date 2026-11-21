@@ -3,7 +3,7 @@ import { evaluateRig } from "../rig/kinematics";
 import { artboardFor, rigStateSchema } from "../rig/model";
 import { z } from "zod";
 import { celAt, type DrawingSample } from "../rig/drawings";
-import { visibleLayerRows } from "../rig/layer-tree";
+import { hasMissingArtworkImages,renderedImages,visibleLayerRows } from "../rig/layer-tree";
 
 export const exportFormats = ["lottie", "spritesheet", "png-sequence", "mp4", "webm"] as const;
 export const exportFormatSchema = z.enum(exportFormats);
@@ -37,7 +37,8 @@ export function supportedExport(format: ExportFormat,snapshot: ExportSnapshot,co
     (part.facets?.faces.length ?? 0), 64);
   if (count > formats[format].frames) return false;
   if ((snapshot.scale ?? 1)>1 && format!=="spritesheet" && format!=="png-sequence") return false;
-  if (format==="lottie" && containsRasterCels(snapshot)) return false;
+  if (hasMissingArtworkImages(snapshot.rig)) return false;
+  if (format==="lottie" && (containsRasterCels(snapshot) || renderedImages(snapshot.rig).length)) return false;
   const { width, height } = exportDimensions(snapshot);
   if (format!=="lottie" && (width>8192 || height>8192)) return false;
   if (format !== "lottie" && width * height * count > 64 * 1024 * 1024) return false;

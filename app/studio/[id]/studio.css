@@ -171,6 +171,14 @@
 .studio-sequence-import .studio-sequence-fit input { width:auto }
 .studio-sequence-review { display:grid;gap:6px;font-size:12px }
 .studio-sequence-review img { display:block;max-width:100%;max-height:100px;margin-inline:auto;object-fit:contain;image-rendering:pixelated }
+.studio-image-assets { overflow-wrap:anywhere }
+.studio-image-catalog { display:grid;gap:6px;max-height:min(30dvh,220px);overflow:auto;margin-block:8px }
+.studio-image-catalog button { display:flex;align-items:center;gap:9px;width:100%;text-align:left }
+.studio-image-catalog button[aria-pressed="true"] { border-color:var(--accent) }
+.studio-image-catalog img { width:42px;height:42px;flex:none;object-fit:contain;background:var(--studio-panel) }
+.studio-image-catalog small { display:block }
+.studio-image-selection,.studio-image-properties fieldset { display:grid;gap:8px;min-width:0 }
+.studio-image-properties fieldset { padding:0;border:0 }
 .studio-bundle-clips { display:grid;gap:8px;min-width:0;border:1px solid var(--studio-line);padding:7px }
 .studio-bundle-clip { display:grid;gap:6px }
 .studio-bundle-clip textarea { width:100%;border:1px solid var(--studio-line);background:#fffdf7;padding:4px;font:11px var(--mono) }

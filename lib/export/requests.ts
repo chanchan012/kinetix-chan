@@ -3,6 +3,7 @@ import type { ExportQueue } from "../../db/exports";
 import { exportRequested, inngest } from "../../jobs/client";
 import { tracksSchema } from "../rig/animation";
 import { readRigState, referenceFrameCount } from "../rig/model";
+import { hasMissingArtworkImages,renderedImages } from "../rig/layer-tree";
 import { containsRasterCels, exportFormatSchema, exportSnapshotSchema, rasterScaleSchema, supportedExport } from "./frames";
 
 export const exportRequest = z.strictObject({
@@ -15,6 +16,8 @@ export async function queueExport(queue:ExportQueue, owner:string, rigId:string,
   const input = await queue.inputs(owner,rigId,job.clipId);
   if (!input) return {error:"not_found",status:404} as const;
   const state = readRigState(input.state);
+  if (hasMissingArtworkImages(state)) return {error:"missing_image_assets",status:400} as const;
+  if (job.format==="lottie" && renderedImages(state).length) return {error:"image_layers_require_a_raster_export",status:400} as const;
   const frameCount = input.clip?.frameCount ?? referenceFrameCount(state);
   const snapshot = exportSnapshotSchema.safeParse({
     name:input.clip?.name ?? input.name,rig:state,tracks:tracksSchema.parse(input.clip?.tracks ?? []),

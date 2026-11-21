@@ -4,7 +4,7 @@ import { artboardSchema, boneSchema, constraintSchema, facetGraphSchema, guideSc
 import { offsetForPartPivot } from "./part-transform";
 import { changeNodeMode, joinOpenParts, reverseKnots, simplifyPath, splitPathEdge } from "./path-geometry";
 import { layoutOffsets, translatedPartOffset } from "./path-layout";
-import { evaluateRig } from "./kinematics";
+import { evaluateRig,rotatePoint } from "./kinematics";
 import { cutFacetFace, mirrorFacets, splitFacetEdge, triangulateFacets, weldFacetVertices } from "./facet-geometry";
 import { splitMeshTriangle } from "./skinning";
 import { groupLayers,layerId,layerTreeFor,moveLayer,orderedLayers,syncPartLayers,ungroupLayer,type LayerTree } from "./layer-tree";
@@ -12,6 +12,7 @@ import { resolvePaint,swatchSchema } from "./appearance";
 import { booleanModes,booleanPath,pathRegions } from "./path-boolean";
 import { celRunsSchema, drawingFrameSchema, drawingIdSchema, drawingInputSchema, drawingStorageSchema, exposureSchema } from "./drawings";
 import { editCelPixels, pixelOperationSchema } from "./cel-tools";
+import { imageAssetSchema,imageBase64,imageFolder,imageName,imagePlacementSchema,type ImagePlacement } from "./images";
 
 enablePatches();
 
@@ -64,6 +65,12 @@ export const rigCommandSchema = z.discriminatedUnion("type", [
   z.strictObject({ type:z.literal("parts.boolean"),ids:z.array(geometryId).min(2).max(128),mode:z.enum(booleanModes) }),
   z.strictObject({ type:z.literal("layer.move"),id:layerId,parentId:layerId.nullable(),index:z.int().min(0).max(256) }),
   z.strictObject({ type:z.literal("layer.duplicate"),id:layerId,prefix:facetPrefix }),
+  z.strictObject({type:z.literal("image.asset.put"),asset:imageAssetSchema,base64:imageBase64}),
+  z.strictObject({type:z.literal("image.asset.label"),id:layerId,name:imageName,folder:imageFolder}),
+  z.strictObject({type:z.literal("image.asset.remove"),id:layerId}),
+  z.strictObject({type:z.literal("image.place"),id:layerId,placement:imagePlacementSchema}),
+  z.strictObject({type:z.literal("image.update"),id:layerId,changes:imagePlacementSchema.partial()}),
+  z.strictObject({type:z.literal("image.remove"),id:layerId}),
   z.strictObject({type:z.literal("drawing.create"),drawing:drawingInputSchema}),
   z.strictObject({type:z.literal("drawing.remove"),id:drawingIdSchema}),
   z.strictObject({type:z.literal("drawing.palette"),id:drawingIdSchema,colors:drawingStorageSchema.options[1].shape.colors}),
@@ -113,6 +120,29 @@ function editDrawing(rig:Draft<KinetixRigState>,id:string) {
   return drawing;
 }
 
+function editImagePlacement(rig:Draft<KinetixRigState>,id:string) {
+  const row=orderedLayers(sourceLayers(rig)).find(({node})=>node.id===id);
+  if (row?.node.kind!=="image") throw new Error("The image placement does not exist.");
+  if (row.locked) throw new Error("Unlock the image layer before editing it.");
+  return row.node.placement;
+}
+
+function attachImage(placement:ImagePlacement,boneId:string|null,poses:ReturnType<typeof evaluateRig>) {
+  const from=placement.boneId ? poses.get(placement.boneId) : undefined;
+  const to=boneId ? poses.get(boneId) : undefined;
+  if (boneId && !to) throw new Error("The attachment bone does not exist.");
+  const local=rotatePoint({x:placement.x,y:placement.y},from?.angle ?? 0);
+  const offset=rotatePoint({x:local.x+(from?.origin.x ?? 0)-(to?.origin.x ?? 0),
+    y:local.y+(from?.origin.y ?? 0)-(to?.origin.y ?? 0)},-(to?.angle ?? 0));
+  Object.assign(placement,offset,{boneId,rotation:placement.rotation+(from?.angle ?? 0)-(to?.angle ?? 0)});
+}
+
+function pruneImageSources(rig:Draft<KinetixRigState>) {
+  if (!rig.images) return;
+  const used=new Set(rig.images.assets.map(asset=>asset.sha256));
+  rig.images.sources=rig.images.sources.filter(source=>used.has(source.sha256));
+}
+
 function cloneValue<T extends object>(value:T):T {
   return structuredClone(isDraft(value) ? current(value as Draft<T>) : value);
 }
@@ -131,6 +161,11 @@ function applyCommand(rig: Draft<KinetixRigState>, command: RigCommand) {
       const removed = new Set([command.id]);
       for (const bone of orderedBones(rig.bones)) {
         if (bone.parentId !== null && removed.has(bone.parentId)) removed.add(bone.id);
+      }
+      const attachments=rig.layers?.nodes.filter(node=>node.kind==="image" && node.placement.boneId && removed.has(node.placement.boneId));
+      if (attachments?.length) {
+        const poses=evaluateRig(rig);
+        for (const node of attachments) if (node.kind==="image") attachImage(node.placement,null,poses);
       }
       rig.bones = rig.bones.filter(bone => !removed.has(bone.id));
       rig.constraints = rig.constraints.filter(ik => !removed.has(ik.upperId) && !removed.has(ik.lowerId));
@@ -338,6 +373,7 @@ function applyCommand(rig: Draft<KinetixRigState>, command: RigCommand) {
       const node = findById(sourceLayers(rig).nodes,command.id,"Layer");
       if (node.kind==="group") node.name = command.name;
       else if (node.kind==="drawing") editDrawing(rig,node.drawingId).name = command.name;
+      else if (node.kind==="image") editImagePlacement(rig,node.id).name=command.name;
       else findById(rig.parts,node.partId,"Vector part").name = command.name;
       break;
     }
@@ -410,6 +446,8 @@ function applyCommand(rig: Draft<KinetixRigState>, command: RigCommand) {
           const drawing = findById(rig.drawings!.layers,source.drawingId,"Raster drawing");
           rig.drawings!.layers.push({...cloneValue(drawing),id,name:drawing.name.slice(0,115)+" copy"});
           tree.nodes.push({...source,id,parentId,drawingId:id});
+        } else if (source.kind==="image") {
+          tree.nodes.push({...source,id,parentId,placement:{...source.placement,name:source.placement.name.slice(0,115)+" copy"}});
         } else {
           const children = tree.nodes.filter(item=>item.parentId===source.id);
           tree.nodes.push({...source,id,parentId,name:(source.name.slice(0,115)+" copy")});
@@ -423,6 +461,48 @@ function applyCommand(rig: Draft<KinetixRigState>, command: RigCommand) {
         if (created.has(layer.id) && layer.maskPartId) layer.maskPartId=copiedParts.get(layer.maskPartId) ?? layer.maskPartId;
       }
       moveLayer(tree,id,node.parentId,siblings.indexOf(node)+1);
+      break;
+    }
+    case "image.asset.put": {
+      const catalog=rig.images ?? (rig.images={assets:[],sources:[]});
+      const index=catalog.assets.findIndex(asset=>asset.id===command.asset.id);
+      if (index<0) catalog.assets.push(command.asset);
+      else catalog.assets[index]=command.asset;
+      const known=catalog.sources.find(source=>source.sha256===command.asset.sha256);
+      if (known && known.base64!==command.base64) throw new Error("Existing image bytes do not match the digest.");
+      if (!known) catalog.sources.push({sha256:command.asset.sha256,base64:command.base64});
+      pruneImageSources(rig);
+      break;
+    }
+    case "image.asset.label": {
+      const asset=findById(rig.images?.assets ?? [],command.id,"Image asset");
+      asset.name=command.name;
+      asset.folder=command.folder;
+      break;
+    }
+    case "image.asset.remove": {
+      findById(rig.images?.assets ?? [],command.id,"Image asset");
+      if (rig.layers?.nodes.some(node=>node.kind==="image" && node.placement.assetId===command.id)) {
+        throw new Error("Remove the image placements before removing this asset.");
+      }
+      rig.images!.assets=rig.images!.assets.filter(asset=>asset.id!==command.id);
+      pruneImageSources(rig);
+      break;
+    }
+    case "image.place":
+      sourceLayers(rig).nodes.push({kind:"image",id:command.id,parentId:null,placement:command.placement});
+      break;
+    case "image.update": {
+      const placement=editImagePlacement(rig,command.id);
+      const {boneId,...changes}=command.changes;
+      if (boneId!==undefined && boneId!==placement.boneId) attachImage(placement,boneId,evaluateRig(rig));
+      Object.assign(placement,changes);
+      break;
+    }
+    case "image.remove": {
+      editImagePlacement(rig,command.id);
+      const tree=sourceLayers(rig);
+      tree.nodes=tree.nodes.filter(node=>node.id!==command.id);
       break;
     }
     case "drawing.create": {

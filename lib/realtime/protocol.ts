@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 export const selectionSchema = z.strictObject({
-  kind:z.enum(["bone","part","drawing"]), id:z.string().min(1).max(64),
+  kind:z.enum(["bone","part","drawing","image"]), id:z.string().min(1).max(64),
 }).nullable();
 
 export const presenceInput = z.strictObject({ clientId:z.uuid(), selection:selectionSchema });
