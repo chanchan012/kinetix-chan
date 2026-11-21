@@ -11,14 +11,15 @@ import { movePathKnot, pencilKnots, primitiveKnots, type KnotHandle, type Primit
 import { pointBounds, pointInPolygon, translatedPartOffset, worldPartBounds, type Axis } from "@/lib/rig/path-layout";
 import { facetArtworkFaces,facetPointMappers } from "@/lib/rig/facet-skinning";
 import type { FacetViewportTool } from "./facet-tools";
-import { editablePartIds,orderedVisibleParts } from "@/lib/rig/layer-tree";
+import { editablePartIds,orderedVisibleParts,visibleLayerRows,type ImageLayer } from "@/lib/rig/layer-tree";
 import { regionPolygons } from "@/lib/rig/path-boolean";
 import { celAt, inkAt, rgbaInk, type Cel, type Drawing, type DrawingSample } from "@/lib/rig/drawings";
 import { editCelPixels, type CelStroke, type StrokeSample } from "@/lib/rig/cel-tools";
 import { createCelPreview } from "./cel-preview";
 import { celInk, type CelSettings, type PixelRegion } from "./cel-controls";
+import { useImageBitmaps } from "./image-bitmaps";
 
-export type Selection = { kind: "bone" | "part" | "drawing"; id: string } | null;
+export type Selection = { kind: "bone" | "part" | "drawing" | "image"; id: string } | null;
 export type SelectionMode = "marquee" | "lasso";
 export type Tool = "select" | "bone" | "pen" | "polygon" | "primitive" | "pencil" | "region" | "facet";
 export type Brush = { partId: string; boneId: string; radius: number; strength: number };
@@ -30,6 +31,7 @@ type Gesture =
   | { type: "primitive"; start: Point; square: boolean }
   | { type: "pencil"; points: Point[] }
   | { type: "move"; part: VectorPart; ids:string[]; start: Point }
+  | { type:"moveImage"; layer:ImageLayer; start:Point }
   | { type: "region"; points:Point[] }
   | { type: "knot"; part: VectorPart; index: number; handle: KnotHandle; start:Point }
   | { type: "facetVertex"; part:VectorPart; vertexId:string; start:Point }
@@ -62,6 +64,7 @@ type Props = {
   snapping: boolean;
   rulers: boolean;
   reference: boolean;
+  showImageReferences:boolean;
   zoom: number;
   showBones: boolean;
   pen: VectorKnot[];
@@ -146,10 +149,11 @@ function drawRulers(context:CanvasRenderingContext2D,camera:Point,scale:number,s
 }
 
 export function Viewport({rig, phase, sample, ghosts, pixels, onionSettings, brush, remoteBones, selected, selectedParts, selectedEdge, selectedNode, setNode,
-  select, selectRegion, tool, primitive, facets, isolation, smoothing, selectionMode, snapping, rulers, reference, zoom, showBones,
+  select, selectRegion, tool, primitive, facets, isolation, smoothing, selectionMode, snapping, rulers, reference, showImageReferences,zoom, showBones,
   pen, addKnot, closePolygon, addDrawnPath, addBone, edit}: Props) {
   const canvas = useRef<HTMLCanvasElement>(null);
   const paintCel = useMemo(createCelPreview,[]);
+  const bitmaps=useImageBitmaps(rig.images);
   const [size, setSize] = useState({ width: 0, height: 0 });
   const [gesture, setGesture] = useState<Gesture | null>(null);
   const [cursor, setCursor] = useState<Point | null>(null);
@@ -221,6 +225,15 @@ export function Viewport({rig, phase, sample, ghosts, pixels, onionSettings, bru
         }
         return {type:"parts.translate",ids:current.ids,delta};
       }
+      case "moveImage": {
+        const {placement}=current.layer;
+        const pose=placement.boneId ? authoredPoses.get(placement.boneId) : undefined;
+        const initial=rotatePoint(placement,pose?.angle ?? 0);
+        const target=drawingPoint({x:initial.x+(pose?.origin.x ?? 0)+point.x-current.start.x,
+          y:initial.y+(pose?.origin.y ?? 0)+point.y-current.start.y},override);
+        const changes=rotatePoint({x:target.x-(pose?.origin.x ?? 0),y:target.y-(pose?.origin.y ?? 0)},-(pose?.angle ?? 0));
+        return {type:"image.update",id:current.layer.id,changes};
+      }
       case "knot": {
         const knot = current.part.knots[current.index];
         const original = partWorldSpace(knot[current.handle] ?? knot.point,current.part,authoredPoses);
@@ -240,7 +253,10 @@ export function Viewport({rig, phase, sample, ghosts, pixels, onionSettings, bru
   }
 
   const draft = gesture && cursor ? gestureCommand(gesture,cursor,snapOverride) : undefined;
-  const preview: KinetixRigState = draft?.type === "bone.update" ? {
+  const preview: KinetixRigState = draft?.type==="image.update" && rig.layers ? {
+    ...rig,layers:{...rig.layers,nodes:rig.layers.nodes.map(node=>node.kind==="image" && node.id===draft.id ?
+      {...node,placement:{...node.placement,...draft.changes}} : node)},
+  } : draft?.type === "bone.update" ? {
     ...rig, bones: rig.bones.map(bone => bone.id === draft.id ? { ...bone, ...draft.changes } : bone),
   } : draft?.type === "ik.target" ? {
     ...rig, constraints: rig.constraints.map(ik => ik.id === draft.id ? { ...ik, target: draft.target } : ik),
@@ -296,6 +312,10 @@ export function Viewport({rig, phase, sample, ghosts, pixels, onionSettings, bru
         context.restore();
       }
       drawRigArtwork(context,preview,poses,phase,reference,isolation,{
+        includeReferences:showImageReferences,paintImage:(asset,placement)=>{
+          const image=bitmaps?.get(asset.sha256);
+          if (image?.complete && image.naturalWidth) context.drawImage(image,0,0,placement.width,placement.height);
+        },
         sample,paint:(drawing,cel)=>{
           if (gesture?.type==="celStroke" && gesture.drawingId===drawing.id && gesture.celId===cel.id &&
               drawing.width*drawing.height<=512*512) {
@@ -308,6 +328,21 @@ export function Viewport({rig, phase, sample, ghosts, pixels, onionSettings, bru
           if (cel.runs.length) paintCel(context,drawing,cel);
         },
       });
+      if (selected?.kind==="image") {
+        const active=visibleLayerRows(preview,isolation).find(row=>row.node.id===selected.id);
+        if (active?.node.kind==="image" && (active.node.placement.mode==="artwork" || showImageReferences)) {
+          const placement=active.node.placement;
+          const pose=placement.boneId ? poses.get(placement.boneId) : undefined;
+          context.save();
+          if (pose) {context.translate(pose.origin.x,pose.origin.y);context.rotate(pose.angle);}
+          context.translate(placement.x,placement.y);
+          context.rotate(placement.rotation);
+          context.strokeStyle="#3369e7";
+          context.lineWidth=1.25/scale;
+          context.strokeRect(0,0,placement.width,placement.height);
+          context.restore();
+        }
+      }
       if (pixels?.settings.grid && scale*dpr>=5) {
         const {width,height}=pixels.drawing;
         const minX=Math.max(0,Math.floor(-camera.x/scale));
@@ -509,7 +544,7 @@ export function Viewport({rig, phase, sample, ghosts, pixels, onionSettings, bru
       if (rulers) drawRulers(context,camera,scale,size,dpr);
     });
     return () => cancelAnimationFrame(frame);
-  }, [scale, size, camera.x, camera.y, preview, rig, authoredPoses, phase, sample, paintCel, pixels, onionSettings, reference, selected, selectedParts, selectedEdge, selectedNode,
+  }, [scale, size, camera.x, camera.y, preview, rig, authoredPoses, phase, sample, paintCel, pixels, onionSettings, reference, showImageReferences,bitmaps,selected, selectedParts, selectedEdge, selectedNode,
     showBones, gesture, cursor, pen, ghosts, brush, remoteBones, primitive, facets, isolation, editingIds, selectionMode, rulers, guides,
     viewportFrame.x,viewportFrame.y,viewportFrame.width,viewportFrame.height]);
 
@@ -598,6 +633,18 @@ export function Viewport({rig, phase, sample, ghosts, pixels, onionSettings, bru
     } else if (tool === "region") {
       next = { type: tool,points:[point] };
     } else {
+      const image=selected?.kind==="image" ? visibleLayerRows(rig,isolation).find(row=>row.node.id===selected.id && !row.locked) : undefined;
+      if (image?.node.kind==="image" && (image.node.placement.mode==="artwork" || showImageReferences)) {
+        const placement=image.node.placement;
+        const pose=placement.boneId ? authoredPoses.get(placement.boneId) : undefined;
+        const anchor=rotatePoint({x:point.x-(pose?.origin.x ?? 0),y:point.y-(pose?.origin.y ?? 0)},-(pose?.angle ?? 0));
+        const local=rotatePoint({x:anchor.x-placement.x,y:anchor.y-placement.y},-placement.rotation);
+        if (local.x>=0 && local.y>=0 && local.x<=placement.width && local.y<=placement.height) {
+          event.currentTarget.setPointerCapture(event.pointerId);
+          setGesture({type:"moveImage",layer:image.node,start:point});
+          return;
+        }
+      }
       const part = selected?.kind === "part" && editingIds.has(selected.id) ? rig.parts.find(item => item.id === selected.id) : undefined;
       if (part && !part.mesh && !part.facets && selectedParts.length<=1) {
         for (const [index, knot] of part.knots.entries()) {
@@ -707,13 +754,14 @@ export function Viewport({rig, phase, sample, ghosts, pixels, onionSettings, bru
       }).map(part=>part.id);
       selectRegion(ids);
     } else if (cursor || gesture.type === "paint") {
-      if ((gesture.type==="move" || gesture.type==="knot" || gesture.type==="facetVertex") && distance(point,gesture.start)*scale < 1) {
+      if ((gesture.type==="move" || gesture.type==="moveImage" || gesture.type==="knot" || gesture.type==="facetVertex") && distance(point,gesture.start)*scale < 1) {
         clear();
         return;
       }
       const command = gestureCommand(gesture,point,event.altKey);
       if (command) edit(gesture.type === "rotate" ? "Rotate bone" : gesture.type === "target" ? "Move IK target" :
-        gesture.type === "paint" ? "Paint weights" : gesture.type==="facetVertex" ? "Move facet vertex" : "Edit path", command);
+        gesture.type === "paint" ? "Paint weights" : gesture.type==="facetVertex" ? "Move facet vertex" :
+          gesture.type==="moveImage" ? "Move image placement" : "Edit path", command);
     }
     clear();
   }

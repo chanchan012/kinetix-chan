@@ -1,23 +1,26 @@
 "use client";
 
 import { useState,type CSSProperties } from "react";
-import { CaretDown, CaretUp, Eye, EyeSlash, FolderSimple, GridFour, LockSimple, LockSimpleOpen } from "@phosphor-icons/react";
+import { CaretDown, CaretUp, Eye, EyeSlash, FolderSimple, GridFour, Image as ImageIcon, LockSimple, LockSimpleOpen } from "@phosphor-icons/react";
 import type { RigCommand } from "@/lib/rig/commands";
 import { inLayerSubtree,layerTreeFor,orderedLayers } from "@/lib/rig/layer-tree";
 import type { KinetixRigState } from "@/lib/rig/model";
 
 import type { RasterImportMode } from "./sequence-import-dialog";
 
-export function LayerList({rig,selectedParts,boneSelected,drawingId,selectPart,selectDrawing,makeDrawing,openImport,openRasterImport,isolate,setIsolate,edit}: {
+export function LayerList({rig,selectedParts,boneSelected,drawingId,imageId,selectPart,selectDrawing,selectImage,makeDrawing,openImport,openRasterImport,openImages,isolate,setIsolate,edit}: {
   rig:KinetixRigState;
   selectedParts:string[];
   boneSelected:boolean;
   drawingId?:string;
+  imageId?:string;
   selectPart:(id:string|null)=>void;
   selectDrawing:(id:string)=>void;
+  selectImage:(id:string)=>void;
   makeDrawing:(mode:"indexed"|"rgba")=>void;
   openImport:()=>void;
   openRasterImport:(mode:RasterImportMode)=>void;
+  openImages:()=>void;
   isolate:string|null;
   setIsolate:(id:string|null)=>void;
   edit:(label:string,command:RigCommand)=>boolean;
@@ -27,13 +30,15 @@ export function LayerList({rig,selectedParts,boneSelected,drawingId,selectPart,s
   const tree = layerTreeFor(rig);
   const rows = orderedLayers(tree);
   const parts = new Map(rig.parts.map(part=>[part.id,part]));
-  const group = !boneSelected && !drawingId && selectedParts.length===0 &&
+  const group = !boneSelected && !drawingId && !imageId && selectedParts.length===0 &&
     tree.nodes.find(node=>node.id===selectedGroup && node.kind==="group");
   const active = group || tree.nodes.findLast(node=>
     (node.kind==="drawing" && node.drawingId===drawingId) ||
+    (node.kind==="image" && node.id===imageId) ||
     (node.kind==="part" && selectedParts.includes(node.partId)));
   const selectedNodes = rows.flatMap(({node})=>
     (node.kind==="part" && selectedParts.includes(node.partId)) ||
+    (node.kind==="image" && node.id===imageId) ||
     (node.kind==="drawing" && node.drawingId===drawingId) ? [node.id] : []);
   const parents = new Set(tree.nodes.filter(node=>selectedNodes.includes(node.id)).map(node=>node.parentId));
   const siblings = active ? tree.nodes.filter(node=>node.parentId===active.parentId) : [];
@@ -46,6 +51,7 @@ export function LayerList({rig,selectedParts,boneSelected,drawingId,selectPart,s
       <button type="button" onClick={openImport}>Import SVG</button>
       <button type="button" onClick={()=>openRasterImport("png-sequence")}>Import PNG sequence</button>
       <button type="button" onClick={()=>openRasterImport("sprite-bundle")}>Import sprite bundle</button>
+      <button type="button" onClick={openImages}>Image assets</button>
     </div>
     <details className="studio-layer-actions">
       <summary>Add drawing layer</summary>
@@ -58,7 +64,7 @@ export function LayerList({rig,selectedParts,boneSelected,drawingId,selectPart,s
     <ul>{rows.map(({node,depth,hidden,locked})=>{
       const part = node.kind==="part" ? parts.get(node.partId) : undefined;
       const drawing = node.kind==="drawing" ? rig.drawings?.layers.find(item=>item.id===node.drawingId) : undefined;
-      const name = node.kind==="group" ? node.name : drawing?.name ?? part?.name ?? "Path";
+      const name = node.kind==="group" ? node.name : node.kind==="image" ? node.placement.name : drawing?.name ?? part?.name ?? "Path";
       const nameId = "layer-name-"+node.id;
       if (query && !name.toLowerCase().includes(query)) return null;
       const selected = node.kind==="part" ? selectedParts.includes(node.partId) : active?.id===node.id;
@@ -71,10 +77,11 @@ export function LayerList({rig,selectedParts,boneSelected,drawingId,selectPart,s
             } else {
               setSelectedGroup(null);
               if (node.kind==="drawing") selectDrawing(node.drawingId);
+              else if (node.kind==="image") selectImage(node.id);
               else selectPart(node.partId);
             }
           }}>
-          {node.kind==="group" ? <FolderSimple size={14}/> : node.kind==="drawing" ? <GridFour size={14}/> :
+          {node.kind==="group" ? <FolderSimple size={14}/> : node.kind==="drawing" ? <GridFour size={14}/> : node.kind==="image" ? <ImageIcon size={14}/> :
             <span className="studio-swatch" style={{backgroundColor:part?.facets?.faces[0].fill ?? part?.fill}}/>}
           <span id={nameId}>{name}</span>
         </button>

@@ -89,7 +89,9 @@ export function ExportDialog({rigId, revision, clip, clips, frameCount, artboard
           return;
         }
         if (response.status === 400) {
-          setMessage("This sprite package exceeds the render limits. Try a shorter range or smaller artboard.");
+          const failure=await response.json().catch(()=>null);
+          setMessage(failure?.error==="missing_image_assets" ? "Relink missing artwork images before exporting." :
+            "This sprite package exceeds the render limits. Try a shorter range or smaller artboard.");
           return;
         }
         if (!response.ok) throw new Error("Could not render sprites");
@@ -120,7 +122,9 @@ export function ExportDialog({rigId, revision, clip, clips, frameCount, artboard
       const response = await fetch(path,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({id,...parameters})});
       if (!response.ok) {
         const failure = await response.json().catch(()=>null);
-        if (failure?.error==="raster_cels_require_a_raster_export") setMessage("This range contains drawn cels. Choose PNG, sprites, or video.");
+        if (failure?.error==="missing_image_assets") setMessage("Relink missing artwork images before exporting.");
+        else if (failure?.error==="image_layers_require_a_raster_export") setMessage("This project uses visible image artwork. Choose PNG, sprites, or video.");
+        else if (failure?.error==="raster_cels_require_a_raster_export") setMessage("This range contains drawn cels. Choose PNG, sprites, or video.");
         else if (response.status === 400) setMessage("Choose a shorter range or smaller scale for this animation.");
         else setMessage("Could not queue the export. Try again.");
         return;

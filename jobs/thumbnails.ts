@@ -6,6 +6,8 @@ import { readRigState } from "../lib/rig/model";
 import { drawArtboardBackground, drawRigArtwork } from "../lib/rig/render";
 import { evaluateRig } from "../lib/rig/kinematics";
 import { paintCelRuns } from "../lib/rig/drawings";
+import { createImagePainter } from "../lib/export/image-painter";
+import { hasMissingArtworkImages } from "../lib/rig/layer-tree";
 
 export async function processThumbnails(library:Library) {
   let saved = 0;
@@ -15,7 +17,7 @@ export async function processThumbnails(library:Library) {
     const frame = Math.min(Math.round(clip.fps / 2),clip.frames - 1);
     if (clip.state.version === 2) {
       const rig = readRigState(clip.state);
-      if (rig.version !== 2) continue;
+      if (rig.version !== 2 || hasMissingArtworkImages(rig)) continue;
       const {width, height} = rig.artboard;
       const scale = Math.min(360 / width, 200 / height);
       ctx.translate((360 - width * scale) / 2, (200 - height * scale) / 2);
@@ -25,7 +27,7 @@ export async function processThumbnails(library:Library) {
       ctx.clip();
       drawArtboardBackground(ctx, rig);
       drawRigArtwork(ctx,rig,evaluateRig(rig),frame/clip.frames,true,null,{
-        sample:{clipId:clip.id,frame},paint:(drawing,cel)=>paintCelRuns(ctx,drawing,cel),
+        sample:{clipId:clip.id,frame},paint:(drawing,cel)=>paintCelRuns(ctx,drawing,cel),paintImage:createImagePainter(ctx,rig),
       });
     } else {
       const study = studyFor(clip.state.study);

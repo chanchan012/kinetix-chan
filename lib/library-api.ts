@@ -14,6 +14,8 @@ import { atlasImportInput,maxSequenceRequestBytes,sequenceImportInput } from "./
 import { importPngSequence,importSpriteAtlas } from "./import/sequence-service";
 import { exportProjectInput,projectArchiveRequestLimit,reopenProjectInput } from "./project/archive-options";
 import { exportProject,reopenProject } from "./project/archive-service";
+import { imageFileBytes,inspectImageInput } from "./rig/images";
+import { inspectImage,verifyProjectImages } from "./import/image-inspection";
 
 const name = z.string().trim().min(1).max(120);
 const createRig = z.union([z.strictObject({name,study:studyIdSchema}), z.strictObject({name,artboard:artboardSchema})]);
@@ -79,6 +81,8 @@ export function libraryApi(repository:()=>Library,rooms?:()=>RoomBus) {
       const id = c.req.param("id");
       const {revision,state} = c.req.valid("json");
       const library = repository();
+      try {verifyProjectImages(state.images);}
+      catch {return c.json({error:"invalid_image_assets",message:"One or more image payloads do not match their asset metadata."},400);}
       const saved = await library.saveRigState(owner,id,revision,state);
       if (saved) {
         if (rooms) {
@@ -95,6 +99,13 @@ export function libraryApi(repository:()=>Library,rooms?:()=>RoomBus) {
       if (!current) return c.json(missing,404);
       if (current.revision !== revision) return c.json({error:"revision_conflict",revision:current.revision},409);
       return c.json({error:"study_mismatch"},400);
+    })
+    .post("/:id/image-assets/inspect",bodyLimit({maxSize:4*Math.ceil(imageFileBytes/3)+1024,onError:c=>
+      c.json({error:"image_too_large",message:"Choose an image of 1 MiB or less."},413)}),body(inspectImageInput),async c=>{
+      const revision=await repository().rigRevision(c.get("userId")!,c.req.param("id"));
+      if (revision===undefined) return c.json(missing,404);
+      try {return c.json(inspectImage(c.req.valid("json").base64));}
+      catch (error) {return c.json({error:"invalid_image",message:error instanceof Error ? error.message.slice(0,250) : "The image could not be decoded."},400);}
     })
     .post("/:id/imports/png-sequence",bodyLimit({maxSize:maxSequenceRequestBytes,onError:c=>
       c.json({error:"archive_too_large",message:"Choose a PNG sequence ZIP of 2 MiB or less."},413)}),body(sequenceImportInput),async c=>{

@@ -49,6 +49,7 @@ export function ProjectArchiveForm({rigId,revision,clips,unsaved}:{rigId:string;
     {unsaved && <p>Save artwork and key changes before exporting.</p>}
     {preview && <section aria-label="Project archive preflight">
       <p>{preview.summary.clips.length} saved clips · {(preview.byteCount/1024).toFixed(1)} KiB</p>
+      {preview.summary.missingImages.length>0 && <p>{preview.summary.missingImages.length} missing images can be relinked after reopening.</p>}
       {preview.summary.warnings.map(warning=><p key={warning}>{warning}</p>)}
     </section>}
     {pending && <p role="status">Preparing saved project…</p>}

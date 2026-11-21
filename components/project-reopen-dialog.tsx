@@ -64,6 +64,11 @@ export function ProjectReopenDialog({close,opened}:{close:()=>void;opened:(id:st
         <p>{preview.receipt.artboard.width} × {preview.receipt.artboard.height} px · {preview.receipt.parts} paths · {preview.receipt.drawings} drawing layers</p>
         <p>{preview.receipt.clips.length} saved clips</p>
         {preview.receipt.clips.length>0 && <ul>{preview.receipt.clips.map(clip=><li key={clip.id}>{clip.name} · {clip.frameCount} frames at {clip.fps} fps</li>)}</ul>}
+        {preview.receipt.images>0 && <p>{preview.receipt.images} image assets</p>}
+        {preview.receipt.missingImages.length>0 && <>
+          <p>Open the project and relink these files under Image assets.</p>
+          <ul>{preview.receipt.missingImages.map(image=><li key={image.id}>{image.name}</li>)}</ul>
+        </>}
         {preview.receipt.warnings.map(message=><p key={message}>{message}</p>)}
         <p>This opens a new private project in your library.</p>
       </section>}

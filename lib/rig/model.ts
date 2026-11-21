@@ -5,6 +5,7 @@ import { layerTreeSchema } from "./layer-tree";
 import { appearanceSchema,swatchSchema } from "./appearance";
 import { drawingsSchema } from "./drawings";
 import { spriteSourcesSchema } from "./sprite-sources";
+import { imageCatalogSchema } from "./images";
 
 const coordinate = z.number().min(-1_000_000).max(1_000_000);
 export const pointSchema = z.strictObject({ x: coordinate, y: coordinate });
@@ -147,6 +148,7 @@ const documentContents = {
   swatches:z.array(swatchSchema).max(128).optional(),
   drawings:drawingsSchema.optional(),
   spriteSources:spriteSourcesSchema.optional(),
+  images:imageCatalogSchema.optional(),
 };
 const documentSchema = z.discriminatedUnion("version", [
   z.strictObject({ version: z.literal(1), study: studyIdSchema, ...documentContents }),
@@ -245,7 +247,11 @@ export const rigStateSchema = documentSchema.superRefine((rig, context) => {
       code:"custom",path:["layers","nodes"],message:"Each raster drawing needs one matching layer.",
     });
     const closed = new Set(rig.parts.filter(part=>part.closed).map(part=>part.id));
+    const images=new Set(rig.images?.assets.map(asset=>asset.id));
     for (const node of rig.layers.nodes) {
+      if (node.kind==="image" && (!images.has(node.placement.assetId) || (node.placement.boneId && !bones.has(node.placement.boneId)))) {
+        context.addIssue({code:"custom",path:["layers","nodes"],message:"Image placements require an existing asset and attachment bone."});
+      }
       if (node.maskPartId && (!closed.has(node.maskPartId) || (node.kind==="part" && node.maskPartId===node.partId))) {
         context.addIssue({code:"custom",path:["layers","nodes"],message:"A clipping mask requires another closed path."});
       }

@@ -22,6 +22,7 @@ export type ReopenProjectInput=z.output<typeof reopenProjectInput>;
 export type ProjectArchiveSummary={
   name:string;artboard:{width:number;height:number;background:string|null};study?:string;documentVersion:number;
   parts:number;drawings:number;bones:number;
+  images:number;missingImages:{id:string;name:string}[];
   clips:{id:string;name:string;fps:number;frameCount:number;trackRevision:number}[];
   warnings:string[];
 };

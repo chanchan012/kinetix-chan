@@ -6,6 +6,7 @@ import { artboardFor, readRigState } from "../rig/model";
 import { exportDimensions, exportSnapshotSchema, spritesheetGrid, supportedExport } from "./frames";
 import { renderSpritesheet } from "./raster";
 import { spriteMaxFrames, type spritePackageRequest } from "./sprite-package-options";
+import { hasMissingArtworkImages } from "../rig/layer-tree";
 
 type Request = z.output<typeof spritePackageRequest>;
 const maximumPackageBytes = 1_500_000;
@@ -17,6 +18,7 @@ export async function prepareSpritePackage(queue:Pick<ExportQueue,"inputs">, own
     return {error:"revision_conflict",status:409} as const;
   }
   const rig = readRigState(source.state);
+  if (hasMissingArtworkImages(rig)) return {error:"missing_image_assets",status:400} as const;
   const range = { startFrame:request.startFrame, endFrame:request.endFrame };
   const snapshot = exportSnapshotSchema.safeParse({
     rig, ...range, name:source.clip.name, fps:source.clip.fps,

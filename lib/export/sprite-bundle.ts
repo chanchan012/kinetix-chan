@@ -9,6 +9,7 @@ import { defaultSpritePacking, type SpriteBundleRequest } from "./sprite-bundle-
 import { spriteMaxFrames } from "./sprite-package-options";
 import { blitSprite, cropSprite, placeSprites, type SpriteCrop } from "./sprite-layout";
 import { spritePng } from "./sprite-png";
+import { hasMissingArtworkImages } from "../rig/layer-tree";
 
 const maxBundleBytes=1_500_000;
 const maxPagePixels=16*1024*1024;
@@ -77,6 +78,7 @@ export async function prepareSpriteBundle(queue:Pick<ExportQueue,"inputs">,owner
     return {error:"revision_conflict",status:409} as const;
   }
   const rig=readRigState(rows[0]!.state);
+  if (hasMissingArtworkImages(rig)) return {error:"missing_image_assets",status:400} as const;
   const saved:SavedClip[]=[];
   let count=0;
   for (const [index,clip] of request.clips.entries()) {

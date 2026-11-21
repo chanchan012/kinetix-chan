@@ -15,7 +15,8 @@ export function Presence({connected, entries, rig}: {
     {entries.slice(0, 3).map(entry => {
       const selection = entry.selection;
       const objects = selection?.kind==="bone" ? rig.bones : selection?.kind==="drawing" ? rig.drawings?.layers : rig.parts;
-      const target = selection && objects?.find(item=>item.id===selection.id)?.name;
+      const image=selection?.kind==="image" ? rig.layers?.nodes.find(node=>node.id===selection.id) : undefined;
+      const target = image?.kind==="image" ? image.placement.name : selection && objects?.find(item=>item.id===selection.id)?.name;
       const label = (entry.kind === "ai" ? "AI" : "Editor") + " · " + (target || "Viewing");
       const Icon = entry.kind === "ai" ? Robot : User;
       return <span key={entry.userId + ":" + entry.clientId} className="studio-avatar" data-kind={entry.kind}
