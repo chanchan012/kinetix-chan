@@ -74,7 +74,7 @@ Version 2 validates ZIP sizes, texture digests, bounds and timing before publish
 
 ## Import and update in Phaser 3.90.0
 
-Download the [Phaser starter](https://kinetix-chan.vercel.app/sprite-player/phaser) and extract it. With Node.js 24, run `npm ci`, then `npm run dev`. Upload a version 2 portable sprite ZIP in the starter and select a named clip and direction. Chrome verification covers Phaser Canvas and WebGL, all three package layouts, fractional scale, exact frame holds, cue delivery and reimport.
+Open the sprite player and choose **Phaser starter** to download the ZIP. The first release is available in the Vercel preview while production waits for the build limit to reset. Extract the ZIP and run `npm ci`, then `npm run dev`, with Node.js 24. Upload a version 2 portable sprite ZIP in the starter and select a named clip and direction. Chrome verification covers Phaser Canvas and WebGL, all three package layouts, fractional scale, exact frame holds, cue delivery and reimport. [Phaser release preview](https://kinetix-chan-l26n5z98k-chanchans-projects-aada625f.vercel.app/sprite-player)
 
 In an existing game, create a `KinetixPhaserLibrary` in your scene, call `importBundle(bytes)` and `createSprite(x, y, clipId)`. Use the returned container for placement and game-owned children. Bind `kinetix-cue` for frame events. `socket(name)` and `collisions()` return pivot-relative metadata in scene units after conversion from export pixels. A partial reimport keeps the omitted clips, and renamed clips retain their saved IDs. Import setup, calls and reimport behavior are documented in the [starter README](../integrations/phaser/README.md).
 

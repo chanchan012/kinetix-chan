@@ -18,11 +18,19 @@ Implemented the application shell, interactive guest playground, Clerk access ro
 
 The active implementation goal covers all 23 subgoals in [the production studio roadmap](docs/PRODUCTION_STUDIO_ROADMAP.md). Deployed work includes the original M5.1 through M5.5 slices, part position channels from M7.1, portable sprite bundles from M9.1 and Godot sprite import from M9.3. M8.1 has shipped editable SVG, PNG sequence and sprite atlas import, editable project archives and reusable PNG and WebP images with relinking. The [production tool inventory](docs/PRODUCTION_STUDIO_ROADMAP.md#production-tool-inventory) maps the illustrator and MCP toolsets to their subgoals. The [delivery paths](docs/PRODUCTION_STUDIO_ROADMAP.md#choose-a-delivery-path) cover basic grid slicers, portable players, native engine importers, runtime rigs and media pipelines.
 
-The M9.3 Phaser 3.90.0 sprite profile passed strict TypeScript, 91 Vitest tests, 98 authenticated Playwright cases with six expected skips, three Phaser browser checks, and the clean starter build and smoke test. The next exact step is to verify the Vercel preview and production download for this release. The following independent slice is the PixiJS profile.
+The Phaser 3.90.0 profile is on GitHub `main` and in a ready Vercel preview. Vercel rejected the production build with a 24-hour deployment rate limit on November 21, 2026 at 12:13 UTC. Start the independent PixiJS slice from the version 2 fixture. After the limit clears, deploy the validated `main` revision to production and verify the Phaser ZIP and signed-in Studio player workflow.
 
 Unity remains at feature commit `e71ae3e`. Windows canceled the official editor installer launch. Run the Unity 6000.3.29f1 editor check described in the [resume handoff](docs/RESUME_HANDOFF.md#m93--next-implementation-step) before releasing that adapter.
 
 Owner-managed Inngest Cloud activation is still open. After the signing and event keys are present in Vercel, redeploy, sync the existing endpoint, and verify a hosted thumbnail and animation export run. Saved still PNGs are served directly.
+
+## M9.3 Phaser sprite profile · November 21, 2026
+
+- **Brief and build** added the Phaser 3.90.0 sprite library, starter scene and ZIP for loose frames, fixed grids and packed atlases. Clips can be updated by stable ID and a failed update keeps the existing actor playable.
+- **Test** passed strict TypeScript, 91 Vitest checks including Godot, and 98 authenticated Playwright cases across four viewports with six expected skips. Three Phaser checks covered Canvas, WebGL, reimport and the starter. The downloaded project also built and played a cue in a clean install.
+- **Merge** published `0f92d7a` on `codex/m9-3-phaser-sprites` and merged it to `main` at `79ffea0`.
+- **Deploy** passed the local Next.js production build. Vercel marked the feature preview ready. An authenticated preview request verified the Phaser link and the `application/zip` download. Production awaits the rate-limit reset. [Feature preview](https://kinetix-chan-l26n5z98k-chanchans-projects-aada625f.vercel.app/sprite-player) · [GitHub release commit](https://github.com/chanchan012/kinetix-chan/commit/79ffea0e2c8580a62ec97eee4cfed1f840acc037)
+- **Document** records the import API, recovery behavior and production verification in the [engine export guide](docs/ENGINE_EXPORT.md#import-and-update-in-phaser-3900) and [resume handoff](docs/RESUME_HANDOFF.md#m93--phaser-verification).
 
 ## M8.1 reusable image assets · November 21, 2026
 
