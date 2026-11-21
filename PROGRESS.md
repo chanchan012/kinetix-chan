@@ -16,11 +16,19 @@ Implemented the application shell, interactive guest playground, Clerk access ro
 
 ## Active subgoal and next exact step
 
-The active implementation goal covers all 23 subgoals in [the production studio roadmap](docs/PRODUCTION_STUDIO_ROADMAP.md). M5.1 through M5.5 and M9.1 are deployed. The first playable asset workflow also delivered part position channels from M7.1 and the version 1 Godot sprite adapter from M9.3. Those subgoals have further acceptance criteria in the roadmap.
+The active implementation goal covers all 23 subgoals in [the production studio roadmap](docs/PRODUCTION_STUDIO_ROADMAP.md). The original M5.1 through M5.5 slices, M9.1 and Godot sprite import within M9.3 are deployed. Part position channels from M7.1 are deployed. The revised roadmap adds drawing workflow follow-ons within M5.5, a complete MCP authoring session, format fidelity rules and per-engine import and reimport checkpoints. Unity, Phaser, PixiJS, Unreal and GameMaker remain in M9.3.
 
-The next exact step is the multi-clip Godot adapter within M9.3. Start with `integrations/godot/import_sprite_package.gd` and the version 2 schema. Add a version-aware loader, verify PNG digests and restore rotated and trimmed frames with individual pivots. Preserve the generated asset paths and game-authored wrapper on reimport. Then verify variable holds, direction names and a blank frame in a clean Godot project across all three portable layouts.
+The next exact step is editable SVG exchange within M8.1. Add a layered SVG fixture and build a shared parser for its `viewBox`, group transforms, compound holes, fills and gradients. Map the parsed data to existing `part.create` and layer commands with one-step undo. Then wire the same import to Studio and scoped MCP and check renderer fidelity against the fixture.
 
 Owner-managed Inngest Cloud activation is still open. After the signing and event keys are present in Vercel, redeploy, sync the existing endpoint, and verify a hosted thumbnail and animation export run. Saved still PNGs are served directly.
+
+## M9.3 Godot sprite adapter · November 21, 2026
+
+- **Brief and build** extended the Godot 4.5.1 importer to all version 2 layouts. It generates aggregate and per-clip scenes, preserves clip keys on reimport, and exposes frame-specific anchors, sockets, collision metadata and cue signals. The sprite player offers a public installer ZIP.
+- **Test** passed 69 Vitest checks, including version 1 and version 2 in a clean Godot project, and 78 Playwright checks across four viewports with six expected desktop-only skips. The native fixture covered rotated and trimmed pixels, linear premultiplied textures, unequal holds, blank frames, all loop modes, migrated game references, renamed and omitted clips, concurrent import rejection and corrupt data rejection.
+- **Merge** published `9d987de` on `codex/m9-3-godot-bundles` and merged it as `09e8b5d` on `main`.
+- **Deploy** passed the local Webpack production build. Vercel marked the [feature preview](https://kinetix-chan-4mtan7num-chanchans-projects-aada625f.vercel.app) and [production](https://kinetix-chan.vercel.app) ready. The signed-in production mobile smoke exported and played all three layouts and downloaded the importer. The public ZIP's four files matched the released Git files byte-for-byte.
+- **Document** records the installation, runtime API and reimport behavior in [the sprite package contract](docs/ENGINE_EXPORT.md#import-and-update-in-godot-451). No database, environment or MCP schema changes are required.
 
 ## M9.1 portable sprite delivery · November 21, 2026
 
@@ -28,7 +36,7 @@ Owner-managed Inngest Cloud activation is still open. After the signing and even
 - **Test** passed 68 Vitest cases with the existing Godot integration enabled and 78 Playwright cases, with six expected skips. The browser compared all three layouts at 1.25×, including a transparent blank. A six-pose fixture covered packed page limits and pivot scaling at 1× and 3×. An additional geometry check verified 500 deterministic atlases for page bounds and gutter separation.
 - **Merge** published feature commit `21b45f4` and merged it as `9eaacda` on `main`.
 - **Deploy** the local Webpack build and Vercel Turbopack build passed. The [feature preview](https://kinetix-chan-gxobvl56g-chanchans-projects-aada625f.vercel.app) and [production](https://kinetix-chan.vercel.app) are ready. The hosted smoke clicked the phone preflight control, compared byte-identical REST and MCP ZIPs, and loaded rotated and blank frames in the player. The test account and rig were removed.
-- **Document** records the version 2 contract and the next native Godot step. The verified Godot importer currently reads the version 1 fixed-grid profile.
+- **Document** records the version 2 contract. At the M9.1 release, the Godot adapter was verified for version 1 fixed grids. The later M9.3 slice added version 2 support.
 
 ## M5.5 drawn cels and pixel art · November 21, 2026
 

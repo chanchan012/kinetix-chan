@@ -142,10 +142,14 @@ Run `npm test -- tests/unit/drawings.test.ts tests/unit/library.test.ts` for the
 
 ## M9.1 · Portable sprite bundles
 
-Choose **Portable sprite bundle (ZIP)** in Export, select saved clips and a layout, then use **Check export** to see files and texture memory. Open the downloaded ZIP from `/sprite-player` to play the bundle locally. The existing **Sprite package (ZIP)** option delivers the tested version 1 fixed grid for Godot 4.5.1. The version 2 JSON Schema is at `/sprite-player/schema`.
+Choose **Portable sprite bundle (ZIP)** in Export, select saved clips and a layout, then use **Check export** to see files and texture memory. Open the downloaded ZIP from `/sprite-player` to play the bundle locally. The existing **Sprite package (ZIP)** option delivers the version 1 fixed grid. Godot 4.5.1 reads either version. The version 2 JSON Schema is at `/sprite-player/schema`.
 
 Run `npm test -- tests/unit/sprite-bundle.test.ts tests/unit/library.test.ts` for layout, timing, color and REST/MCP parity. Run `npm run test:e2e -- --grep 'preflights and plays three layouts'` for the authenticated Studio and player workflow across four viewports. The bundle and player use the existing deployment variables and direct raster renderer. Enter per-frame sockets, collisions, event cues and custom durations under **Frame metadata** or supply them to MCP. See [the sprite contract](ENGINE_EXPORT.md).
 
-## M9.3 · Next implementation step
+## M9.3 · Godot sprite adapter
 
-Extend the Godot 4.5.1 importer to version 2. Use the existing `tests/unit/godot-sprite.test.ts` wrapper scene and add a multi-clip fixture with asymmetric trim, variable holds, rotation and a blank frame. Resolve frames by stable clip and source IDs. Preserve game-authored references and overrides while updating generated scene files. Retain version 1 coverage and verify all three layouts before publishing the expanded Godot profile. Unity, Phaser, PixiJS, Unreal and GameMaker profiles remain in M9.3.
+Download the installer at `/sprite-player/godot`. Use [the sprite package contract](ENGINE_EXPORT.md#import-and-update-in-godot-451) for installation and runtime calls. Set `KINETIX_GODOT_PATH` to an installed Godot 4.5.1 executable, then run `npm test -- tests/unit/godot-sprite.test.ts` for version 1 and version 2 playback, texture fidelity and reimport. Run `npm run test:e2e -- --grep 'preflights and plays three layouts'` for the authenticated export and player download across the viewport matrix. The public static download requires no new environment variables or database migrations. Unity, Phaser, PixiJS, Unreal and GameMaker profiles remain in M9.3.
+
+## M8.1 · Next implementation step
+
+Build a bounded editable SVG parser that converts `viewBox`, group transforms, compound holes, fills and gradients into the existing `part.create` and layer commands in `lib/rig/commands.ts`. Start with a layered SVG fixture and unit assertions for normalized geometry, clipping, nested paint and unsupported elements. Apply the parsed result as one undoable batch through Studio and scoped MCP. See the [production roadmap checkpoints](PRODUCTION_STUDIO_ROADMAP.md#implementation-checkpoints) for sequence import and portable project reopen after that slice.

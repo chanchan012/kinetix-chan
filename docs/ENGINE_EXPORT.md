@@ -1,6 +1,6 @@
 # Sprite package delivery
 
-The Godot 4.5.1 adapter reads the version 1 fixed-grid ZIP. Version 2 portable bundles contain multiple clips and support independent PNGs, fixed grids and packed atlases. The Kinetix reference player reads all three version 2 layouts.
+The Godot 4.5.1 adapter reads all three version 2 layouts and the version 1 fixed-grid ZIP. Version 2 portable bundles contain multiple clips and support independent PNGs, fixed grids and packed atlases. The Kinetix reference player reads all three version 2 layouts.
 
 ## Portable bundles
 
@@ -46,15 +46,21 @@ Create a design and save a clip. Select a path to animate its local X or Y offse
 
 The pivot uses artboard coordinates in pixels. Moving it changes which point of the image lands on the imported node's origin. Use bottom center for a character standing on the ground. The atlas contains original-size frames, including blank frames. Frame duration ticks are measured at the clip's frame rate.
 
-## Import and update
+## Import and update in Godot 4.5.1
 
-Copy `integrations/godot/import_sprite_package.gd` into your Godot project as `res://tools/import_sprite_package.gd`. In the command below, substitute your Godot executable, project folder, and downloaded ZIP.
+Download the [Godot importer](https://kinetix-chan.vercel.app/sprite-player/godot). Extract the three `.gd` files into the same folder in your Godot project. In the command below, substitute your Godot executable, project folder, downloaded sprite ZIP and script path.
 
 ```text
 godot --headless --path <game-project> --script res://tools/import_sprite_package.gd -- <downloaded-zip>
 ```
 
-The importer emits the paths for the `SpriteFrames` resource and the playable `AnimatedSprite2D` scene under `res://kinetix_generated/<rigId>/<clipId>/`. Instance `sprite.tscn` as a child of a game-owned scene and put your placement, scripts and game behavior on the parent. Reimport the same clip to update its generated assets at the same paths. Preserve the original clip when changing its name, artwork or timing so its ID and references carry forward. The generated scene takes updated pivot and filter settings from the ZIP.
+The version 2 receipt lists the multi-clip `SpriteFrames` resource and `AnimatedSprite2D` scene under `res://kinetix_generated/<rigId>/`, plus their single-clip counterparts under each clip ID. The latter preserve the corresponding version 1 paths and keys. A new key is derived from the clip name and optional direction. Reimports retain keys by clip ID even when the clip name changes, and the receipt distinguishes the aggregate `key` from its `singleKey`. An omitted clip is listed in `omittedClipIds`. Its single-clip assets and key reservation remain available if it returns in a later bundle.
+
+Instance `sprite.tscn` as a child of a game-owned scene. Keep placement, scripts and behavior in the game-owned scene. At runtime, call `play_kinetix_clip(clip_id)` or use the receipt key with `play()`. Godot applies per-frame offsets, pixel-scale compensation and the bundle's texture filter. Each crop uses an isolated texture, so linear sampling cannot bleed across atlas neighbors. The importer converts premultiplied or linear channel data for ordinary Godot 2D rendering.
+
+The generated node emits `kinetix_event(clip_id, frame_id, cue, data)` during playback, including on both passes through an interior ping-pong hold. Pause before scrubbing. `kinetix_frame_data()` returns the active frame metadata, including authored collision geometry. `kinetix_socket_transform(name)` returns a transform relative to the sprite so the game can place attachments. Collision bodies and attachment nodes can be created on the game side using those values.
+
+Version 2 validates ZIP sizes, texture digests, bounds and timing before publishing resources. Concurrent imports of the same rig are serialized by a lock directory. Changed resources are staged before replacement, and the importer restores previous files if a replacement fails. Identical cropped textures share a generated resource. Reimport the same package to rebuild the generated set after a forcibly interrupted import, following the recovery instructions in the [importer README](../integrations/godot/README.md).
 
 ## MCP and other engines
 
