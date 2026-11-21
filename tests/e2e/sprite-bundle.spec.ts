@@ -71,6 +71,15 @@ test("an illustrator preflights and plays three layouts of a portable sprite bun
     const schema=await page.request.get("/sprite-player/schema");
     expect(schema.headers()["content-type"]).toContain("application/schema+json");
     expect(await schema.json()).toMatchObject({properties:{version:{const:2}}});
+    const importerDownload=page.waitForEvent("download");
+    await page.getByRole("link",{name:"Godot importer"}).click();
+    const importer=await importerDownload;
+    expect(importer.suggestedFilename()).toBe("kinetix-godot-importer.zip");
+    const scripts=unzipSync(await readFile(await importer.path()));
+    expect(Object.keys(scripts).sort()).toEqual([
+      "README.md","import_sprite_bundle.gd","import_sprite_package.gd","kinetix_sprite.gd",
+    ]);
+    expect(strFromU8(scripts["import_sprite_bundle.gd"])).toContain("func import_bundle");
     const canvas=page.getByRole("img",{name:"Sprite preview"});
     const sample=()=>canvas.evaluate(element=>{
       const canvas=element as HTMLCanvasElement;
