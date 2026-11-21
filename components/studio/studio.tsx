@@ -26,8 +26,8 @@ import { Dialog } from "../dialog";
 import { FacetPanel,useFacetTool } from "./facet-tools";
 import { LayerList } from "./layer-list";
 import { SvgImportDialog } from "./svg-import-dialog";
-import { SequenceImportDialog } from "./sequence-import-dialog";
-import type { SequenceImportInput,SequenceReceipt } from "@/lib/import/sequence-options";
+import { SequenceImportDialog,type RasterImportMode } from "./sequence-import-dialog";
+import type { AtlasImportInput,AtlasReceipt,SequenceImportInput,SequenceReceipt } from "@/lib/import/sequence-options";
 import { AppearanceControls } from "./appearance-controls";
 import { editablePartIds,layerTreeFor,visibleLayerRows } from "@/lib/rig/layer-tree";
 import { CelControls, defaultCelSettings, type CelSettings } from "./cel-controls";
@@ -79,7 +79,7 @@ export function Studio({actorId, rigId, name, initial, revision: initialRevision
   const [liveClips, setLiveClips] = useState(clips);
   const [exportOpen, setExportOpen] = useState(false);
   const [importOpen,setImportOpen] = useState(false);
-  const [sequenceOpen,setSequenceOpen] = useState(false);
+  const [rasterImport,setRasterImport] = useState<RasterImportMode|null>(null);
   const [shareOpen, setShareOpen] = useState(false);
   const [mcpOpen, setMcpOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
@@ -233,34 +233,35 @@ export function Studio({actorId, rigId, name, initial, revision: initialRevision
     }
   }
 
-  async function sendSequence(input:SequenceImportInput) {
-    const response=await fetch(`/api/rigs/${rigId}/imports/png-sequence`,{method:"POST",
+  async function sendRasterImport(mode:RasterImportMode,input:SequenceImportInput|AtlasImportInput) {
+    const response=await fetch(`/api/rigs/${rigId}/imports/${mode}`,{method:"POST",
       headers:{"Content-Type":"application/json",...(room.clientId && {"X-Kinetix-Client":room.clientId})},body:JSON.stringify(input)});
-    const result=await response.json().catch(()=>null) as {receipt?:SequenceReceipt;state?:KinetixRigState;message?:string}|null;
-    if (!response.ok || !result?.receipt) throw new Error(result?.message ?? "Could not read this PNG sequence.");
+    const result=await response.json().catch(()=>null) as {receipt?:SequenceReceipt|AtlasReceipt;state?:KinetixRigState;message?:string}|null;
+    if (!response.ok || !result?.receipt) throw new Error(result?.message ?? "Could not read the selected file.");
     return {receipt:result.receipt,state:result.state};
   }
 
   const sequenceBlocked=dirty || timelineDirty || saving || conflict || room.revision>revision;
-  async function applySequence(input:SequenceImportInput) {
+  async function applyRasterImport(mode:RasterImportMode,input:SequenceImportInput|AtlasImportInput) {
     if (pending.current || sequenceBlocked || store.getState().rig!==saved) throw new Error("Finish saving Studio changes before importing.");
     pending.current=true;
     setSaving(true);
     try {
-      const result=await sendSequence(input);
-      if (!result.state || !result.receipt.applied) throw new Error("Could not save the new drawing and clip.");
+      const result=await sendRasterImport(mode,input);
+      if (!result.state || !result.receipt.applied) throw new Error("Could not save the new drawing and clips.");
       store.getState().reset(result.state);
       setSaved(store.getState().rig);
       setRevision(result.receipt.revision);
       setError("");
       clipRefresh.current++;
-      const imported=result.receipt.clip;
-      setLiveClips(rows=>[...rows.filter(row=>row.id!==imported.id),imported]);
-      selectClip(imported.id);
-      setClip(imported);
+      const imported="clips" in result.receipt ? result.receipt.clips : [result.receipt.clip];
+      const ids=new Set(imported.map(clip=>clip.id));
+      setLiveClips(rows=>[...rows.filter(row=>!ids.has(row.id)),...imported]);
+      selectClip(imported[0].id);
+      setClip(imported[0]);
       setIsolate(null);
       select({kind:"drawing",id:result.receipt.drawingId});
-      setSequenceOpen(false);
+      setRasterImport(null);
     } finally {
       pending.current=false;
       setSaving(false);
@@ -409,7 +410,7 @@ export function Studio({actorId, rigId, name, initial, revision: initialRevision
         <div className="studio-panel-title"><h2>Hierarchy</h2><span>{rig.bones.length} bones</span></div>
         <Hierarchy rig={rig} selected={selected} selectedParts={selectedParts} select={select} isolation={isolation}
           setIsolate={setIsolate} edit={edit} makeDrawing={makeDrawing} openImport={()=>setImportOpen(true)}
-          openSequence={()=>setSequenceOpen(true)}/>
+          openRasterImport={setRasterImport}/>
       </aside>
       <PanelHandle panel="hierarchy" size={layout.panels.hierarchy} label="Resize hierarchy" controls="studio-hierarchy"/>
       <PanelHandle panel="split" size={layout.panels.split} label="Resize side panels" controls="studio-hierarchy studio-inspector"/>
@@ -493,7 +494,7 @@ export function Studio({actorId, rigId, name, initial, revision: initialRevision
         manageClips={() => setClipsOpen(true)} preview={setAnimation} onDirty={setTimelineDirty} onClip={setClip}/>
     </div>
     {exportOpen && <ExportDialog rigId={rigId} revision={revision} clip={clip} clips={liveClips} frameCount={referenceFrameCount(rig)} artboard={artboardFor(rig)}
-      unsaved={dirty || timelineDirty} hasArtboard={rig.version === 2} renderConfigured={renderConfigured} close={() => setExportOpen(false)}/>}
+      spriteSources={rig.spriteSources} unsaved={dirty || timelineDirty} hasArtboard={rig.version === 2} renderConfigured={renderConfigured} close={() => setExportOpen(false)}/>}
     {importOpen && <SvgImportDialog rig={rig} close={()=>setImportOpen(false)} apply={plan=>{
       if (!edit("Import SVG",...plan.commands)) return false;
       setIsolate(null);
@@ -501,9 +502,10 @@ export function Studio({actorId, rigId, name, initial, revision: initialRevision
       setImportOpen(false);
       return true;
     }}/>}
-    {sequenceOpen && <SequenceImportDialog revision={revision} applyBlocked={sequenceBlocked}
+    {rasterImport && <SequenceImportDialog mode={rasterImport} revision={revision} applyBlocked={sequenceBlocked}
       emptyArtboard={rig.version===2 && !rig.parts.length && !rig.bones.length && !rig.drawings?.layers.length}
-      check={async input=>(await sendSequence(input)).receipt} apply={applySequence} close={()=>setSequenceOpen(false)}/>}
+      check={async input=>(await sendRasterImport(rasterImport,input)).receipt}
+      apply={input=>applyRasterImport(rasterImport,input)} close={()=>setRasterImport(null)}/>}
     {shareOpen && <ShareDialog rigId={rigId} close={() => setShareOpen(false)}/>}
     {mcpOpen && <McpDialog rigId={rigId} close={() => setMcpOpen(false)}/>}
     {shortcutsOpen && <ShortcutsDialog close={() => setShortcutsOpen(false)}/>}
@@ -644,12 +646,12 @@ function WeightTools({part, rig, brush, setBrush, edit, report}: {
   </section>;
 }
 
-function Hierarchy({rig, selected, selectedParts, select, isolation, setIsolate, edit, makeDrawing, openImport, openSequence}: {
+function Hierarchy({rig, selected, selectedParts, select, isolation, setIsolate, edit, makeDrawing, openImport, openRasterImport}: {
   rig: KinetixRigState; selected: Selection; selectedParts:string[]; select: (value: Selection) => void;
   isolation:string|null;setIsolate:(id:string|null)=>void;edit:Edit;
   makeDrawing:(mode:"indexed"|"rgba")=>void;
   openImport:()=>void;
-  openSequence:()=>void;
+  openRasterImport:(mode:RasterImportMode)=>void;
 }) {
   const depths = new Map<string, number>();
   return <div className="studio-tree">
@@ -660,7 +662,7 @@ function Hierarchy({rig, selected, selectedParts, select, isolation, setIsolate,
         aria-pressed={selected?.kind === "bone" && selected.id === bone.id} onClick={() => select({ kind: "bone", id: bone.id })}>
         <BoneIcon size={14}/><span>{bone.name}</span></button></li>;
     })}</ul>
-    <LayerList {...{rig,selectedParts,setIsolate,edit,makeDrawing,openImport,openSequence}} isolate={isolation} boneSelected={selected?.kind==="bone"}
+    <LayerList {...{rig,selectedParts,setIsolate,edit,makeDrawing,openImport,openRasterImport}} isolate={isolation} boneSelected={selected?.kind==="bone"}
       drawingId={selected?.kind==="drawing" ? selected.id : undefined} selectDrawing={id=>select({kind:"drawing",id})}
       selectPart={id=>select(id ? {kind:"part",id} : null)}/>
     {selected && <button className="studio-deselect" onClick={() => select(null)}>Clear selection</button>}

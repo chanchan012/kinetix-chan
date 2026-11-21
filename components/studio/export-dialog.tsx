@@ -4,15 +4,16 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { exportFormats, formats, type ExportFormat } from "@/lib/export/frames";
 import { spriteMaxFrames } from "@/lib/export/sprite-package-options";
 import type { Artboard } from "@/lib/rig/model";
+import type { SpriteSource } from "@/lib/rig/sprite-sources";
 import type { ClipTiming } from "./timeline";
 import { SpriteBundleForm } from "./sprite-bundle-form";
 
 type Job = { id: string; format: ExportFormat; status: "queued" | "running" | "ready" | "failed"; byteCount: number | null };
 const statusLabel = { queued:"Queued", running:"Rendering", ready:"Ready", failed:"Failed" } as const;
 
-export function ExportDialog({rigId, revision, clip, clips, frameCount, artboard, unsaved, hasArtboard, renderConfigured, close}: {
+export function ExportDialog({rigId, revision, clip, clips, frameCount, artboard, spriteSources, unsaved, hasArtboard, renderConfigured, close}: {
   rigId: string; revision: number; clip?: ClipTiming; frameCount: number; artboard: Artboard;
-  clips:ClipTiming[];
+  clips:ClipTiming[];spriteSources?:SpriteSource[];
   unsaved: boolean; hasArtboard: boolean; renderConfigured: boolean; close: () => void;
 }) {
   const [format, setFormat] = useState<ExportFormat | "sprite-package" | "sprite-bundle">("lottie");
@@ -141,7 +142,7 @@ export function ExportDialog({rigId, revision, clip, clips, frameCount, artboard
         {clips.length>0 && <option value="sprite-bundle">Portable sprite bundle (ZIP)</option>}
         {exportFormats.map(item => <option key={item} value={item}>{formats[item].label}</option>)}
       </select></label>
-    {isBundle ? <SpriteBundleForm path={rigPath+"/sprite-bundle"} rigId={rigId} revision={revision} clips={clips}
+    {isBundle ? <SpriteBundleForm path={rigPath+"/sprite-bundle"} rigId={rigId} revision={revision} clips={clips} spriteSources={spriteSources}
       activeId={clip?.id} artboard={artboard} unsaved={unsaved}/> : <form onSubmit={enqueue}>
       {hasScale && <label>Pixel scale<select name="scale" defaultValue="1">
         {[1,2,3,4].map(value=><option key={value} value={value}>{value}×</option>)}

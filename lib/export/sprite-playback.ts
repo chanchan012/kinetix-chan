@@ -1,34 +1,24 @@
 import { strFromU8, unzlibSync, unzipSync } from "fflate";
 import { z } from "zod";
+import { spriteCompanionFields,spriteLoopMode } from "../rig/sprite-sources";
 
 const texLimit=16*1024*1024;
 const fileLimit=1_500_000;
 const size=z.int().min(1).max(8192);
 const offset=z.int().min(0).max(8192);
-const at=z.object({x:z.number().min(-32768).max(32768),y:z.number().min(-32768).max(32768)});
 const frameSize=z.object({width:size,height:size});
 const fileName=z.string().regex(/^(atlas\/[0-9]{3}|frames\/[0-9]{5})\.png$/);
 const label=z.string().min(1).max(80);
-const collision=z.discriminatedUnion("kind",[
-  at.extend({kind:z.literal("rect"),name:label,width:z.number().gt(0).max(32768),height:z.number().gt(0).max(32768)}),
-  z.object({kind:z.literal("polygon"),name:label,points:z.array(at).min(3).max(64)}),
-]);
 const frame=z.object({
   id:z.string().min(1).max(80),sourceFrame:z.int().min(0).max(35_999),file:fileName,
-  startTick:z.int().min(0),durationTicks:z.int().min(1).max(10_000),
+  ...spriteCompanionFields,
   rect:frameSize.extend({x:offset,y:offset}),sourceSize:frameSize,trimOffset:z.object({x:offset,y:offset}),
-  pivot:at,origin:at,blank:z.boolean(),rotation:z.union([z.literal(0),z.literal(90)]),
-  sockets:z.array(at.extend({name:label,angle:z.number().min(-1000).max(1000)})).max(32),
-  collisions:z.array(collision).max(32),
-  events:z.array(z.object({
-    name:label,tick:z.int().min(0).max(9999),
-    data:z.record(z.string().min(1).max(40),z.union([z.string().max(256),z.number(),z.boolean(),z.null()])).optional(),
-  })).max(32),
+  blank:z.boolean(),rotation:z.union([z.literal(0),z.literal(90)]),
 });
 const clip=z.object({
   id:z.uuid(),name:z.string().min(1).max(120),direction:label.optional(),
   trackRevision:z.int().min(0),startFrame:z.int().min(0).max(35_999),endFrame:z.int().min(0).max(35_999),
-  loopMode:z.enum(["once","repeat","ping-pong"]),ticksPerSecond:z.int().min(1).max(120),
+  loopMode:spriteLoopMode,ticksPerSecond:z.int().min(1).max(120),
   durationTicks:z.int().min(1).max(960_000),frames:z.array(frame).min(1).max(96),
 });
 export const spriteBundleManifest=z.object({
@@ -78,7 +68,7 @@ export const spriteBundleManifest=z.object({
 });
 export type PlaybackManifest=z.infer<typeof spriteBundleManifest>;
 export type PlaybackFrame=z.infer<typeof frame>;
-type PlaybackClip=z.infer<typeof clip>;
+export type PlaybackClip=z.infer<typeof clip>;
 type SpriteBitmap={width:number;height:number;rgba:Uint8Array};
 
 /** Decode the lossless, 8-bit RGBA PNG profile emitted by the v2 sprite exporter. */
@@ -128,8 +118,11 @@ export function readSpritePng(bytes:Uint8Array,{width,height}:{width:number;heig
 export async function openSpriteBundle(bytes:Uint8Array) {
   if (bytes.byteLength>fileLimit) throw new Error("This sprite ZIP exceeds the player size limit.");
   let total=0;
+  const seen=new Set<string>();
   const files=unzipSync(bytes,{filter:entry=>{
     if (entry.name!=="kinetix.json" && !fileName.safeParse(entry.name).success) return false;
+    if (seen.has(entry.name) || seen.size>=97) throw new Error("The sprite bundle has duplicate or excess files.");
+    seen.add(entry.name);
     total+=entry.originalSize;
     if (total>fileLimit) throw new Error("Unpacked sprite data exceeds the player size limit.");
     return true;
@@ -138,6 +131,7 @@ export async function openSpriteBundle(bytes:Uint8Array) {
   const parsed=spriteBundleManifest.safeParse(JSON.parse(strFromU8(files["kinetix.json"])));
   if (!parsed.success) throw new Error("Choose a valid version 2 portable sprite bundle.");
   const manifest=parsed.data;
+  if (seen.size!==manifest.files.length+1) throw new Error("The sprite bundle contains undeclared texture files.");
   const textures=new Map<string,SpriteBitmap>();
   for (const page of manifest.files) {
     const png=files[page.file];

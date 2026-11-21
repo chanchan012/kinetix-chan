@@ -232,8 +232,13 @@ test("an illustrator delivers a badge with a cutout, clipped gradient, and linke
     await swatches.getByLabel("Swatch color",{exact:true}).fill("#6600cc");
     await swatches.getByRole("button",{name:"Close dialog"}).click();
 
-    const saved = async () => (await (await page.request.get(path+"/state")).json()).state as KinetixRigState;
-    await expect.poll(async()=>(await saved()).swatches?.[0]?.paint).toEqual({kind:"solid",color:"#6600cc"});
+    const savedPaint=async()=>{
+      const response=await page.request.get(path+"/state");
+      if (!response.ok()) return {status:response.status()};
+      const {state}=await response.json() as {state:KinetixRigState};
+      return state.swatches?.[0]?.paint;
+    };
+    await expect.poll(savedPaint,{intervals:[300,650,1100]}).toEqual({kind:"solid",color:"#6600cc"});
     const pixels = () => page.evaluate(async route=>{
       const response = await fetch(route,{cache:"no-store"});
       if (!response.ok) throw new Error("Artwork export returned "+response.status);
@@ -248,7 +253,7 @@ test("an illustrator delivers a badge with a cutout, clipped gradient, and linke
     expect(changed[4][3]).toBe(255);
     expect(changed[4][0]).toBeLessThan(changed[5][0]);
     await page.getByRole("button",{name:"Undo",exact:true}).click();
-    await expect.poll(async()=>(await saved()).swatches?.[0]?.paint).toEqual({kind:"solid",color:"#008844"});
+    await expect.poll(savedPaint,{intervals:[300,650,1100]}).toEqual({kind:"solid",color:"#008844"});
     expect((await pixels()).slice(0,2)).toEqual([[0,136,68,255],[0,136,68,255]]);
     await page.reload();
     await expect(layer("Badge")).toBeVisible();

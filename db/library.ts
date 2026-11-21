@@ -77,19 +77,23 @@ export class Library {
       .returning(rigFields);
     return saved;
   }
-  async saveSequenceImport(user:string,id:string,revision:number,state:KinetixRigState,clip:ClipInput & {id:string}) {
-    // Neon HTTP executes this as one statement, so both writes roll back if clip creation fails.
+  async saveRasterImport(user:string,id:string,revision:number,state:KinetixRigState,imports:(ClipInput & {id:string})[]) {
+    if (!imports.length) return;
+    // Neon HTTP executes this as one statement. A failed clip insert rolls back the state write.
+    const rows=imports.map(clip=>({id:clip.id,name:clip.name,fps:clip.fps,frame_count:clip.frameCount}));
     const result=await this.db.execute<{revision:number}>(sql`
-      with saved as (
+      with incoming as (
+        select * from jsonb_to_recordset(${JSON.stringify(rows)}::jsonb) as source(id uuid, name text, fps integer, frame_count integer)
+      ), saved as (
         update rigs set state = ${JSON.stringify(state)}::jsonb, revision = ${rigs.revision} + 1, updated_at = now()
         where ${and(eq(rigs.id,id),this.canEdit(user),eq(rigs.revision,revision))}
-          and not exists (select 1 from clips where id = ${clip.id}::uuid)
+          and not exists (select 1 from clips join incoming on clips.id = incoming.id)
         returning id, revision
       ), added as (
         insert into clips (id, rig_id, name, fps, frame_count)
-        select ${clip.id}::uuid, saved.id, ${clip.name}, ${clip.fps}, ${clip.frameCount} from saved returning id
+        select incoming.id, saved.id, incoming.name, incoming.fps, incoming.frame_count from saved cross join incoming returning id
       )
-      select saved.revision from saved cross join added`);
+      select saved.revision from saved where (select count(*) from added) = ${rows.length}`);
     return (result as {rows:{revision:number}[]}).rows[0];
   }
   async rename(owner:string,id:string,name:string) {

@@ -4,6 +4,7 @@ import { facetEdgeKey, signedPolygonArea, validFacetPolygon } from "./facet-geom
 import { layerTreeSchema } from "./layer-tree";
 import { appearanceSchema,swatchSchema } from "./appearance";
 import { drawingsSchema } from "./drawings";
+import { spriteSourcesSchema } from "./sprite-sources";
 
 const coordinate = z.number().min(-1_000_000).max(1_000_000);
 export const pointSchema = z.strictObject({ x: coordinate, y: coordinate });
@@ -145,6 +146,7 @@ const documentContents = {
   layers: layerTreeSchema.optional(),
   swatches:z.array(swatchSchema).max(128).optional(),
   drawings:drawingsSchema.optional(),
+  spriteSources:spriteSourcesSchema.optional(),
 };
 const documentSchema = z.discriminatedUnion("version", [
   z.strictObject({ version: z.literal(1), study: studyIdSchema, ...documentContents }),

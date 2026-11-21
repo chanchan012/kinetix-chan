@@ -1,5 +1,7 @@
 # Kinetix architecture
 
+Planned authoring and delivery contracts live in the [production roadmap](PRODUCTION_STUDIO_ROADMAP.md). The [delivery paths](PRODUCTION_STUDIO_ROADMAP.md#choose-a-delivery-path) define the intended boundary between versioned editable source, baked frames, runtime rig data and target-specific importer outputs. The sections below record implemented contracts.
+
 ## Subgoal 1.1
 
 Next.js 16 App Router serves a public landing page and Clerk sign-in and sign-up pages. The authenticated workspace contains the rig library and three motion studies. The editable rig format begins in 2.1.
