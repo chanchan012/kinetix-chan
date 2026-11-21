@@ -1,0 +1,17 @@
+{
+  "name": "kinetix-phaser-starter",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --open /integrations/phaser/starter/",
+    "build": "vite build --config integrations/phaser/vite.config.ts"
+  },
+  "engines": { "node": ">=24" },
+  "dependencies": {
+    "fflate": "0.8.3",
+    "phaser": "3.90.0",
+    "zod": "4.6.7"
+  },
+  "devDependencies": { "vite": "8.3.8" }
+}

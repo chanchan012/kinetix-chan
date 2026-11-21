@@ -1,0 +1,17 @@
+:root { font: 16px/1.5 system-ui, sans-serif; color: #edeee8; background: #161b19; }
+* { box-sizing: border-box; }
+body { margin: 0; }
+main { height: 100dvh; max-width: 900px; margin: auto; padding: 20px; display: flex; flex-direction: column; gap: 12px; overflow: auto; }
+h1, p, dl, dd { margin: 0; }
+h1 { font-size: clamp(1.25rem, 4vw, 1.65rem); }
+.controls { display: flex; flex-wrap: wrap; align-items: end; gap: 8px 16px; }
+label { display: grid; gap: 4px; min-width: 0; font-size: 0.87rem; }
+input { max-width: 100%; }
+button, select, input::file-selector-button { border: 1px solid #526158; border-radius: 4px; padding: 5px 8px; color: inherit; background: #232d27; font: inherit; }
+button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid #d6ef81; outline-offset: 3px; }
+:disabled { opacity: 0.52; }
+#message { min-height: 1.5em; overflow-wrap: anywhere; }
+#game { flex: 1; min-height: 130px; min-width: 0; overflow: hidden; background: #202a25; border: 1px solid #35433a; }
+#game canvas { display: block; }
+dl { display: flex; gap: 6px 12px; flex-wrap: wrap; font-size: 0.85rem; }
+dt { color: #bacbbd; }

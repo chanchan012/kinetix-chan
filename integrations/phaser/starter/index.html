@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Kinetix sprites in Phaser</title>
+    <link rel="stylesheet" href="./starter.css">
+  </head>
+  <body>
+    <main>
+      <h1>Kinetix sprites in Phaser</h1>
+      <div class="controls">
+        <label>Portable sprite ZIP <input id="bundle" type="file" accept=".zip,application/zip"></label>
+        <label>Clip and direction <select id="clip" disabled></select></label>
+        <button id="transport" type="button" disabled>Pause</button>
+      </div>
+      <p id="message" role="status">Choose a version 2 sprite ZIP exported by Kinetix.</p>
+      <div id="game" aria-label="Phaser sprite preview"></div>
+      <dl>
+        <dt>Last cue</dt><dd id="cue">None</dd>
+        <dt>Project revision</dt><dd id="revision">None</dd>
+      </dl>
+    </main>
+    <script type="module" src="./starter.ts"></script>
+  </body>
+</html>

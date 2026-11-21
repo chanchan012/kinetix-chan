@@ -72,6 +72,12 @@ The generated node emits `kinetix_event(clip_id, frame_id, cue, data)` during pl
 
 Version 2 validates ZIP sizes, texture digests, bounds and timing before publishing resources. Concurrent imports of the same rig are serialized by a lock directory. Changed resources are staged before replacement, and the importer restores previous files if a replacement fails. Identical cropped textures share a generated resource. Reimport the same package to rebuild the generated set after a forcibly interrupted import, following the recovery instructions in the [importer README](../integrations/godot/README.md).
 
+## Import and update in Phaser 3.90.0
+
+Download the [Phaser starter](https://kinetix-chan.vercel.app/sprite-player/phaser) and extract it. With Node.js 24, run `npm ci`, then `npm run dev`. Upload a version 2 portable sprite ZIP in the starter and select a named clip and direction. Chrome verification covers Phaser Canvas and WebGL, all three package layouts, fractional scale, exact frame holds, cue delivery and reimport.
+
+In an existing game, create a `KinetixPhaserLibrary` in your scene, call `importBundle(bytes)` and `createSprite(x, y, clipId)`. Use the returned container for placement and game-owned children. Bind `kinetix-cue` for frame events. `socket(name)` and `collisions()` return pivot-relative metadata in scene units after conversion from export pixels. A partial reimport keeps the omitted clips, and renamed clips retain their saved IDs. Import setup, calls and reimport behavior are documented in the [starter README](../integrations/phaser/README.md).
+
 ## MCP and other engines
 
 Use `rig-hierarchy` for the art revision and `timeline-summary` for the selected clip revision. Call `export_sprite_package` with the clip ID, both revisions, and a zero-based inclusive range. Optional settings include `pivot`, `loop` and `filter`. Set `preflight: true` to inspect the manifest without rendering. For a download, decode `structuredContent.base64` and save the returned filename.

@@ -187,6 +187,14 @@ The static download at `/sprite-player/godot` packages the scripts in `integrati
 
 Generated project paths use stable rig and clip IDs. The aggregate resource keeps the historical animation-key mapping across renames and subset imports. A per-rig lock serializes imports. Version 2 stages outputs, backs up prior files and rolls back a failed replacement. Replacing generated files leaves game-owned scenes and overrides in the game project. The download and importer use the existing bundle schema and require no changes to database, REST or MCP contracts.
 
+## M9.3 · Phaser sprite profile
+
+`/sprite-player/phaser` publishes a static ZIP containing the Phaser 3.90.0 starter scene, npm lockfile, scene adapter and the existing browser-safe version 2 decoder. It accepts existing Studio, REST and MCP sprite exports and uses their manifest as the timing and identity contract. It requires no server or database changes.
+
+`KinetixPhaserLibrary` validates the source ZIP and texture digests, normalizes frame pixels, and stages native textures with transparent borders so trimmed and full-frame layouts sample consistently. The library caps restored and retained textures at 16 megapixels and checks the WebGL renderer's texture limit. The game owns a stable Phaser container whose origin matches the authored pivot. Its child image follows the frame clock independently of game-owned children, transforms and listeners. Sockets and collision coordinates are in pivot-relative scene units. Interior ping-pong holds visit their cues on both passes.
+
+Imports are serialized per library. A revision replaces available clips by stable source ID, keeps omitted clips and refreshes active containers before releasing retired textures. Failed staging leaves the active library available. The receipt records the target and bundle versions, source revision, package digest, included clips and retained clips. See [Phaser package setup](ENGINE_EXPORT.md#import-and-update-in-phaser-3900).
+
 ## M8.1 · Editable SVG import
 
 `lib/rig/svg-import.ts` converts XML to the existing `part.create`, `layer.group`, `layer.flags` and `layer.mask` commands. It resolves viewports and transforms into artboard coordinates, reconstructs editable cubic handles, and stores clipping geometry on hidden layers. The parser accepts UTF-8 files up to 512 KiB and bounds XML, reference expansion and command counts. Local references resolve against the document's own IDs. Studio reads the source XML in the browser and draws the proposed group through the regular Canvas path. It dispatches one history entry and saves the normalized document through the existing state endpoint.
