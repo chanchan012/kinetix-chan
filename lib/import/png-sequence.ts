@@ -2,14 +2,12 @@ import { unzipSync } from "fflate";
 import { inflateSync } from "node:zlib";
 import { PNG } from "pngjs";
 import { z } from "zod";
-import { editRig,type RigCommand } from "../rig/commands";
-import type { CelRun } from "../rig/drawings";
-import { artboardFor,type KinetixRigState } from "../rig/model";
+import type { KinetixRigState } from "../rig/model";
 import { maxSequenceBytes,maxSequenceFrames,type SequenceSummary } from "./sequence-options";
+import { applyRasterCommands,maxSamplePixels,prepareRasterArtboard,previewImage,readRuns } from "./raster-rig";
 
 const pngSignature=Buffer.from([137,80,78,71,13,10,26,10]);
 const maxUnpackedBytes=4*1024*1024;
-const maxSamplePixels=32*1024*1024;
 const passOffsets=[[0,0,8,8],[4,0,8,8],[0,4,4,8],[2,0,4,4],[0,2,2,4],[1,0,2,2],[0,1,1,2]];
 const fields={width:z.int().min(1).max(4096),height:z.int().min(1).max(4096),
   fps:z.int().min(1).max(120),startFrame:z.int().min(1).max(36000),endFrame:z.int().min(1).max(36000)};
@@ -130,34 +128,6 @@ function decodePng(bytes:Uint8Array,header:Header,notes:Set<string>) {
   return decoded.data;
 }
 
-function readRuns(data:Buffer,width:number,height:number) {
-  const runs:CelRun[]=[];
-  for (let y=0;y<height;y++) {
-    const row=y*width*4;
-    let x=0;
-    while (x<width) {
-      const offset=row+4*x;
-      if (!data[offset+3]) {x++;continue;}
-      const ink=data.readUInt32BE(offset);
-      const left=x++;
-      while (x<width && data.readUInt32BE(row+4*x)===ink) x++;
-      runs.push([y,left,x-left,ink]);
-      if (runs.length>40_000) throw new Error("A frame exceeds the 40,000 pixel runs allowed for an editable cel.");
-    }
-  }
-  return runs;
-}
-
-function previewImage(data:Buffer,width:number,height:number) {
-  const scale=Math.min(1,160/width,120/height);
-  const preview=new PNG({width:Math.max(1,Math.round(width*scale)),height:Math.max(1,Math.round(height*scale))});
-  for (let y=0;y<preview.height;y++) for (let x=0;x<preview.width;x++) {
-    const source=(Math.floor(y*height/preview.height)*width+Math.floor(x*width/preview.width))*4;
-    data.copy(preview.data,(y*preview.width+x)*4,source,source+4);
-  }
-  return PNG.sync.write(preview).toString("base64");
-}
-
 export function planPngSequence(rig:KinetixRigState,archive:Uint8Array,options:{
   id:string;name:string;fps:number;resizeArtboard:boolean;preflight:boolean;
 }) {
@@ -171,20 +141,9 @@ export function planPngSequence(rig:KinetixRigState,archive:Uint8Array,options:{
     throw new Error("Every frame must match the sequence dimensions.");
   }
   if (width*height*samples.length>maxSamplePixels) throw new Error("The sequence exceeds the decoded pixel budget. Import a shorter range or smaller frames.");
-  const artboard=artboardFor(rig);
   const drawId=`sequence-${options.id}`;
-  const commands:RigCommand[]=[];
   const notes=new Set<string>();
-  if (options.resizeArtboard) {
-    if (rig.version!==2 || rig.parts.length || rig.bones.length || rig.drawings?.layers.length) {
-      throw new Error("Matching image dimensions requires an empty design artboard.");
-    }
-    commands.push({type:"artboard.update",artboard:{...artboard,width:Math.max(16,width),height:Math.max(16,height)}});
-    if (width<16 || height<16) notes.add("The artboard uses the 16 px minimum on each side.");
-  } else {
-    if (width>artboard.width || height>artboard.height) throw new Error("The frames exceed this artboard. Use a larger artboard or match an empty design to the images.");
-    if (width!==artboard.width || height!==artboard.height) notes.add("Frames are placed at the top-left at their original pixel size.");
-  }
+  const commands=prepareRasterArtboard(rig,width,height,options.resizeArtboard,notes);
   commands.push({type:"drawing.create",drawing:{id:drawId,name:options.name,width,height,storage:{mode:"rgba"}}});
   let runCount=0;
   let celCount=0;
@@ -215,14 +174,7 @@ export function planPngSequence(rig:KinetixRigState,archive:Uint8Array,options:{
       throw new Error(`Frame ${sample.sourceFrame} could not be imported. ${message}`);
     }
   }
-  let state=rig;
-  try {
-    // The command limit applies per validated batch. Only the final candidate is persisted.
-    for (let offset=0;offset<commands.length;offset+=100) [state]=editRig(state,commands.slice(offset,offset+100));
-  } catch (error) {
-    if (error instanceof z.ZodError) throw new Error("This import exceeds the available drawing, layer or pixel run capacity of the document.");
-    throw error;
-  }
+  const state=applyRasterCommands(rig,commands);
   const summary:SequenceSummary={width,height,fps,timing,frameCount:samples.length,
     sourceStartFrame:samples[0].sourceFrame,sourceEndFrame:samples.at(-1)!.sourceFrame,
     celCount,exposureCount:exposures,heldFrames:samples.length-exposures,blankFrames,runCount,notes:[...notes]};

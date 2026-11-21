@@ -17,8 +17,8 @@ import { viewportFrameFor } from "../rig/render";
 import { layerTreeFor } from "../rig/layer-tree";
 import { drawingIdSchema } from "../rig/drawings";
 import { planSvgImport,svgImportByteLimit } from "../rig/svg-import";
-import { sequenceImportInput,type SequenceImportInput } from "../import/sequence-options";
-import { importPngSequence } from "../import/sequence-service";
+import { atlasImportInput,sequenceImportInput,type AtlasImportInput,type SequenceImportInput } from "../import/sequence-options";
+import { importPngSequence,importSpriteAtlas } from "../import/sequence-service";
 
 const frame = z.int().min(0).max(35_999);
 const clipId = z.uuid();
@@ -43,6 +43,7 @@ export const inputs = {
     placement:z.enum(["original","fit"]).default("original"),preflight:z.boolean().default(false),
   }),
   import_png_sequence:sequenceImportInput,
+  import_sprite_bundle:atlasImportInput,
   read_drawing_cel:z.strictObject({
     drawingId:drawingIdSchema,celId:drawingIdSchema,revision:z.int().min(0).optional(),
     offset:z.int().min(0).max(40_000).default(0),limit:z.int().min(1).max(2000).default(300),
@@ -138,6 +139,7 @@ export class RigAgent {
       parts:state.parts,
       layers:layerTreeFor(state),
       swatches:state.swatches ?? [],
+      ...(state.spriteSources && {spriteSources:state.spriteSources}),
       drawings:state.drawings?.layers.map(({cels,...drawing})=>({
         ...drawing,cels:cels.map(cel=>({id:cel.id,runCount:cel.runs.length})),
       })) ?? [],
@@ -204,6 +206,12 @@ export class RigAgent {
   }
   async importPngSequence(input:SequenceImportInput) {
     const result=await importPngSequence(this.library,this.rigId,input,
+      {kind:"ai",userId:this.userId,clientId:this.agent.id},this.room);
+    if ("error" in result) throw new Error(result.message);
+    return result.receipt;
+  }
+  async importSpriteAtlas(input:AtlasImportInput) {
+    const result=await importSpriteAtlas(this.library,this.rigId,input,
       {kind:"ai",userId:this.userId,clientId:this.agent.id},this.room);
     if ("error" in result) throw new Error(result.message);
     return result.receipt;

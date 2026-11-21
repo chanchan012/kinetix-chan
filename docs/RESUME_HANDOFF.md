@@ -165,3 +165,5 @@ For MCP, use `import_png_sequence` with the saved revision and the ZIP encoded a
 ## M8.1 · Next implementation step
 
 Import portable sprite atlas bundles into editable cels. Start with the version 2 manifest and `lib/export/sprite-playback.ts`. Use a packed fixture with rotated crops, trim offsets, multiple clip directions, held and blank frames. Reconstruct each full source frame and map its integer tick holds to destination exposures. Validate texture checksums and report companion data whose fields the editable drawing or clip model cannot carry. Verify re-exported frames and timing. Use the [production roadmap checkpoints](PRODUCTION_STUDIO_ROADMAP.md#implementation-checkpoints) for portable project reopen.
+
+For later releases, use the [tool inventory](PRODUCTION_STUDIO_ROADMAP.md#production-tool-inventory) to slice editor and MCP work together. Use the [production fixtures](PRODUCTION_STUDIO_ROADMAP.md#end-to-end-production-fixtures) to verify a user and a clean MCP session can finish the same project, reopen editable source, and deliver and revise it in the recipient environment. The revised roadmap requires no new environment values.

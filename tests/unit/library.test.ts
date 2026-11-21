@@ -19,6 +19,7 @@ import { planSvgImport } from "../../lib/rig/svg-import";
 import { editRig } from "../../lib/rig/commands";
 import { exportedSequenceFixture,sequenceArtboard } from "../fixtures/png-sequence";
 import { sequenceImportInput } from "../../lib/import/sequence-options";
+import { exportedAtlasFixture } from "../fixtures/sprite-atlas";
 
 const pg = new PGlite();
 const library = new Library(drizzle(pg));
@@ -37,6 +38,30 @@ beforeAll(async () => {
 },30000);
 afterAll(() => pg.close());
 describe("saved library", () => {
+  it("commits all sprite bundle clips in one revision and rejects a stale apply",async()=>{
+    const owner="atlas-owner";
+    const rig=await library.create(owner,"Atlas fixture",sequenceArtboard);
+    const path=`/${rig.id}/imports/sprite-bundle`;
+    const input={revision:rig.revision,name:"Lantern",archive:Buffer.from(await exportedAtlasFixture()).toString("base64")};
+    try {
+      expect((await call("other","POST",path,input)).status).toBe(404);
+      const preview=await call(owner,"POST",path,{...input,preflight:true});
+      expect(preview.status).toBe(200);
+      const {receipt}=await preview.json();
+      expect(receipt).toMatchObject({applied:false,clips:[{direction:"east",frameCount:107},{direction:"west",frameCount:6}]});
+      expect(await library.listClipAnimation(owner,rig.id)).toEqual([]);
+      const apply=()=>call(owner,"POST",path,{...input,importId:receipt.importId});
+      const attempts=await Promise.all([apply(),apply()]);
+      expect(attempts.map(response=>response.status).sort()).toEqual([201,409]);
+      const ids=receipt.clips.map((clip:{id:string})=>clip.id).sort();
+      expect((await library.listClipAnimation(owner,rig.id)).map(clip=>clip.id).sort()).toEqual(ids);
+      const saved=(await library.get(owner,rig.id))!;
+      expect(saved.revision).toBe(rig.revision+1);
+      expect(readRigState(saved.state).spriteSources?.map(clip=>clip.clipId).sort()).toEqual(ids);
+    } finally {
+      await library.remove(owner,rig.id);
+    }
+  });
   it("commits imported drawings and clips together under the same revision guard for Studio and MCP",async()=>{
     const studio=await library.create("sequence-owner","Studio sequence",sequenceArtboard);
     const assisted=await library.create("sequence-owner","MCP sequence",sequenceArtboard);
@@ -60,8 +85,10 @@ describe("saved library", () => {
       expect(clips).toMatchObject([{id:input.importId,fps:18,frameCount:7}]);
 
       const stored=readRigState(assisted.state);
-      await expect(library.saveSequenceImport("sequence-owner",assisted.id,0,stored,
-        {id:crypto.randomUUID(),name:"Rejected",fps:0,frameCount:7})).rejects.toThrow();
+      await expect(library.saveRasterImport("sequence-owner",assisted.id,0,stored,[
+        {id:crypto.randomUUID(),name:"Valid",fps:18,frameCount:7},
+        {id:crypto.randomUUID(),name:"Rejected",fps:0,frameCount:7},
+      ])).rejects.toThrow();
       expect((await library.get("sequence-owner",assisted.id))?.revision).toBe(0);
       expect(await library.listClipAnimation("sequence-owner",assisted.id)).toEqual([]);
       const token=await library.tokens.create("sequence-owner",assisted.id,"Sequence agent");

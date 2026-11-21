@@ -32,8 +32,7 @@ export const formats: Record<ExportFormat, { label: string; mime: string; extens
   webm: { label:"WebM video", mime:"video/webm", extension:"webm", frames:240 },
 };
 
-export function supportedExport(format: ExportFormat, snapshot: ExportSnapshot): boolean {
-  const count = snapshot.endFrame - snapshot.startFrame + 1;
+export function supportedExport(format: ExportFormat,snapshot: ExportSnapshot,count=snapshot.endFrame-snapshot.startFrame+1): boolean {
   const shapes = snapshot.rig.parts.reduce((total, part) => total + (part.mesh?.triangles.length ?? 1) +
     (part.facets?.faces.length ?? 0), 64);
   if (count > formats[format].frames) return false;
@@ -75,8 +74,10 @@ export function spritesheetGrid(frames:number, width:number, height:number) {
   return { columns, rows: Math.ceil(frames / columns) };
 }
 
-export function* sampleExportFrames(input: ExportSnapshot): Generator<ExportFrame> {
-  for (let frame = input.startFrame; frame <= input.endFrame; frame++) {
+export function* sampleExportFrames(input:ExportSnapshot,indices?:readonly number[]): Generator<ExportFrame> {
+  const count=indices?.length ?? input.endFrame-input.startFrame+1;
+  for (let index=0;index<count;index++) {
+    const frame=indices ? indices[index] : input.startFrame+index;
     const rig = sampleRig(input.rig, input.tracks, frame);
     yield { rig, poses: evaluateRig(rig), phase: frame / input.frameCount, sample:{clipId:input.clipId,frame} };
   }

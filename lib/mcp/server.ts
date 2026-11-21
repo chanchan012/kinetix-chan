@@ -28,7 +28,7 @@ export function createStudioMcp(agent:RigAgent) {
     }},async (raw:unknown):Promise<CallToolResult> => {
       try {
         const data = await run(schema.parse(raw));
-        if (name==="import_png_sequence" && "previewPng" in data && typeof data.previewPng==="string") {
+        if ((name==="import_png_sequence" || name==="import_sprite_bundle") && "previewPng" in data && typeof data.previewPng==="string") {
           const {previewPng,...receipt}=data;
           return {content:[{type:"text",text:JSON.stringify(receipt)},{type:"image",mimeType:"image/png",data:previewPng}],
             structuredContent:receipt};
@@ -52,6 +52,8 @@ export function createStudioMcp(agent:RigAgent) {
   tool("import_svg","Preflight or add a local SVG as an editable group at a saved revision. Returns import diagnostics and the created group ID.",inputs.import_svg,input=>agent.importSvg(input));
   tool("import_png_sequence","Preflight or import a base64 PNG sequence ZIP as a saved clip and editable RGBA drawing layer at the supplied revision.",
     inputs.import_png_sequence,input=>agent.importPngSequence(input));
+  tool("import_sprite_bundle","Preflight or import a base64 Kinetix v2 sprite bundle as saved clips and editable cels with source timing and companion metadata.",
+    inputs.import_sprite_bundle,input=>agent.importSpriteAtlas(input));
   tool("read_drawing_cel","Read a revision-pinned page of a cel's pixel runs as [row, left, width, ink].",inputs.read_drawing_cel,input=>agent.readDrawingCel(input));
   tool("bind_mesh_weights","Bind a closed vector part and assign up to four influences to specified vertices.",inputs.bind_mesh_weights,input=>agent.bindWeights(input));
   tool("create_animation_clip","Create a saved clip with a frame rate and duration in frames.",inputs.create_animation_clip,input=>agent.createClip(input));

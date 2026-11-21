@@ -3,26 +3,32 @@
 import { useRef, useState, type FormEvent } from "react";
 import { spriteBundleRequest, type SpriteBundleRequest } from "@/lib/export/sprite-bundle-options";
 import type { Artboard } from "@/lib/rig/model";
+import type { SpriteSource } from "@/lib/rig/sprite-sources";
 import type { ClipTiming } from "./timeline";
 
 type Plan = {textureBytes:number;files:{file:string;width:number;height:number}[];clips:{id:string;name:string;frames:unknown[]}[]};
 const errors:Record<string,string>={
   revision_conflict:"A saved revision changed. Reopen Export after the studio updates.",
   unsupported_range:"Choose valid frame ranges or a smaller pixel scale.",
+  imported_timing_unavailable:"Reopen Export to refresh the clip’s imported timing.",
+  too_many_sprite_samples:"The selected clips need more than 96 rendered samples. Choose shorter ranges or fewer clips.",
+  incompatible_pixel_scale:"Export clips with matching imported scales together and keep the final scale at 4× or less.",
+  scaled_sprite_metadata_out_of_bounds:"Some anchors or collision shapes exceed the bundle bounds at this scale. Reduce the pixel scale.",
   frame_exceeds_texture_size:"At least one frame exceeds the maximum texture size. Increase the limit or reduce the pixel scale.",
   atlas_too_large:"The texture pages exceed the export limit. Shorten the ranges or reduce the pixel scale.",
   package_too_large:"The ZIP exceeds the download limit. Shorten the ranges or choose a smaller scale.",
   not_found:"A selected clip is no longer available in this project.",
 };
 
-export function SpriteBundleForm({path,rigId,revision,clips,activeId,artboard,unsaved}:{
-  path:string;rigId:string;revision:number;clips:ClipTiming[];activeId?:string;artboard:Artboard;unsaved:boolean;
+export function SpriteBundleForm({path,rigId,revision,clips,activeId,artboard,spriteSources,unsaved}:{
+  path:string;rigId:string;revision:number;clips:ClipTiming[];activeId?:string;artboard:Artboard;spriteSources?:SpriteSource[];unsaved:boolean;
 }) {
   const [selected,setSelected]=useState<string[]>(()=>[activeId || clips[0]?.id].filter(Boolean));
   const [layout,setLayout]=useState<SpriteBundleRequest["layout"]>("packed");
   const [pending,setPending]=useState(false);
   const [message,setMessage]=useState("");
   const [plan,setPlan]=useState<Plan|null>(null);
+  const [overrides,setOverrides]=useState<string[]>([]);
   const settingsVersion=useRef(0);
   const primary=activeId || clips[0]?.id;
 
@@ -39,6 +45,9 @@ export function SpriteBundleForm({path,rigId,revision,clips,activeId,artboard,un
     setMessage("");
     try {
       const requestedClips=clips.filter(clip=>selected.includes(clip.id)).map(clip=>{
+        const range={id:clip.id,trackRevision:clip.trackRevision,startFrame:numeric("start-"+clip.id)-1,
+          endFrame:numeric("end-"+clip.id)-1};
+        if (fields.has("preserve-"+clip.id)) return {...range,preserveImportedTiming:true};
         const metadata=String(fields.get("metadata-"+clip.id) ?? "").trim();
         const direction=String(fields.get("direction-"+clip.id) ?? "").trim() || undefined;
         let frames:unknown;
@@ -46,8 +55,7 @@ export function SpriteBundleForm({path,rigId,revision,clips,activeId,artboard,un
           try { frames=JSON.parse(metadata); }
           catch { throw new Error("Frame metadata for "+clip.name+" must be a JSON array."); }
         }
-        return {id:clip.id,trackRevision:clip.trackRevision,startFrame:numeric("start-"+clip.id)-1,
-          endFrame:numeric("end-"+clip.id)-1,loopMode:fields.get("loop-"+clip.id),direction,pivot,frames};
+        return {...range,loopMode:fields.get("loop-"+clip.id),direction,pivot,frames};
       });
       const parsed=spriteBundleRequest.safeParse({
         revision,layout,clips:requestedClips,scale:numeric("scale"),maxTextureSize:numeric("maximum"),
@@ -96,20 +104,27 @@ export function SpriteBundleForm({path,rigId,revision,clips,activeId,artboard,un
       <legend>Clip ranges</legend>
       {clips.map(clip=>{
         const enabled=selected.includes(clip.id);
+        const source=spriteSources?.find(item=>item.clipId===clip.id);
+        const preserve=Boolean(source && !overrides.includes(clip.id));
         return <div key={clip.id} className="studio-bundle-clip">
           <label className="studio-check"><input type="checkbox" checked={enabled} onChange={event=>
             setSelected(current=>event.target.checked ? [...current,clip.id] : current.filter(id=>id!==clip.id))}/>
-            {clip.name}
+            {clip.name}{source?.direction && ` · ${source.direction}`}
           </label>
           {enabled && <>
             <div className="studio-field-pair">
               <label>First frame<input type="number" name={"start-"+clip.id} min={1} max={clip.frameCount} defaultValue={1} required/></label>
               <label>Last frame<input type="number" name={"end-"+clip.id} min={1} max={clip.frameCount}
-                defaultValue={Math.min(clip.frameCount,clip.id===primary ? 96 : 24)} required/></label>
+                defaultValue={source ? clip.frameCount : Math.min(clip.frameCount,clip.id===primary ? 96 : 24)} required/></label>
             </div>
+            {source && <label className="studio-check"><input type="checkbox" name={"preserve-"+clip.id} checked={preserve}
+              onChange={event=>setOverrides(items=>event.target.checked ? items.filter(id=>id!==clip.id) : [...items,clip.id])}/>
+              Preserve imported timing and frame metadata</label>}
+            {preserve && source && <p>{source.loopMode} · Source scale {source.sourceScale}×</p>}
+            {!preserve && <>
             <div className="studio-field-pair">
-              <label>Direction<input name={"direction-"+clip.id} maxLength={80} placeholder="Optional"/></label>
-              <label>Loop mode<select name={"loop-"+clip.id} defaultValue="repeat">
+              <label>Direction<input name={"direction-"+clip.id} maxLength={80} placeholder="Optional" defaultValue={source?.direction}/></label>
+              <label>Loop mode<select name={"loop-"+clip.id} defaultValue={source?.loopMode ?? "repeat"}>
                 <option value="repeat">Repeat</option><option value="once">Once</option><option value="ping-pong">Ping-pong</option>
               </select></label>
             </div>
@@ -118,6 +133,7 @@ export function SpriteBundleForm({path,rigId,revision,clips,activeId,artboard,un
               <label>Frame metadata (JSON)<textarea name={"metadata-"+clip.id} rows={4} spellCheck={false}
                 placeholder={'[{"frame":0,"durationTicks":2}]'}/></label>
             </details>
+            </>}
           </>}
         </div>;
       })}

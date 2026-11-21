@@ -6,7 +6,9 @@ import type { RigCommand } from "@/lib/rig/commands";
 import { inLayerSubtree,layerTreeFor,orderedLayers } from "@/lib/rig/layer-tree";
 import type { KinetixRigState } from "@/lib/rig/model";
 
-export function LayerList({rig,selectedParts,boneSelected,drawingId,selectPart,selectDrawing,makeDrawing,openImport,openSequence,isolate,setIsolate,edit}: {
+import type { RasterImportMode } from "./sequence-import-dialog";
+
+export function LayerList({rig,selectedParts,boneSelected,drawingId,selectPart,selectDrawing,makeDrawing,openImport,openRasterImport,isolate,setIsolate,edit}: {
   rig:KinetixRigState;
   selectedParts:string[];
   boneSelected:boolean;
@@ -15,7 +17,7 @@ export function LayerList({rig,selectedParts,boneSelected,drawingId,selectPart,s
   selectDrawing:(id:string)=>void;
   makeDrawing:(mode:"indexed"|"rgba")=>void;
   openImport:()=>void;
-  openSequence:()=>void;
+  openRasterImport:(mode:RasterImportMode)=>void;
   isolate:string|null;
   setIsolate:(id:string|null)=>void;
   edit:(label:string,command:RigCommand)=>boolean;
@@ -42,7 +44,8 @@ export function LayerList({rig,selectedParts,boneSelected,drawingId,selectPart,s
     <h3>Layers</h3>
     <div className="studio-layer-actions">
       <button type="button" onClick={openImport}>Import SVG</button>
-      <button type="button" onClick={openSequence}>Import PNG sequence</button>
+      <button type="button" onClick={()=>openRasterImport("png-sequence")}>Import PNG sequence</button>
+      <button type="button" onClick={()=>openRasterImport("sprite-bundle")}>Import sprite bundle</button>
     </div>
     <details className="studio-layer-actions">
       <summary>Add drawing layer</summary>

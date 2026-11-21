@@ -5,6 +5,7 @@ import { Diamond, FilmSlate, Pause, Play } from "@phosphor-icons/react";
 import { studyFor } from "@/lib/studies";
 import { channelId, removeKey, sampleTrack, setKey, setKeyEase, tracksSchema, type Channel, type Track } from "@/lib/rig/animation";
 import { referenceFrameCount, type KinetixRigState } from "@/lib/rig/model";
+import { spritePlaybackFrame } from "@/lib/rig/sprite-sources";
 import { EasingGraph } from "./easing-graph";
 import type { Selection } from "./viewport";
 import { useStudioShortcuts } from "./shortcuts";
@@ -52,6 +53,8 @@ export function Timeline({clips, clipId, selectClip, manageClips, rigId, rig, se
   const fps = clip?.fps ?? 24;
   const frames = clip?.frameCount ?? referenceFrameCount(rig);
   const current = Math.min(frame, frames - 1);
+  const spriteSource=rig.spriteSources?.find(item=>item.clipId===clipId);
+  const playbackStart=useEffectEvent(()=>current);
 
   const bone = selected?.kind === "bone" ? rig.bones.find(item => item.id === selected.id) : undefined;
   const part = selected?.kind === "part" ? rig.parts.find(item => item.id === selected.id) : undefined;
@@ -86,17 +89,28 @@ export function Timeline({clips, clipId, selectClip, manageClips, rigId, rig, se
     if (!playing) return;
     let animation = 0;
     let last = performance.now();
+    let tickPosition=playbackStart();
     function tick(time: number) {
       const count = Math.floor((time - last) * fps / 1000);
       if (count > 0) {
         last += count * 1000 / fps;
-        setFrame(previous => (previous + count) % frames);
+        tickPosition+=count;
+        setFrame(spritePlaybackFrame(spriteSource,tickPosition,frames));
+        if (spriteSource?.loopMode==="once" && tickPosition>=frames) {
+          setPlaying(false);
+          return;
+        }
       }
       animation = requestAnimationFrame(tick);
     }
     animation = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(animation);
-  }, [playing, fps, frames]);
+  }, [playing, fps, frames, spriteSource]);
+
+  function togglePlayback() {
+    if (!playing && spriteSource?.loopMode==="once" && current===frames-1) setFrame(0);
+    setPlaying(!playing);
+  }
 
   function change(next: Track[]) {
     if (!clip) return;
@@ -158,7 +172,7 @@ export function Timeline({clips, clipId, selectClip, manageClips, rigId, rig, se
     if (event.code === "Space" &&
         !(event.target instanceof HTMLElement && event.target.closest("button, a, summary"))) {
       event.preventDefault();
-      if (!event.repeat) setPlaying(value => !value);
+      if (!event.repeat) togglePlayback();
     } else if (event.key === "ArrowLeft" || event.key === "ArrowRight") {
       event.preventDefault();
       setPlaying(false);
@@ -190,7 +204,10 @@ export function Timeline({clips, clipId, selectClip, manageClips, rigId, rig, se
       <h2>Timeline</h2>
       <label><span className="sr-only">Animation clip</span><select value={clip ? clipId : ""} onChange={event => selectClip(event.target.value)}>
         <option value="">{source ? source.clip + " · Study" : "Base pose"}</option>
-        {clips.map(item => <option value={item.id} key={item.id}>{item.name}</option>)}
+        {clips.map(item => {
+          const direction=rig.spriteSources?.find(source=>source.clipId===item.id)?.direction;
+          return <option value={item.id} key={item.id}>{item.name}{direction && ` · ${direction}`}</option>;
+        })}
       </select></label>
       <button className="studio-toggle studio-manage-clips" onClick={manageClips} disabled={hasDrafts || saving}
         aria-label="Manage clips" title={hasDrafts ? "Save keyframe changes to manage clips" : "Manage clips"}><FilmSlate size={16}/><span>Manage clips</span></button>
@@ -199,7 +216,7 @@ export function Timeline({clips, clipId, selectClip, manageClips, rigId, rig, se
       <span className="studio-fps">{fps} fps</span>
     </div>
     <div className="studio-transport">
-      <button aria-label={playing ? "Pause timeline" : "Play timeline"} title="Play or pause (Space)" onClick={() => setPlaying(value => !value)}>
+      <button aria-label={playing ? "Pause timeline" : "Play timeline"} title="Play or pause (Space)" onClick={togglePlayback}>
         {playing ? <Pause weight="fill" size={14}/> : <Play weight="fill" size={14}/>}
       </button>
       {selectedExposures && <>

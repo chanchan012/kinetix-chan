@@ -33,6 +33,7 @@ const clip = z.strictObject({
   endFrame:sampleFrame,
   direction:label.optional(),
   loopMode:z.enum(["once","repeat","ping-pong"]).default("repeat"),
+  preserveImportedTiming:z.boolean().optional(),
   pivot:point.optional(),
   origin:point.optional(),
   frames:z.array(frameMetadata).max(spriteMaxFrames).optional(),
@@ -44,6 +45,9 @@ const clip = z.strictObject({
   if (clip.frames && (unique.size!==clip.frames.length ||
       clip.frames.some(frame=>frame.frame<clip.startFrame || frame.frame>clip.endFrame))) {
     context.addIssue({code:"custom",path:["frames"],message:"Use one metadata record per frame inside the exported range."});
+  }
+  if (clip.preserveImportedTiming && (clip.direction || clip.pivot || clip.origin || clip.frames || clip.loopMode!=="repeat")) {
+    context.addIssue({code:"custom",path:["preserveImportedTiming"],message:"Turn off imported timing to override companion data or loop settings."});
   }
 });
 
@@ -69,7 +73,7 @@ export const spriteBundleRequest = z.strictObject({
   if (ids.size!==request.clips.length) context.addIssue({
     code:"custom",path:["clips"],message:"Choose each clip once per export.",
   });
-  if (request.clips.reduce((sum,clip)=>sum+clip.endFrame-clip.startFrame+1,0)>spriteMaxFrames) {
+  if (request.clips.reduce((sum,clip)=>sum+(clip.preserveImportedTiming ? 1 : clip.endFrame-clip.startFrame+1),0)>spriteMaxFrames) {
     context.addIssue({code:"custom",path:["clips"],message:"Export up to "+spriteMaxFrames+" frames per package."});
   }
   if (request.packing && request.layout!=="packed") context.addIssue({
