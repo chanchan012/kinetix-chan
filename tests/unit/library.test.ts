@@ -17,6 +17,8 @@ import { createCanvas, loadImage } from "@napi-rs/canvas";
 import { spriteBundleRequest } from "../../lib/export/sprite-bundle-options";
 import { planSvgImport } from "../../lib/rig/svg-import";
 import { editRig } from "../../lib/rig/commands";
+import { exportedSequenceFixture,sequenceArtboard } from "../fixtures/png-sequence";
+import { sequenceImportInput } from "../../lib/import/sequence-options";
 
 const pg = new PGlite();
 const library = new Library(drizzle(pg));
@@ -35,6 +37,45 @@ beforeAll(async () => {
 },30000);
 afterAll(() => pg.close());
 describe("saved library", () => {
+  it("commits imported drawings and clips together under the same revision guard for Studio and MCP",async()=>{
+    const studio=await library.create("sequence-owner","Studio sequence",sequenceArtboard);
+    const assisted=await library.create("sequence-owner","MCP sequence",sequenceArtboard);
+    const input={name:"Firefly",archive:exportedSequenceFixture().toString("base64"),revision:studio.revision,
+      importId:"c41f11c5-f95f-4274-95a9-977090da3331"};
+    const path=`/${studio.id}/imports/png-sequence`;
+    try {
+      expect((await call("other","POST",path,input)).status).toBe(404);
+      const preview=await call("sequence-owner","POST",path,{...input,preflight:true});
+      expect(preview.status).toBe(200);
+      expect((await preview.json()).receipt).toMatchObject({applied:false,frameCount:7,fps:18,blankFrames:1});
+      expect(await library.listClipAnimation("sequence-owner",studio.id)).toEqual([]);
+
+      const [first,second]=await Promise.all([
+        call("sequence-owner","POST",path,input),call("sequence-owner","POST",path,input),
+      ]);
+      expect([first.status,second.status].sort()).toEqual([201,409]);
+      const drawing=readRigState((await library.get("sequence-owner",studio.id))!.state).drawings!.layers[0];
+      expect(drawing.tracks[0].clipId).toBe(input.importId);
+      const clips=await library.listClipAnimation("sequence-owner",studio.id);
+      expect(clips).toMatchObject([{id:input.importId,fps:18,frameCount:7}]);
+
+      const stored=readRigState(assisted.state);
+      await expect(library.saveSequenceImport("sequence-owner",assisted.id,0,stored,
+        {id:crypto.randomUUID(),name:"Rejected",fps:0,frameCount:7})).rejects.toThrow();
+      expect((await library.get("sequence-owner",assisted.id))?.revision).toBe(0);
+      expect(await library.listClipAnimation("sequence-owner",assisted.id)).toEqual([]);
+      const token=await library.tokens.create("sequence-owner",assisted.id,"Sequence agent");
+      const agent=new RigAgent(library,(await library.tokens.verify(token!.token))!);
+      const prepared=await agent.importPngSequence(sequenceImportInput.parse({...input,importId:undefined,preflight:true}));
+      const applied=await agent.importPngSequence(sequenceImportInput.parse({...input,importId:prepared.importId}));
+      expect(applied).toMatchObject({revision:1,applied:true,drawingId:prepared.drawingId,celCount:3,blankFrames:1});
+      const agentDrawing=readRigState((await library.get("sequence-owner",assisted.id))!.state).drawings!.layers[0];
+      expect(agentDrawing.cels.map(cel=>cel.runs)).toEqual(drawing.cels.map(cel=>cel.runs));
+    } finally {
+      await library.remove("sequence-owner",studio.id);
+      await library.remove("sequence-owner",assisted.id);
+    }
+  });
   it("preflights, applies and pins the same SVG import over scoped MCP and the studio command path",async ()=>{
     const rig=await library.create("illustrator","SVG fixture",{name:"Artwork",width:120,height:96,background:null});
     const credential=await library.tokens.create("illustrator",rig.id,"SVG agent");

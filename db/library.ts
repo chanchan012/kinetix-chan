@@ -77,6 +77,21 @@ export class Library {
       .returning(rigFields);
     return saved;
   }
+  async saveSequenceImport(user:string,id:string,revision:number,state:KinetixRigState,clip:ClipInput & {id:string}) {
+    // Neon HTTP executes this as one statement, so both writes roll back if clip creation fails.
+    const result=await this.db.execute<{revision:number}>(sql`
+      with saved as (
+        update rigs set state = ${JSON.stringify(state)}::jsonb, revision = ${rigs.revision} + 1, updated_at = now()
+        where ${and(eq(rigs.id,id),this.canEdit(user),eq(rigs.revision,revision))}
+          and not exists (select 1 from clips where id = ${clip.id}::uuid)
+        returning id, revision
+      ), added as (
+        insert into clips (id, rig_id, name, fps, frame_count)
+        select ${clip.id}::uuid, saved.id, ${clip.name}, ${clip.fps}, ${clip.frameCount} from saved returning id
+      )
+      select saved.revision from saved cross join added`);
+    return (result as {rows:{revision:number}[]}).rows[0];
+  }
   async rename(owner:string,id:string,name:string) {
     return (await this.db.update(rigs).set({name,updatedAt:new Date(),revision:sql`${rigs.revision} + 1`}).where(this.owned(owner,id)).returning(rigFields))[0];
   }
