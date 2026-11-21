@@ -20,6 +20,9 @@ import { editRig } from "../../lib/rig/commands";
 import { exportedSequenceFixture,sequenceArtboard } from "../fixtures/png-sequence";
 import { sequenceImportInput } from "../../lib/import/sequence-options";
 import { exportedAtlasFixture } from "../fixtures/sprite-atlas";
+import { projectArchiveFixture } from "../fixtures/project-archive";
+import { readProjectArchive } from "../../lib/project/archive";
+import { exportProjectInput,reopenProjectInput } from "../../lib/project/archive-options";
 
 const pg = new PGlite();
 const library = new Library(drizzle(pg));
@@ -38,6 +41,59 @@ beforeAll(async () => {
 },30000);
 afterAll(() => pg.close());
 describe("saved library", () => {
+  it("pins editable archives and opens an independent owner-scoped copy once across retries",async()=>{
+    const fixture=await projectArchiveFixture();
+    const sourceOwner="archive-source";
+    const recipient="archive-recipient";
+    try {
+      await library.restoreProject(sourceOwner,fixture);
+      await library.saveClipTracks(sourceOwner,fixture.id,fixture.clips[1].id,0,fixture.clips[1].tracks);
+      const source=(await library.projectSnapshot(sourceOwner,fixture.id))!;
+      const pins={revision:source.revision,clips:source.clips.map(({id,trackRevision})=>({id,trackRevision}))};
+      const exportPath=`/${fixture.id}/project-archive`;
+      const reopenPath="/project-archive";
+      expect((await call(recipient,"POST",exportPath,pins)).status).toBe(404);
+      expect((await call(sourceOwner,"POST",exportPath,{...pins,clips:pins.clips.slice(1)})).status).toBe(409);
+      expect((await call(sourceOwner,"POST",exportPath,{...pins,clips:pins.clips.map(clip=>({...clip,trackRevision:0}))})).status).toBe(409);
+      const response=await call(sourceOwner,"POST",exportPath,pins);
+      expect(response.status).toBe(200);
+      const bytes=Buffer.from(await response.arrayBuffer());
+      const original=readProjectArchive(bytes);
+      const token=await library.tokens.create(sourceOwner,fixture.id,"Archive reader");
+      const agent=new RigAgent(library,(await library.tokens.verify(token!.token))!);
+      const packaged=await agent.exportProjectArchive(exportProjectInput.parse(pins));
+      expect(packaged.base64).toBe(bytes.toString("base64"));
+      const input={archive:bytes.toString("base64"),name:"Restored",importId:crypto.randomUUID()};
+      await expect(agent.reopenProjectArchive(reopenProjectInput.parse(input))).rejects.toThrow("permission");
+      expect((await call("","POST",reopenPath,input)).status).toBe(401);
+      expect((await call(recipient,"POST",reopenPath,{...input,archive:Buffer.from("damaged").toString("base64")})).status).toBe(400);
+      expect(await library.list(recipient)).toEqual([]);
+      const check=await call(recipient,"POST",reopenPath,{...input,preflight:true});
+      expect(check.status).toBe(200);
+      const checked=await check.json();
+      expect(await library.list(recipient)).toEqual([]);
+      const results=await Promise.all([call(recipient,"POST",reopenPath,input),call(recipient,"POST",reopenPath,input)]);
+      expect(results.map(result=>result.status).sort()).toEqual([200,201]);
+      const copy=(await library.projectSnapshot(recipient,checked.projectId))!;
+      expect(copy).toMatchObject({name:"Restored",revision:0,clips:[{trackRevision:0},{trackRevision:0}]});
+      expect(copy.clips.map(clip=>clip.id).sort()).toEqual(Object.values(checked.clipIds).sort());
+      expect(copy.state).toMatchObject({parts:original.state.parts,layers:original.state.layers});
+      expect(await library.projectSnapshot(sourceOwner,copy.id)).toBeUndefined();
+      expect(await library.tokens.list(recipient,copy.id)).toEqual([]);
+      const allowed=await library.tokens.create(recipient,copy.id,"Archive reopener",true);
+      const receiver=new RigAgent(library,(await library.tokens.verify(allowed!.token))!);
+      const opened=await receiver.reopenProjectArchive(reopenProjectInput.parse({...input,importId:crypto.randomUUID()}));
+      expect(opened).toMatchObject({applied:true,reused:false});
+      expect(opened.projectId).not.toBe(copy.id);
+      expect(await library.projectSnapshot(recipient,opened.projectId)).toBeDefined();
+      const failedId=crypto.randomUUID();
+      await expect(library.restoreProject(recipient,{...fixture,id:failedId,clips:[{...fixture.clips[0],id:crypto.randomUUID(),fps:0}]})).rejects.toThrow();
+      expect(await library.get(recipient,failedId)).toBeUndefined();
+    } finally {
+      await library.remove(sourceOwner,fixture.id);
+      for (const copy of await library.list(recipient)) await library.remove(recipient,copy.id);
+    }
+  });
   it("commits all sprite bundle clips in one revision and rejects a stale apply",async()=>{
     const owner="atlas-owner";
     const rig=await library.create(owner,"Atlas fixture",sequenceArtboard);
@@ -240,7 +296,8 @@ describe("saved library", () => {
     expect(issued.status).toBe(201);
     const {id,token} = await issued.json();
     const publicRows = await (await call("owner","GET",path)).json();
-    expect(Object.keys(publicRows[0]).sort()).toEqual(["createdAt","expiresAt","id","label"]);
+    expect(Object.keys(publicRows[0]).sort()).toEqual(["allowArchiveReopen","createdAt","expiresAt","id","label"]);
+    expect(publicRows[0].allowArchiveReopen).toBe(false);
     const credential = await library.tokens.verify(token);
     expect(credential?.rigId).toEqual(rig.id);
     const agent = new RigAgent(library,credential!);

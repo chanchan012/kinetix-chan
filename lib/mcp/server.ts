@@ -4,7 +4,7 @@ import { inputs, type RigAgent, type ToolName } from "./actions";
 
 export function createStudioMcp(agent:RigAgent) {
   const server = new McpServer({name:"kinetix-studio",version:"1.0.0"},{
-    instructions:"This connection is scoped to one Kinetix rig. Frames are zero-based. Coordinates use canvas pixels, and rotations use radians.",
+    instructions:"Read and edit the bound Kinetix rig. An explicit archive grant can reopen a new private project under the same owner. Frames are zero-based. Coordinates use canvas pixels, and rotations use radians.",
   });
   const resource = (name:string, description:string, read:()=>unknown|Promise<unknown>) => {
     const link = "kinetix://"+name;
@@ -21,10 +21,11 @@ export function createStudioMcp(agent:RigAgent) {
   ) {
     const inputSchema:StandardSchemaWithJSON = schema;
     const spriteExport=name==="export_sprite_package" || name==="export_sprite_bundle";
+    const archiveExport=name==="export_project_archive";
     server.registerTool(name,{description,inputSchema,annotations:{
-      readOnlyHint:spriteExport || name==="read_drawing_cel",
+      readOnlyHint:spriteExport || archiveExport || name==="read_drawing_cel",
       destructiveHint:["edit_document","bind_mesh_weights","generate_procedural_cycle","bake_ik_to_keyframes"].includes(name),
-      idempotentHint:spriteExport || name==="read_drawing_cel",openWorldHint:false,
+      idempotentHint:spriteExport || archiveExport || name==="read_drawing_cel",openWorldHint:false,
     }},async (raw:unknown):Promise<CallToolResult> => {
       try {
         const data = await run(schema.parse(raw));
@@ -34,7 +35,8 @@ export function createStudioMcp(agent:RigAgent) {
             structuredContent:receipt};
         }
         const message = spriteExport && "base64" in data ?
-          "Sprite package ready. Decode structuredContent.base64 to save the ZIP." : JSON.stringify(data);
+          "Sprite package ready. Decode structuredContent.base64 to save the ZIP." : archiveExport && "base64" in data ?
+          "Project archive ready. Decode structuredContent.base64 to save the ZIP." : JSON.stringify(data);
         return {content:[{type:"text" as const,text:message}],structuredContent:{...data}};
       } catch (error) {
         const message = error instanceof Error && !/failed query|connection|sqlstate/i.test(error.message) ?
@@ -64,5 +66,9 @@ export function createStudioMcp(agent:RigAgent) {
   tool("trigger_lottie_export","Queue a Lottie snapshot for the selected clip or the rig's study animation.",inputs.trigger_lottie_export,input=>agent.triggerLottie(input));
   tool("export_sprite_package","Preflight or render a fixed-grid sprite ZIP from a saved clip at the specified revisions.",inputs.export_sprite_package,input=>agent.exportSpritePackage(input));
   tool("export_sprite_bundle","Preflight or render an owner-scoped, revision-pinned multi-clip ZIP with loose frames, fixed grids or packed atlas pages.",inputs.export_sprite_bundle,input=>agent.exportSpriteBundle(input));
+  tool("export_project_archive","Preflight or download the editable project ZIP. Supply the saved document revision and every clip ID and track revision.",
+    inputs.export_project_archive,input=>agent.exportProjectArchive(input));
+  if (agent.mayReopenArchives) tool("reopen_project_archive","Preview or reopen a portable project ZIP as a fresh private project. Reuse the preview import ID when applying.",
+    inputs.reopen_project_archive,input=>agent.reopenProjectArchive(input));
   return server;
 }

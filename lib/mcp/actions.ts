@@ -19,12 +19,14 @@ import { drawingIdSchema } from "../rig/drawings";
 import { planSvgImport,svgImportByteLimit } from "../rig/svg-import";
 import { atlasImportInput,sequenceImportInput,type AtlasImportInput,type SequenceImportInput } from "../import/sequence-options";
 import { importPngSequence,importSpriteAtlas } from "../import/sequence-service";
+import { exportProjectInput,reopenProjectInput,type ExportProjectInput,type ReopenProjectInput } from "../project/archive-options";
+import { exportProject,reopenProject } from "../project/archive-service";
 
 const frame = z.int().min(0).max(35_999);
 const clipId = z.uuid();
 const boneId = boneSchema.shape.id;
 const drawnPart = partSchema.omit({mesh:true,knots:true,closed:true});
-type Agent = {id:string;rigId:string;userId:string;label:string};
+type Agent = {id:string;rigId:string;userId:string;label:string;allowArchiveReopen?:boolean};
 type Selection = RoomPresence["selection"];
 
 export const inputs = {
@@ -65,6 +67,8 @@ export const inputs = {
   trigger_lottie_export:z.strictObject({clipId:clipId.optional(),startFrame:frame.optional(),endFrame:frame.optional(),requestId:z.uuid().optional()}),
   export_sprite_package:spritePackageRequest,
   export_sprite_bundle:spriteBundleRequest,
+  export_project_archive:exportProjectInput,
+  reopen_project_archive:reopenProjectInput,
 };
 export type ToolName = keyof typeof inputs;
 
@@ -76,6 +80,7 @@ function requireChannel(rig:KinetixRigState, channel:Channel) {
 export class RigAgent {
   constructor(private library:Library, private agent:Agent, private room?:()=>RoomBus) {}
   get rigId() { return this.agent.rigId; }
+  get mayReopenArchives() {return this.agent.allowArchiveReopen===true;}
   private get userId() { return this.agent.userId; }
 
   private async live(publish:(bus:RoomBus)=>Promise<void>) {
@@ -359,5 +364,17 @@ export class RigAgent {
       ...(result.bytes && {filename:"kinetix-"+this.rigId+"-sprites.zip",mimeType:"application/zip",
         base64:Buffer.from(result.bytes).toString("base64")}),
     };
+  }
+  async exportProjectArchive(input:ExportProjectInput) {
+    const result=await exportProject(this.library,this.userId,this.rigId,input);
+    if ("error" in result) throw new Error(result.message);
+    const {bytes,...receipt}=result;
+    return {...receipt,...(bytes && {base64:Buffer.from(bytes).toString("base64"),mimeType:"application/zip"})};
+  }
+  async reopenProjectArchive(input:ReopenProjectInput) {
+    if (!this.mayReopenArchives) throw new Error("This rig credential does not have project reopening permission.");
+    const result=await reopenProject(this.library,this.userId,input);
+    if ("error" in result) throw new Error(result.message);
+    return result.receipt;
   }
 }

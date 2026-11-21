@@ -49,7 +49,8 @@ test("an MCP agent rigs a character and a walk cycle appears in the live studio"
       requestInit:{headers:{Authorization:authorization}},
     }));
     const {tools} = await client.listTools();
-    expect(tools.map(tool=>tool.name).sort()).toEqual(Object.keys(inputs).sort());
+    const scopedTools=Object.keys(inputs).filter(name=>name!=="reopen_project_archive").sort();
+    expect(tools.map(tool=>tool.name).sort()).toEqual(scopedTools);
     const {resources} = await client.listResources();
     expect(resources.map(resource=>resource.name).sort()).toEqual(["rig-hierarchy","timeline-summary","viewport-bounds"]);
     const bounds = await client.readResource({uri:"kinetix://viewport-bounds"});
@@ -82,7 +83,7 @@ test("an MCP agent rigs a character and a walk cycle appears in the live studio"
       command:process.execPath,args:[resolve("scripts/kinetix-mcp.mjs")],
       env:{KINETIX_MCP_URL:endpoint.href,KINETIX_MCP_TOKEN:authorization.slice("Bearer ".length)},
     }));
-    expect((await stdio.listTools()).tools.map(tool=>tool.name).sort()).toEqual(Object.keys(inputs).sort());
+    expect((await stdio.listTools()).tools.map(tool=>tool.name).sort()).toEqual(scopedTools);
     const hierarchy = await stdio.readResource({uri:"kinetix://rig-hierarchy"});
     expect(hierarchy.contents.some(item=>"text" in item && item.text.includes("agent-shin"))).toBe(true);
 

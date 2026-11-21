@@ -1,0 +1,1 @@
+ALTER TABLE "rig_tokens" ADD COLUMN "allow_archive_reopen" boolean DEFAULT false NOT NULL;

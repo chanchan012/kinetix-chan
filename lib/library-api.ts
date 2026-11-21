@@ -12,6 +12,8 @@ import type { RoomBus } from "./realtime/bus";
 import { credentialApi } from "./mcp/credentials";
 import { atlasImportInput,maxSequenceRequestBytes,sequenceImportInput } from "./import/sequence-options";
 import { importPngSequence,importSpriteAtlas } from "./import/sequence-service";
+import { exportProjectInput,projectArchiveRequestLimit,reopenProjectInput } from "./project/archive-options";
+import { exportProject,reopenProject } from "./project/archive-service";
 
 const name = z.string().trim().min(1).max(120);
 const createRig = z.union([z.strictObject({name,study:studyIdSchema}), z.strictObject({name,artboard:artboardSchema})]);
@@ -32,6 +34,12 @@ export function libraryApi(repository:()=>Library,rooms?:()=>RoomBus) {
       if (!c.get("userId")) return c.json({error:"authentication_required"},401);
       await next();
     })
+    .post("/project-archive",bodyLimit({maxSize:projectArchiveRequestLimit,onError:c=>
+      c.json({error:"archive_too_large",message:"Choose a project ZIP of 2 MiB or less."},413)}),body(reopenProjectInput),async c=>{
+      const result=await reopenProject(repository(),c.get("userId")!,c.req.valid("json"));
+      if ("error" in result) return c.json({error:result.error,message:result.message},result.status);
+      return c.json(result.receipt,result.status);
+    })
     .use("/:id/*",async(c,next) => {
       if (!z.uuid().safeParse(c.req.param("id")).success) return c.json(missing,404);
       await next();
@@ -44,6 +52,14 @@ export function libraryApi(repository:()=>Library,rooms?:()=>RoomBus) {
     .post("/",body(createRig),async c => {
       const input = c.req.valid("json");
       return c.json(await repository().create(c.get("userId")!,input.name,"study" in input ? input.study : input.artboard),201);
+    })
+    .post("/:id/project-archive",body(exportProjectInput),async c=>{
+      const result=await exportProject(repository(),c.get("userId")!,c.req.param("id"),c.req.valid("json"));
+      if ("error" in result) return c.json({error:result.error,message:result.message},result.status);
+      if (!result.bytes) return c.json(result);
+      c.header("Content-Type","application/zip");
+      c.header("Content-Disposition",`attachment; filename="${result.filename}"`);
+      return c.body(result.bytes);
     })
     .get("/:id",async c => {
       const row = await repository().open(c.get("userId")!,c.req.param("id"));

@@ -4,7 +4,7 @@ import { z } from "zod";
 import type { Library } from "../../db/library";
 import type { IdentityEnv } from "../api";
 
-const createToken = z.strictObject({label:z.string().trim().min(1).max(80)});
+const createToken = z.strictObject({label:z.string().trim().min(1).max(80),allowArchiveReopen:z.boolean().default(false)});
 const missing = {error:"not_found"} as const;
 
 export function credentialApi(repository:()=>Library) {
@@ -17,7 +17,8 @@ export function credentialApi(repository:()=>Library) {
       const checked = createToken.safeParse(value);
       return checked.success ? checked.data : c.json({error:"invalid_label"},400);
     }),async c => {
-      const credential = await repository().tokens.create(c.get("userId")!,c.req.param("id"),c.req.valid("json").label);
+      const {label,allowArchiveReopen}=c.req.valid("json");
+      const credential = await repository().tokens.create(c.get("userId")!,c.req.param("id"),label,allowArchiveReopen);
       return credential ? c.json(credential,201) : c.json(missing,404);
     })
     .delete("/:id/mcp-credentials/:credential",async c => {

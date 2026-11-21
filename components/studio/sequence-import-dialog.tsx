@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Dialog } from "../dialog";
+import { archiveBase64 } from "@/lib/import/archive-base64";
 import { maxSequenceBytes,maxSequenceFrames,type AtlasImportInput,type AtlasReceipt,type SequenceImportInput,type SequenceReceipt } from "@/lib/import/sequence-options";
 
 export type RasterImportMode="png-sequence"|"sprite-bundle";
@@ -21,12 +22,6 @@ async function archiveInput(files:File[]) {
   const zip=zipSync(Object.fromEntries(pngs),{level:0});
   if (zip.length>maxSequenceBytes) throw new Error("The assembled PNG sequence exceeds 2 MiB.");
   return zip;
-}
-
-function base64(bytes:Uint8Array) {
-  const chunks=[];
-  for (let offset=0;offset<bytes.length;offset+=32_768) chunks.push(String.fromCharCode(...bytes.subarray(offset,offset+32_768)));
-  return btoa(chunks.join(""));
 }
 
 export function SequenceImportDialog({mode,revision,emptyArtboard,applyBlocked,check,apply,close}:{
@@ -51,7 +46,7 @@ export function SequenceImportDialog({mode,revision,emptyArtboard,applyBlocked,c
     setBusy("checking");
     try {
       if (atlas && (files.length!==1 || !/\.zip$/i.test(files[0].name))) throw new Error("Choose one Kinetix sprite bundle ZIP.");
-      const input={archive:base64(await archiveInput(files)),revision,name:name.trim() || kind,...(!atlas && {fps}),
+      const input={archive:archiveBase64(await archiveInput(files)),revision,name:name.trim() || kind,...(!atlas && {fps}),
         resizeArtboard:emptyArtboard && resize,importId:crypto.randomUUID(),preflight:true};
       setReview({input,receipt:await check(input)});
     } catch (error) {

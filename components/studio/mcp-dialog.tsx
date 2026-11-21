@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState, type FormEvent } from "react";
 
-type Credential = {id:string;label:string;expiresAt:string};
+type Credential = {id:string;label:string;expiresAt:string;allowArchiveReopen:boolean};
 
 export function McpDialog({rigId,close}:{rigId:string;close:()=>void}) {
   const element = useRef<HTMLDialogElement>(null);
@@ -33,9 +33,10 @@ export function McpDialog({rigId,close}:{rigId:string;close:()=>void}) {
     setBusy(true);
     setMessage("");
     try {
+      const fields=new FormData(form);
       const response = await fetch(path,{
         method:"POST",headers:{"Content-Type":"application/json"},
-        body:JSON.stringify({label:new FormData(form).get("label")}),
+        body:JSON.stringify({label:fields.get("label"),allowArchiveReopen:fields.has("archive-reopen")}),
       });
       if (!response.ok) throw new Error("Cannot issue");
       const { token:secret,...credential }: Credential & {token:string} = await response.json();
@@ -68,6 +69,7 @@ export function McpDialog({rigId,close}:{rigId:string;close:()=>void}) {
     <header><h2>MCP setup</h2><button onClick={close}>Close</button></header>
     <form onSubmit={create}>
       <label>Credential name<input name="label" maxLength={80} placeholder="Animator" required/></label>
+      <label className="studio-check"><input name="archive-reopen" type="checkbox"/>Allow reopening archives as new private projects</label>
       <button className="studio-save" disabled={busy}>Create credential</button>
     </form>
     <div className="studio-tool-group" aria-label="Connection type">
@@ -80,7 +82,7 @@ export function McpDialog({rigId,close}:{rigId:string;close:()=>void}) {
       .then(()=>setMessage("Configuration copied.")).catch(()=>setMessage("Select and copy the configuration above."))}>Copy configuration</button>
     {message && <p role="status">{message}</p>}
     {credentials.length > 0 && <ul aria-label="Rig credentials">{credentials.map(credential => <li key={credential.id}>
-      <span>{credential.label} · {new Date(credential.expiresAt).toLocaleDateString()}</span>
+      <span>{credential.label} · {new Date(credential.expiresAt).toLocaleDateString()}{credential.allowArchiveReopen && " · Archive reopening"}</span>
       <button disabled={busy} onClick={()=>void revoke(credential)}>Revoke</button>
     </li>)}</ul>}
   </dialog>;

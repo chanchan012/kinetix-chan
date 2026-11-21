@@ -3,17 +3,18 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
-import { ArrowUpRight, DotsThree, FilmSlate, Polygon, Plus } from "@phosphor-icons/react";
+import { ArrowUpRight, DotsThree, FilmSlate, FolderOpen, Polygon, Plus } from "@phosphor-icons/react";
 import { UserButton } from "@clerk/nextjs";
 import { Brand } from "./brand";
 import { ArtCanvas } from "./art-canvas";
 import { Dialog } from "./dialog";
+import { ProjectReopenDialog } from "./project-reopen-dialog";
 import { ArtboardFields, readArtboardFields } from "./artboard-fields";
 import { defaultArtboard } from "@/lib/rig/model";
 import { studies, studyFor, type Study } from "@/lib/studies";
 
 type Rig = { id: string; name: string; state: {study?: string | null}; owned?: boolean };
-type LibraryDialog = "create" | "design" | "studies" | { action: "rename" | "delete"; rig: Rig } | null;
+type LibraryDialog = "create" | "design" | "studies" | "project" | { action: "rename" | "delete"; rig: Rig } | null;
 
 async function request<T>(path: string, method = "GET", body?: object): Promise<T> {
   const response = await fetch("/api/" + path, {
@@ -96,7 +97,7 @@ export function RigLibrary() {
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (pending.current || !dialog || dialog === "studies") return;
+    if (pending.current || !dialog || dialog === "studies" || dialog === "project") return;
     const values = new FormData(event.currentTarget);
     pending.current = true;
     setBusy(true);
@@ -134,6 +135,7 @@ export function RigLibrary() {
       <div className="library-heading"><div><h1>Rig library</h1><p>Open a rig to work on its animation in Studio.</p></div>
         <div className="library-heading-actions">
           <button className="library-secondary" onClick={() => show("studies")}><FilmSlate size={17}/>Motion studies</button>
+          <button className="library-secondary" onClick={() => show("project")}><FolderOpen size={17}/>Open project archive</button>
           <button className="library-secondary" onClick={() => show("create")}><Plus size={17}/>New rig</button>
           <button className="primary" onClick={() => show("design")}><Polygon size={17}/>New design</button>
         </div>
@@ -153,6 +155,7 @@ export function RigLibrary() {
           </article>)}</div>}
       </section>}
     </div></main>
+    {dialog==="project" && <ProjectReopenDialog close={()=>show(null)} opened={id=>{show(null);router.push("/studio/"+id);}}/>}
     {dialog === "studies" && <Dialog title="Motion studies" className="library-modal library-studies" onClose={() => show(null)}>
       <div className="rig-grid">{studies.map(study => <Link key={study.id} href={"/studio/studies/" + study.id}
         className="rig-card" onClick={() => show(null)} prefetch={false}>
