@@ -1,0 +1,20 @@
+{
+  "fps": 24,
+  "cell": { "width": 16, "height": 16 },
+  "clips": [
+    {
+      "id": "4cf5517c-7086-4638-8c22-769914127c2e",
+      "loopMode": "once",
+      "direction": "east",
+      "runs": [[0, 200], [1, 8], [2, 6]],
+      "cues": [["ignite", 60, 120]]
+    },
+    {
+      "id": "756cd152-6260-4fe1-94f3-960befb994c2",
+      "loopMode": "ping-pong",
+      "direction": "west",
+      "runs": [[0, 9], [1, 6], [2, 3], [1, 6]],
+      "cues": [["stride", 4, 12], ["stride", 7, 21]]
+    }
+  ]
+}

@@ -198,9 +198,15 @@ Run `npm run test:pixi` with Chrome and access to a WebGPU adapter to check Canv
 
 Vercel marked the `5540668` preview and `951ab0b` production deployment ready. The preview ZIP returned `application/zip`, and the production versions of both the Phaser and PixiJS ZIPs matched the Git checkout. The signed-in desktop and portrait phone production smoke checks passed. [Production sprite player](https://kinetix-chan.vercel.app/sprite-player)
 
-## M9.4 · Next implementation step
+## M9.4 · Fixed-rate sprites and conformance
 
-Use the existing multi-clip fixture to generate a plain fixed-grid or numbered full-frame profile with a constant FPS. Expand each hold at the selected output timebase and publish the stable frame map and timing quantization in a sidecar. Verify playback with a simple image slicer that reads only the grid and FPS. Then verify the same source with the portable manifest loader, including exact holds, pivots and cues, and package the fixture and expected observations for engine authors.
+Run `npm test -- tests/unit/fixed-sprites.test.ts tests/unit/library.test.ts` for timing, checksums, revised state and REST/MCP parity. Run `npm run test:e2e -- --grep 'preflights and plays three layouts|walk cycle appears'` for the Studio preflight and download, the public kit ZIP and the scoped MCP tool through stdio. Extract the conformance kit from `/sprite-player/conformance`, install with `npm ci`, and run `npm run verify` for 238 frames and the portable source checks. Use `npm run inspect -- examples/grid-24.zip` to print a validated sidecar. The fast direct ZIP limit remains 1.5 MB. No additional environment variables or migrations are required.
+
+This slice verifies the generic fixed-rate receiver and exposes a local inspector. The M9.4 target capability matrix and authenticated headless export workflow remain in the later delivery automation slice.
+
+## M6.1 · Next implementation step
+
+Continue the production-character workflow with the distinction between bind-pose setup and animation posing. Start with `evaluateRig` and `solveTwoBoneIK` in `lib/rig/kinematics.ts`, the IK `enabled` channel in `lib/rig/animation.ts`, and the revision-checked clip writes used by `bakeIK` in `lib/mcp/actions.ts`. Build one pose-preserving FK/IK switch in Studio and MCP. Use a planted foot fixture and verify the world transform at the switch frame before adding further constraints or the runtime rig package.
 
 ## M9.3 · Unity verification
 

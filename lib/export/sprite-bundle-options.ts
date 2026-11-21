@@ -57,18 +57,16 @@ const packing = z.strictObject({
   extrusion:z.int().min(0).max(8).default(1),
   rotate:z.boolean().default(false),
 });
-export const spriteBundleRequest = z.strictObject({
+const commonSpriteOptions = {
   revision:z.int().min(0),
-  layout:z.enum(["loose","fixed-grid","packed"]),
   clips:z.array(clip).min(1).max(16),
   scale:z.int().min(1).max(4).default(1),
   maxTextureSize:z.int().min(16).max(8192).default(2048),
   filter:z.enum(["nearest","linear"]).default("nearest"),
-  colorSpace:z.enum(["srgb","linear"]).default("srgb"),
-  alpha:z.enum(["straight","premultiplied"]).default("straight"),
-  packing:packing.optional(),
   preflight:z.boolean().default(false),
-}).superRefine((request,context)=>{
+};
+
+function validateSelection(request:{clips:z.output<typeof clip>[]},context:z.RefinementCtx) {
   const ids = new Set(request.clips.map(clip=>clip.id));
   if (ids.size!==request.clips.length) context.addIssue({
     code:"custom",path:["clips"],message:"Choose each clip once per export.",
@@ -76,9 +74,26 @@ export const spriteBundleRequest = z.strictObject({
   if (request.clips.reduce((sum,clip)=>sum+(clip.preserveImportedTiming ? 1 : clip.endFrame-clip.startFrame+1),0)>spriteMaxFrames) {
     context.addIssue({code:"custom",path:["clips"],message:"Export up to "+spriteMaxFrames+" frames per package."});
   }
+}
+
+export const spriteBundleRequest = z.strictObject({
+  ...commonSpriteOptions,
+  layout:z.enum(["loose","fixed-grid","packed"]),
+  colorSpace:z.enum(["srgb","linear"]).default("srgb"),
+  alpha:z.enum(["straight","premultiplied"]).default("straight"),
+  packing:packing.optional(),
+}).superRefine((request,context)=>{
+  validateSelection(request,context);
   if (request.packing && request.layout!=="packed") context.addIssue({
     code:"custom",path:["packing"],message:"Packing controls apply to packed atlases.",
   });
 });
 export type SpriteBundleRequest = z.output<typeof spriteBundleRequest>;
 export const defaultSpritePacking = packing.parse({});
+
+export const fixedSpriteBundleRequest=z.strictObject({
+  ...commonSpriteOptions,
+  layout:z.enum(["loose","fixed-grid"]),
+  fps:z.int().min(1).max(120),
+}).superRefine(validateSelection);
+export type FixedSpriteBundleRequest=z.output<typeof fixedSpriteBundleRequest>;

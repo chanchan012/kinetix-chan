@@ -203,6 +203,12 @@ The static ZIP at `/sprite-player/pixi` packages a PixiJS 8.23.0 adapter, starte
 
 The receipt records the source revision, ZIP digest, profile and layout, with added, updated and retained clips. The starter displays those changes and applies them on confirmation. The existing version 2 manifest, REST and MCP inputs remain the source contract. [PixiJS package setup](ENGINE_EXPORT.md#import-and-update-in-pixijs-8230)
 
+## M9.4 · Fixed-rate sprites and engine conformance
+
+`loadSpriteSamples` is the shared owner- and revision-pinned source for the portable and fixed-rate exports. The fixed profile samples the selected source revisions once, expands each output visit using cumulative boundary rounding, and writes independent clip folders of numbered PNGs or fixed-grid sheets. Preflight uses the clip timing and calculated sheet layout. It reports skipped visits and timing error before rasterization. The downloadable `timing.json` sidecar carries the full source frame and cue metadata, the output run map, the PNG inventory and file checksums.
+
+Studio and MCP call the same export path through `POST /api/rigs/:id/fixed-sprites` and `export_fixed_sprite_bundle`. The package has its own schema and version. The portable version 2 reader and export retain their existing contracts. `/sprite-player/conformance` builds a locked standalone verifier with exact portable, fixed-grid and numbered PNG examples from a shared sample. The verifier slices raw sheets independently of their timing sidecar and compares pixels, frame holds, anchors and cues against the exact portable loader. [Fixed-rate export contract](ENGINE_EXPORT.md#fixed-rate-sprites-for-plain-image-slicers)
+
 ## M8.1 · Editable SVG import
 
 `lib/rig/svg-import.ts` converts XML to the existing `part.create`, `layer.group`, `layer.flags` and `layer.mask` commands. It resolves viewports and transforms into artboard coordinates, reconstructs editable cubic handles, and stores clipping geometry on hidden layers. The parser accepts UTF-8 files up to 512 KiB and bounds XML, reference expansion and command counts. Local references resolve against the document's own IDs. Studio reads the source XML in the browser and draws the proposed group through the regular Canvas path. It dispatches one history entry and saves the normalized document through the existing state endpoint.
