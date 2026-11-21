@@ -3,8 +3,9 @@ import type { Library } from "../../db/library";
 import { queueExport } from "../export/requests";
 import { prepareSpritePackage } from "../export/sprite-package";
 import { spritePackageRequest } from "../export/sprite-package-options";
-import { spriteBundleRequest } from "../export/sprite-bundle-options";
+import { fixedSpriteBundleRequest,spriteBundleRequest } from "../export/sprite-bundle-options";
 import { prepareSpriteBundle } from "../export/sprite-bundle";
+import { prepareFixedSpriteBundle } from "../export/fixed-sprites";
 import type { RoomBus } from "../realtime/bus";
 import type { RoomPresence } from "../realtime/protocol";
 import { channelSchema, easeSchema, sampleRig, setKey, setKeyEase, tracksSchema, type Channel, type Track } from "../rig/animation";
@@ -72,6 +73,7 @@ export const inputs = {
   trigger_lottie_export:z.strictObject({clipId:clipId.optional(),startFrame:frame.optional(),endFrame:frame.optional(),requestId:z.uuid().optional()}),
   export_sprite_package:spritePackageRequest,
   export_sprite_bundle:spriteBundleRequest,
+  export_fixed_sprite_bundle:fixedSpriteBundleRequest,
   export_project_archive:exportProjectInput,
   reopen_project_archive:reopenProjectInput,
 };
@@ -393,6 +395,15 @@ export class RigAgent {
     return {
       manifest:result.manifest,
       ...(result.bytes && {filename:"kinetix-"+this.rigId+"-sprites.zip",mimeType:"application/zip",
+        base64:Buffer.from(result.bytes).toString("base64")}),
+    };
+  }
+  async exportFixedSpriteBundle(input:z.output<typeof fixedSpriteBundleRequest>) {
+    const result=await prepareFixedSpriteBundle(this.library.exports,this.userId,this.rigId,input);
+    if ("error" in result && result.error) throw new Error("Fixed sprite export failed: "+result.error);
+    return {
+      manifest:result.manifest,
+      ...(result.bytes && {filename:"kinetix-"+this.rigId+"-fixed-sprites.zip",mimeType:"application/zip",
         base64:Buffer.from(result.bytes).toString("base64")}),
     };
   }

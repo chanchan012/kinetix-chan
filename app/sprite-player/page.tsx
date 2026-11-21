@@ -13,6 +13,7 @@ export default function SpritePlayerPage() {
         <a href="/sprite-player/godot" download>Godot importer</a>
         <a href="/sprite-player/phaser" download>Phaser starter</a>
         <a href="/sprite-player/pixi" download>PixiJS starter</a>
+        <a href="/sprite-player/conformance" download>Engine conformance kit</a>
       </nav>
     </header>
     <SpritePlayer/>

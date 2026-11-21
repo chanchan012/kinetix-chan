@@ -239,9 +239,12 @@ export function spriteCropIdentity(frame: PlaybackFrame) {
 
 export type SpriteCue = { clipId: string; frameId: string; cue: PlaybackFrame["events"][number] };
 
+export function spritePlaybackVisits<T>(frames:readonly T[],loopMode:"once"|"repeat"|"ping-pong") {
+  return loopMode==="ping-pong" ? [...frames,...frames.slice(1,-1).reverse()] : frames;
+}
+
 export function compileSpriteTimeline(clip: PlaybackClip) {
-  const visits = [...clip.frames];
-  if (clip.loopMode === "ping-pong") visits.push(...clip.frames.slice(1, -1).reverse());
+  const visits = spritePlaybackVisits(clip.frames,clip.loopMode);
   let period = 0;
   const cues = visits.flatMap(frame => {
     const start = period;

@@ -67,6 +67,24 @@ test("an illustrator preflights and plays three layouts of a portable sprite bun
       expect(manifest.clips[0].frames[0].rotation).toBe(layout==="packed"?90:0);
       archives.push({layout,buffer});
     }
+    await dialog.getByLabel("Format").selectOption("fixed-sprites");
+    await dialog.getByRole("checkbox",{name:"Flicker East",exact:true}).check();
+    await dialog.getByRole("checkbox",{name:"Flicker West",exact:true}).uncheck();
+    await dialog.getByText("Frame metadata",{exact:true}).click();
+    await dialog.getByLabel("Frame metadata (JSON)").fill('[{"frame":0,"durationTicks":3,"events":[{"name":"light","tick":2}]}]');
+    await dialog.getByLabel("Output FPS").fill("10");
+    await dialog.getByRole("button",{name:"Check export"}).press("Enter");
+    const fixedPlan=dialog.getByRole("region",{name:"Sprite bundle preflight"});
+    await expect(fixedPlan).toContainText("4 frames at 10 FPS");
+    await expect(fixedPlan).toContainText("1 hold skipped");
+    const fixedDownload=page.waitForEvent("download");
+    await dialog.getByRole("button",{name:"Download sprite bundle"}).press("Enter");
+    const fixed=unzipSync(await readFile(await (await fixedDownload).path()));
+    const timing=JSON.parse(strFromU8(fixed["timing.json"]));
+    expect(timing).toMatchObject({schema:"kinetix.fixed-sprites",fps:10,cell:{width:32,height:32},
+      clips:[{id:east,totalFrames:4,cues:[{name:"light",sourceTick:2,outputFrame:2}]}],
+    });
+    expect(fixed[`${east}/sheet-00001.png`]).toBeDefined();
     await page.goto("/sprite-player");
     const schema=await page.request.get("/sprite-player/schema");
     expect(schema.headers()["content-type"]).toContain("application/schema+json");
@@ -100,6 +118,14 @@ test("an illustrator preflights and plays three layouts of a portable sprite bun
     });
     expect(pixiFiles["integrations/pixi/starter/index.html"]).toBeDefined();
     expect(pixiFiles["package-lock.json"]).toBeDefined();
+    const kitDownload=page.waitForEvent("download");
+    await page.getByRole("link",{name:"Engine conformance kit",exact:true}).click();
+    const kit=await kitDownload;
+    expect(kit.suggestedFilename()).toBe("kinetix-sprite-conformance.zip");
+    const kitFiles=unzipSync(await readFile(await kit.path()));
+    expect(kitFiles["examples/source-v2.zip"]).toBeDefined();
+    expect(kitFiles["examples/grid-24.zip"]).toBeDefined();
+    expect(kitFiles["examples/frames-24.zip"]).toBeDefined();
     const canvas=page.getByRole("img",{name:"Sprite preview"});
     const sample=()=>canvas.evaluate(element=>{
       const canvas=element as HTMLCanvasElement;

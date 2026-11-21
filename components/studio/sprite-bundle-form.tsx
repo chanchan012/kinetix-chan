@@ -1,18 +1,21 @@
 "use client";
 
 import { useRef, useState, type FormEvent } from "react";
-import { spriteBundleRequest, type SpriteBundleRequest } from "@/lib/export/sprite-bundle-options";
+import { fixedSpriteBundleRequest,spriteBundleRequest,type SpriteBundleRequest } from "@/lib/export/sprite-bundle-options";
 import type { Artboard } from "@/lib/rig/model";
 import type { SpriteSource } from "@/lib/rig/sprite-sources";
 import type { ClipTiming } from "./timeline";
 
-type Plan = {textureBytes:number;files:{file:string;width:number;height:number}[];clips:{id:string;name:string;frames:unknown[]}[]};
+type Plan = {fps?:number;textureBytes:number;files:{file:string;width:number;height:number}[];
+  clips:{id:string;name:string;direction?:string;totalFrames?:number;droppedVisits?:number;durationErrorMs?:number;
+    maxBoundaryErrorMs?:number;maxCueErrorMs?:number}[]};
 const errors:Record<string,string>={
   revision_conflict:"A saved revision changed. Reopen Export after the studio updates.",
   unsupported_range:"Choose valid frame ranges or a smaller pixel scale.",
   missing_image_assets:"Relink missing artwork images before exporting.",
   imported_timing_unavailable:"Reopen Export to refresh the clip’s imported timing.",
   too_many_sprite_samples:"The selected clips need more than 96 rendered samples. Choose shorter ranges or fewer clips.",
+  too_many_fixed_frames:"The fixed-rate ZIP supports up to 960 output frames. Lower the FPS or export a shorter range.",
   incompatible_pixel_scale:"Export clips with matching imported scales together and keep the final scale at 4× or less.",
   scaled_sprite_metadata_out_of_bounds:"Some anchors or collision shapes exceed the bundle bounds at this scale. Reduce the pixel scale.",
   frame_exceeds_texture_size:"At least one frame exceeds the maximum texture size. Increase the limit or reduce the pixel scale.",
@@ -21,11 +24,11 @@ const errors:Record<string,string>={
   not_found:"A selected clip is no longer available in this project.",
 };
 
-export function SpriteBundleForm({path,rigId,revision,clips,activeId,artboard,spriteSources,unsaved}:{
-  path:string;rigId:string;revision:number;clips:ClipTiming[];activeId?:string;artboard:Artboard;spriteSources?:SpriteSource[];unsaved:boolean;
+export function SpriteBundleForm({path,rigId,revision,clips,activeId,artboard,spriteSources,unsaved,fixedRate}:{
+  path:string;rigId:string;revision:number;clips:ClipTiming[];activeId?:string;artboard:Artboard;spriteSources?:SpriteSource[];unsaved:boolean;fixedRate:boolean;
 }) {
   const [selected,setSelected]=useState<string[]>(()=>[activeId || clips[0]?.id].filter(Boolean));
-  const [layout,setLayout]=useState<SpriteBundleRequest["layout"]>("packed");
+  const [layout,setLayout]=useState<SpriteBundleRequest["layout"]>(fixedRate?"fixed-grid":"packed");
   const [pending,setPending]=useState(false);
   const [message,setMessage]=useState("");
   const [plan,setPlan]=useState<Plan|null>(null);
@@ -58,9 +61,12 @@ export function SpriteBundleForm({path,rigId,revision,clips,activeId,artboard,sp
         }
         return {...range,loopMode:fields.get("loop-"+clip.id),direction,pivot,frames};
       });
-      const parsed=spriteBundleRequest.safeParse({
+      const common={
         revision,layout,clips:requestedClips,scale:numeric("scale"),maxTextureSize:numeric("maximum"),
-        filter:fields.get("filter"),colorSpace:fields.get("color"),alpha:fields.get("alpha"),preflight,
+        filter:fields.get("filter"),preflight,
+      };
+      const parsed=fixedRate ? fixedSpriteBundleRequest.safeParse({...common,fps:numeric("fps")}) : spriteBundleRequest.safeParse({
+        ...common,colorSpace:fields.get("color"),alpha:fields.get("alpha"),
         ...(layout==="packed" && {packing:{trim:fields.has("trim"),padding:numeric("padding"),
           extrusion:numeric("extrusion"),rotate:fields.has("rotate")}}),
       });
@@ -78,7 +84,7 @@ export function SpriteBundleForm({path,rigId,revision,clips,activeId,artboard,sp
         const url=URL.createObjectURL(await response.blob());
         const link=document.createElement("a");
         link.href=url;
-        link.download="kinetix-"+rigId+"-sprites.zip";
+        link.download="kinetix-"+rigId+(fixedRate?"-fixed-sprites.zip":"-sprites.zip");
         link.hidden=true;
         form.appendChild(link);
         try { link.click(); }
@@ -97,10 +103,11 @@ export function SpriteBundleForm({path,rigId,revision,clips,activeId,artboard,sp
 
   return <form onSubmit={send} onChange={()=>{settingsVersion.current++;setPlan(null);}}>
     <label>Sprite layout<select value={layout} onChange={event=>setLayout(event.target.value as typeof layout)}>
-      <option value="packed">Packed atlas pages</option>
+      {!fixedRate && <option value="packed">Packed atlas pages</option>}
       <option value="fixed-grid">Fixed-grid sheets</option>
       <option value="loose">Loose PNG frames</option>
     </select></label>
+    {fixedRate && <label>Output FPS<input type="number" name="fps" min={1} max={120} defaultValue={24} required/></label>}
     <fieldset className="studio-bundle-clips" disabled={pending}>
       <legend>Clip ranges</legend>
       {clips.map(clip=>{
@@ -158,17 +165,22 @@ export function SpriteBundleForm({path,rigId,revision,clips,activeId,artboard,sp
       <label className="studio-check"><input type="checkbox" name="rotate"/>Allow 90° rotation</label>
     </>}
     <label>Texture filtering<select name="filter"><option value="nearest">Nearest</option><option value="linear">Linear</option></select></label>
-    <div className="studio-field-pair">
+    {!fixedRate && <div className="studio-field-pair">
       <label>Color space<select name="color"><option value="srgb">sRGB</option><option value="linear">Linear</option></select></label>
       <label>Alpha<select name="alpha"><option value="straight">Straight</option><option value="premultiplied">Premultiplied</option></select></label>
-    </div>
+    </div>}
     {pending && <p role="status">Reading saved frames…</p>}
     {plan && <section className="studio-bundle-plan" aria-label="Sprite bundle preflight">
       <p>{plan.clips.length} clips · {plan.files.length} PNG files · {(plan.textureBytes/1048576).toFixed(2)} MiB of texture memory</p>
-      <ul>{plan.files.map(file=><li key={file.file}>{file.file} · {file.width} × {file.height}</li>)}</ul>
+      {plan.fps ? <ul>{plan.clips.map(clip=><li key={clip.id}>
+        {clip.name}{clip.direction && ` · ${clip.direction}`} · {clip.totalFrames} frames at {plan.fps} FPS
+        {` · ${clip.droppedVisits} ${clip.droppedVisits===1?"hold":"holds"} skipped · ${(clip.durationErrorMs ?? 0).toFixed(2)} ms duration change`}
+        {` · up to ${(clip.maxBoundaryErrorMs ?? 0).toFixed(2)} ms pose rounding and ${(clip.maxCueErrorMs ?? 0).toFixed(2)} ms cue displacement`}
+      </li>)}</ul> : <ul>{plan.files.map(file=><li key={file.file}>{file.file} · {file.width} × {file.height}</li>)}</ul>}
     </section>}
     {message && <p className="studio-key-error" role="status">{message}</p>}
-    <a href="/sprite-player" target="_blank" rel="noreferrer">Open sprite reference player</a>
+    <a href={fixedRate?"/sprite-player/conformance":"/sprite-player"} target="_blank" rel="noreferrer">
+      {fixedRate?"Download the engine conformance kit":"Open sprite reference player"}</a>
     <div className="studio-field-pair studio-bundle-actions">
       <button type="submit" value="check" disabled={pending || unsaved || !selected.length}>Check export</button>
       <button type="submit" className="studio-save" value="download" disabled={pending || unsaved || !selected.length}>Download sprite bundle</button>

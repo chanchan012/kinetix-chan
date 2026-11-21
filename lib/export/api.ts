@@ -11,12 +11,26 @@ import { renderPngFrame } from "./raster";
 import { prepareSpritePackage } from "./sprite-package";
 import { spritePackageRequest } from "./sprite-package-options";
 import { prepareSpriteBundle } from "./sprite-bundle";
-import { spriteBundleRequest } from "./sprite-bundle-options";
+import { fixedSpriteBundleRequest,spriteBundleRequest } from "./sprite-bundle-options";
+import { prepareFixedSpriteBundle } from "./fixed-sprites";
 import { hasMissingArtworkImages } from "../rig/layer-tree";
 const missing = {error:"not_found"} as const;
 
 export function exportApi(repository: () => Library) {
   return new Hono<IdentityEnv>()
+    .post("/:id/fixed-sprites",validator("json",(value,c)=>{
+      const parsed=fixedSpriteBundleRequest.safeParse(value);
+      return parsed.success ? parsed.data : c.json({error:"invalid_export",detail:parsed.error.issues[0]?.message},400);
+    }),async c=>{
+      const rigId=c.req.param("id");
+      const result=await prepareFixedSpriteBundle(repository().exports,c.get("userId")!,rigId,c.req.valid("json"));
+      if ("error" in result && result.error) return c.json({error:result.error},result.status);
+      c.header("Cache-Control","private, no-store");
+      if (!result.bytes) return c.json(result.manifest);
+      c.header("Content-Type","application/zip");
+      c.header("Content-Disposition",`attachment; filename="kinetix-${rigId}-fixed-sprites.zip"`);
+      return c.body(result.bytes);
+    })
     .post("/:id/sprite-bundle",validator("json",(value,c)=>{
       const parsed=spriteBundleRequest.safeParse(value);
       return parsed.success ? parsed.data : c.json({error:"invalid_export",detail:parsed.error.issues[0]?.message},400);

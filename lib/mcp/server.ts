@@ -20,7 +20,7 @@ export function createStudioMcp(agent:RigAgent) {
     name:ToolName, description:string, schema:Schema, run:(input:z.output<Schema>)=>Promise<object>,
   ) {
     const inputSchema:StandardSchemaWithJSON = schema;
-    const spriteExport=name==="export_sprite_package" || name==="export_sprite_bundle";
+    const spriteExport=name==="export_sprite_package" || name==="export_sprite_bundle" || name==="export_fixed_sprite_bundle";
     const archiveExport=name==="export_project_archive";
     server.registerTool(name,{description,inputSchema,annotations:{
       readOnlyHint:spriteExport || archiveExport || name==="read_drawing_cel" || name==="read_image_asset",
@@ -76,6 +76,8 @@ export function createStudioMcp(agent:RigAgent) {
   tool("trigger_lottie_export","Queue a Lottie snapshot for the selected clip or the rig's study animation.",inputs.trigger_lottie_export,input=>agent.triggerLottie(input));
   tool("export_sprite_package","Preflight or render a fixed-grid sprite ZIP from a saved clip at the specified revisions.",inputs.export_sprite_package,input=>agent.exportSpritePackage(input));
   tool("export_sprite_bundle","Preflight or render an owner-scoped, revision-pinned multi-clip ZIP with loose frames, fixed grids or packed atlas pages.",inputs.export_sprite_bundle,input=>agent.exportSpriteBundle(input));
+  tool("export_fixed_sprite_bundle","Preflight or export revision-pinned clips as plain numbered PNGs or grid sheets at a fixed FPS, with timing error and cue mappings.",
+    inputs.export_fixed_sprite_bundle,input=>agent.exportFixedSpriteBundle(input));
   tool("export_project_archive","Preflight or download the editable project ZIP. Supply the saved document revision and every clip ID and track revision.",
     inputs.export_project_archive,input=>agent.exportProjectArchive(input));
   if (agent.mayReopenArchives) tool("reopen_project_archive","Preview or reopen a portable project ZIP as a fresh private project. Reuse the preview import ID when applying.",

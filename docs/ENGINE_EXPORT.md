@@ -42,6 +42,18 @@ The request can supply per-frame metadata. This example makes source frame 0 hol
 
 The direct bundle supports up to 96 frames, 16 clips, 16 megapixels across output textures and a 1.5 MB ZIP. For large scenes, select shorter ranges, reduce pixel scale or use smaller bundles by animation group.
 
+## Fixed-rate sprites for plain image slicers
+
+In Studio Export, choose **Fixed-rate sprites (ZIP)**. Select numbered PNGs or untrimmed grid sheets and an output rate from 1 to 120 FPS. **Check export** shows the final PNG count, texture memory, skipped holds, duration change, maximum frame-boundary rounding and maximum cue displacement. The export uses saved rig and clip revisions, including imported holds when their preservation option is enabled.
+
+Each clip has a folder named by its source clip ID. Open the numbered files in order, or slice each `sheet-` PNG in row-major order using the `cell` dimensions in `timing.json`. Each `files` record gives the sheet's rows, columns and number of playable cells. Ignore trailing padded cells. Play one image per tick at `fps`. Repeat the baked cycle for both repeat and ping-pong clips. A once clip stops at the last image. Ping-pong output includes the reverse interior holds. All output frames keep the full source artboard and straight-alpha sRGB pixels.
+
+`timing.json` uses `kinetix.fixed-sprites` version 1. A run maps a stable source frame ID and its visit tick to a zero-based output start and image count. Output boundaries round the cumulative source visits to the nearest output frame, with halves rounded up. A clip shorter than half an output frame keeps one image from its first visit. A run with zero images stays in the map. Cues retain their source tick, payload and projected output frame. The cue position uses nearest-frame rounding and is clamped to the last playable image. All reported timing differences are in milliseconds.
+
+Use `POST /api/rigs/:id/fixed-sprites` or MCP `export_fixed_sprite_bundle` with `revision`, `layout` (`loose` or `fixed-grid`), `fps`, and the selected clip IDs, track revisions and inclusive zero-based ranges. Use `preflight: true` for the plan. The direct profile supports 96 source samples, 960 output images, 16 megapixels across PNGs and a 1.5 MB ZIP.
+
+The engine conformance kit includes the exact version 2 source, two fixed-rate exports, both JSON Schemas, expected frame and cue values, and a TypeScript validator. Run `npm ci`, then `npm run verify` in the extracted project. To verify an export and print its manifest, run `npm run inspect -- path/to/export.zip`. [Download the conformance kit](https://kinetix-chan.vercel.app/sprite-player/conformance)
+
 ## Reopen sprites as editable cels
 
 Choose **Layers → Import sprite bundle** for a Kinetix version 2 ZIP. All three layouts are supported, including rotated and trimmed packed rectangles. Use a blank transparent design at the source dimensions for an isolated round trip. Import restores the art at its original pixel coordinates, creates editable drawing exposures and opens the first clip. Source delays become integer tick holds in the Studio timeline.

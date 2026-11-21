@@ -71,7 +71,8 @@ function clipFrames(clip:SavedClip,scale:number,sourceSize:ReturnType<typeof exp
   });
 }
 
-export async function prepareSpriteBundle(queue:Pick<ExportQueue,"inputs">,owner:string,rigId:string,request:SpriteBundleRequest) {
+export async function loadSpriteSamples(queue:Pick<ExportQueue,"inputs">,owner:string,rigId:string,
+  request:Pick<SpriteBundleRequest,"clips"|"revision"|"scale">) {
   const rows=await Promise.all(request.clips.map(clip=>queue.inputs(owner,rigId,clip.id)));
   if (rows.some(row=>!row?.clip)) return {error:"not_found",status:404} as const;
   if (rows.some((row,index)=>row!.revision!==request.revision || row!.clip!.trackRevision!==request.clips[index].trackRevision)) {
@@ -106,11 +107,24 @@ export async function prepareSpriteBundle(queue:Pick<ExportQueue,"inputs">,owner
     !spriteCompanionFrameSchema.safeParse(companion).success))) {
     return {error:"scaled_sprite_metadata_out_of_bounds",status:400} as const;
   }
+  if (sourceSize.width*sourceSize.height*count>maxSamplePixels) return {error:"unsupported_range",status:400} as const;
+  const clips=saved.map((clip,index)=>({
+    id:clip.request.id,name:clip.snapshot.name,direction:clip.source?.direction ?? clip.request.direction,
+    trackRevision:clip.request.trackRevision,startFrame:clip.request.startFrame,endFrame:timings[index].at(-1)!.sourceFrame,
+    loopMode:clip.source?.loopMode ?? clip.request.loopMode,ticksPerSecond:clip.snapshot.fps,
+    durationTicks:timings[index].reduce((sum,frame)=>sum+frame.durationTicks,0),frames:timings[index],
+  }));
+  return {saved,sourceSize,pixelScale,count,clips};
+}
+
+export async function prepareSpriteBundle(queue:Pick<ExportQueue,"inputs">,owner:string,rigId:string,request:SpriteBundleRequest) {
+  const resolved=await loadSpriteSamples(queue,owner,rigId,request);
+  if ("error" in resolved && resolved.error) return {error:resolved.error,status:resolved.status} as const;
+  const {saved,sourceSize,pixelScale,count,clips:sourceClips}=resolved;
   const totalSourcePixels=sourceSize.width*sourceSize.height*count;
   const packing=request.packing ?? defaultSpritePacking;
   const packed=request.layout==="packed";
   const trim=packed && packing.trim;
-  if (totalSourcePixels>maxSamplePixels) return {error:"unsupported_range",status:400} as const;
   if (!trim && (sourceSize.width>request.maxTextureSize || sourceSize.height>request.maxTextureSize)) {
     return {error:"frame_exceeds_texture_size",status:400} as const;
   }
@@ -143,18 +157,13 @@ export async function prepareSpriteBundle(queue:Pick<ExportQueue,"inputs">,owner
   if (texels>maxPagePixels) return {error:"atlas_too_large",status:400} as const;
 
   let index=0;
-  const clips=saved.map((clip,clipIndex)=>{
-    const frames=timings[clipIndex].map(frame=>{
+  const clips=sourceClips.map(clip=>{
+    const frames=clip.frames.map(frame=>{
       const crop=frameCrops[index++];
       const {page,rect,rotation}=layout.placements[crop.cropIndex];
       return {...frame,file:layout.pages[page].file,rect,rotation,blank:crop.blank,trimOffset:{x:crop.x,y:crop.y}};
     });
-    return {
-      id:clip.request.id,name:clip.snapshot.name,direction:clip.source?.direction ?? clip.request.direction,
-      trackRevision:clip.request.trackRevision,startFrame:clip.request.startFrame,endFrame:frames.at(-1)!.sourceFrame,
-      loopMode:clip.source?.loopMode ?? clip.request.loopMode,ticksPerSecond:clip.snapshot.fps,
-      durationTicks:frames.reduce((sum,frame)=>sum+frame.durationTicks,0),frames,
-    };
+    return {...clip,frames};
   });
   const manifest={
     schema:"kinetix.sprite-package",version:2,layout:request.layout,

@@ -14,7 +14,7 @@ import { evaluateRig } from "../../lib/rig/kinematics";
 import { readRigState } from "../../lib/rig/model";
 import { strFromU8, unzipSync } from "fflate";
 import { createCanvas, loadImage } from "@napi-rs/canvas";
-import { spriteBundleRequest } from "../../lib/export/sprite-bundle-options";
+import { fixedSpriteBundleRequest,spriteBundleRequest } from "../../lib/export/sprite-bundle-options";
 import { planSvgImport } from "../../lib/rig/svg-import";
 import { editRig } from "../../lib/rig/commands";
 import { exportedSequenceFixture,sequenceArtboard } from "../fixtures/png-sequence";
@@ -280,6 +280,14 @@ describe("saved library", () => {
     expect(Buffer.from(await bundle.arrayBuffer()).toString("base64")).toBe(
       (await agent.exportSpriteBundle(bundleRequest)).base64,
     );
+    const fixedRequest=fixedSpriteBundleRequest.parse({revision:bundleRequest.revision,clips:bundleRequest.clips,layout:"fixed-grid",fps:24});
+    expect((await call("other","POST",path+"/fixed-sprites",fixedRequest)).status).toBe(404);
+    expect((await call("owner","POST",path+"/fixed-sprites",{...fixedRequest,revision:rig.revision})).status).toBe(409);
+    const fixedPreflight=await call("owner","POST",path+"/fixed-sprites",{...fixedRequest,preflight:true});
+    expect(await fixedPreflight.json()).toMatchObject({fps:24,clips:[{totalFrames:16,direction:"east",durationErrorMs:0}]});
+    const fixed=await call("owner","POST",path+"/fixed-sprites",fixedRequest);
+    expect(fixed.headers.get("content-type")).toBe("application/zip");
+    expect(Buffer.from(await fixed.arrayBuffer()).toString("base64")).toBe((await agent.exportFixedSpriteBundle(fixedRequest)).base64);
     expect((await call("other","GET",path+"/artboard.png")).status).toBe(404);
     const exported = await call("owner","GET",path+"/artboard.png");
     expect(exported.headers.get("content-type")).toBe("image/png");

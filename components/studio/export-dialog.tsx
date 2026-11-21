@@ -17,7 +17,7 @@ export function ExportDialog({rigId, revision, clip, clips, frameCount, artboard
   clips:ClipTiming[];spriteSources?:SpriteSource[];
   unsaved: boolean; hasArtboard: boolean; renderConfigured: boolean; close: () => void;
 }) {
-  const [format, setFormat] = useState<ExportFormat | "sprite-package" | "sprite-bundle" | "project-archive">("lottie");
+  const [format, setFormat] = useState<ExportFormat | "sprite-package" | "sprite-bundle" | "fixed-sprites" | "project-archive">("lottie");
   const [jobs, setJobs] = useState<Job[]>([]);
   const [sending, setSending] = useState(false);
   const [message, setMessage] = useState("");
@@ -28,7 +28,8 @@ export function ExportDialog({rigId, revision, clip, clips, frameCount, artboard
   const rigPath = "/api/rigs/" + rigId;
   const path = rigPath + "/exports";
   const isSprite = format === "sprite-package";
-  const isBundle = format === "sprite-bundle";
+  const isFixed = format === "fixed-sprites";
+  const isBundle = format === "sprite-bundle" || isFixed;
   const isProject = format === "project-archive";
   const hasScale = isSprite || format==="png-sequence" || format==="spritesheet";
   const frameLimit = isSprite || isBundle || isProject ? spriteMaxFrames : formats[format].frames;
@@ -147,11 +148,12 @@ export function ExportDialog({rigId, revision, clip, clips, frameCount, artboard
       <label className="studio-export-format">Format<select value={format} onChange={event => setFormat(event.target.value as typeof format)}>
         {clip && <option value="sprite-package">Sprite package (ZIP)</option>}
         {clips.length>0 && <option value="sprite-bundle">Portable sprite bundle (ZIP)</option>}
+        {clips.length>0 && <option value="fixed-sprites">Fixed-rate sprites (ZIP)</option>}
         <option value="project-archive">Editable project archive (ZIP)</option>
         {exportFormats.map(item => <option key={item} value={item}>{formats[item].label}</option>)}
       </select></label>
     {isProject ? <ProjectArchiveForm {...{rigId,revision,clips,unsaved}}/> : isBundle ?
-      <SpriteBundleForm path={rigPath+"/sprite-bundle"} rigId={rigId} revision={revision} clips={clips} spriteSources={spriteSources}
+      <SpriteBundleForm key={format} path={rigPath+"/"+format} fixedRate={isFixed} rigId={rigId} revision={revision} clips={clips} spriteSources={spriteSources}
       activeId={clip?.id} artboard={artboard} unsaved={unsaved}/> : <form onSubmit={enqueue}>
       {hasScale && <label>Pixel scale<select name="scale" defaultValue="1">
         {[1,2,3,4].map(value=><option key={value} value={value}>{value}×</option>)}

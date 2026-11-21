@@ -69,7 +69,7 @@ test("an MCP agent rigs a character and a walk cycle appears in the live studio"
     await call("insert_keyframe",{clipId:clip.id,channel:target,frame:0,value:290});
     await call("set_easing_curve",{clipId:clip.id,channel:target,frame:0,easing:{x1:0.25,y1:0,x2:0.75,y2:1}});
     await call("generate_procedural_cycle",{clipId:clip.id,cycle:"walk",boneId:"agent-thigh",amplitude:12});
-    await call("bake_ik_to_keyframes",{clipId:clip.id,constraintId:"agent-foot",startFrame:0,endFrame:23});
+    const baked=await call("bake_ik_to_keyframes",{clipId:clip.id,constraintId:"agent-foot",startFrame:0,endFrame:23});
     const render = await call("trigger_lottie_export",{clipId:clip.id,endFrame:3});
     expect(["queued","running","ready"]).toContain(render.status);
     await page.getByLabel("Animation clip").selectOption({label:"Agent walk"});
@@ -86,6 +86,14 @@ test("an MCP agent rigs a character and a walk cycle appears in the live studio"
     expect((await stdio.listTools()).tools.map(tool=>tool.name).sort()).toEqual(scopedTools);
     const hierarchy = await stdio.readResource({uri:"kinetix://rig-hierarchy"});
     expect(hierarchy.contents.some(item=>"text" in item && item.text.includes("agent-shin"))).toBe(true);
+    const document=hierarchy.contents[0];
+    if (!("text" in document)) throw new Error("Expected the scoped rig resource as text.");
+    const fixed=await stdio.callTool({name:"export_fixed_sprite_bundle",arguments:{
+      revision:JSON.parse(document.text).revision,layout:"loose",fps:24,preflight:true,
+      clips:[{id:clip.id,trackRevision:baked.trackRevision,startFrame:0,endFrame:3}],
+    }});
+    expect(fixed.isError).not.toBe(true);
+    expect(fixed.structuredContent).toMatchObject({manifest:{fps:24,clips:[{id:clip.id,totalFrames:4}]}});
 
     await page.getByRole("button",{name:"MCP",exact:true}).click();
     page.once("dialog",dialog=>dialog.accept());
