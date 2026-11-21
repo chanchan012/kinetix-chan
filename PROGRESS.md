@@ -16,11 +16,19 @@ Implemented the application shell, interactive guest playground, Clerk access ro
 
 ## Active subgoal and next exact step
 
-The active implementation goal covers all 23 subgoals in [the production studio roadmap](docs/PRODUCTION_STUDIO_ROADMAP.md). The original M5.1 through M5.5 slices, part position channels from M7.1, editable SVG import from M8.1, M9.1 and Godot sprite import within M9.3 are deployed. The roadmap includes drawing workflow follow-ons within M5.5, a complete MCP authoring session, format fidelity rules and per-engine import and reimport checkpoints. Unity, Phaser, PixiJS, Unreal and GameMaker remain in M9.3.
+The active implementation goal covers all 23 subgoals in [the production studio roadmap](docs/PRODUCTION_STUDIO_ROADMAP.md). The original M5.1 through M5.5 slices, part position channels from M7.1, editable SVG and PNG sequence import from M8.1, M9.1 and Godot sprite import within M9.3 are deployed. The roadmap includes drawing workflow follow-ons within M5.5, a complete MCP authoring session, format fidelity rules and per-engine import and reimport checkpoints. Unity, Phaser, PixiJS, Unreal and GameMaker remain in M9.3.
 
-The next exact step is PNG sequence import within M8.1. Add a fixture using `sequence.json` from the existing export, variable exposures and a transparent frame. Validate file names, dimensions and timing. Convert frame samples into editable RGBA cels and a destination clip using the source timebase. Verify that reopening and re-exporting preserves the pixels and frame timing.
+The next exact step is portable sprite atlas import within M8.1. Start with a version 2 packed fixture containing rotated crops, trim offsets, multiple clip directions, holds and a blank frame. Reuse the validated sprite reader to reconstruct source frames, then map the manifest's clip timebase and hold ticks to editable exposures. Verify re-exported pixels and report which companion metadata remains outside the drawing or clip model.
 
 Owner-managed Inngest Cloud activation is still open. After the signing and event keys are present in Vercel, redeploy, sync the existing endpoint, and verify a hosted thumbnail and animation export run. Saved still PNGs are served directly.
+
+## M8.1 PNG sequence import · November 21, 2026
+
+- **Brief and build** added **Layers → Import PNG sequence** and scoped MCP `import_png_sequence` for exported ZIPs and consecutive numbered PNGs. The importer preserves the timebase, visible pixels and blank frames. It creates an editable RGBA drawing and its clip in a revision-checked PostgreSQL statement.
+- **Test** passed 79 Vitest checks, including engine fixtures, sequence pixel and timing round trips, concurrent imports and rollback. Playwright passed 86 checks on four viewports with six expected desktop-only skips. The browser edited a held cel, reopened the project and verified that Studio and MCP produce the same re-exported frames.
+- **Merge** published `dcae0b4` on `codex/m8-1-png-sequences` and merged it as `4f76872` on `main`.
+- **Deploy** passed the local Next.js Webpack build. Vercel marked the [feature preview](https://kinetix-chan-bc060yd3c-chanchans-projects-aada625f.vercel.app) and [production](https://kinetix-chan.vercel.app) ready. Two authenticated production smoke checks passed on desktop and phone portrait.
+- **Document** records file limits, the MCP contract, the new saved clip behavior and the packed atlas continuation in [the resume handoff](docs/RESUME_HANDOFF.md#m81--png-sequence-import). The release needs no new environment variables or database migrations.
 
 ## M8.1 editable SVG import · November 21, 2026
 

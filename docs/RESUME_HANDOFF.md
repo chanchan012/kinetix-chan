@@ -156,6 +156,12 @@ Open **Layers → Import SVG** and choose a UTF-8 file. Inspect the rendered pro
 
 The importer handles local vector clips, simple CSS class, tag and ID rules, linear gradients and basic local shape or symbol references. Outline text before importing. External assets, filters, CSS at-rules, radial gradients and raster masks require conversion. Group opacity is applied to each path and can differ in overlaps. Nonuniformly transformed strokes use an averaged width. The preflight reports supported fallback conversions by element.
 
+## M8.1 · PNG sequence import
+
+Open **Layers → Import PNG sequence** and select a Kinetix export ZIP or consecutive numbered PNGs. The manifest's FPS takes precedence when present. Frames keep their source pixel size. An empty design can match the images before import. The upload limit is 2 MiB and 150 frames, subject to the editable pixel run and decoded pixel budgets. Embedded color profiles are interpreted as sRGB channel values. Applying the import saves a new clip and drawing layer and starts a fresh Studio undo history.
+
+For MCP, use `import_png_sequence` with the saved revision and the ZIP encoded as base64. Set `preflight: true` to see timing, counts and the preview. Pass back the same `importId` when applying. Run `npm test -- tests/unit/png-sequence.test.ts tests/unit/library.test.ts` and `npm run test:e2e -- --grep 'imports a timed PNG sequence'`. The importer and direct sprite export use the existing environment variables.
+
 ## M8.1 · Next implementation step
 
-Add PNG sequence import into editable RGBA cels. Start with a fixture using `sequence.json` from the existing exporter, a held cel and an intentional blank frame. Validate file names, dimensions and timing, then map decoded samples through `drawing.create`, `cel.create`, `cel.replace` and `exposure.set`. Preserve the source timebase when populating the destination clip, and verify that a re-export matches its PNG frames. Use the [production roadmap checkpoints](PRODUCTION_STUDIO_ROADMAP.md#implementation-checkpoints) for atlas delivery and portable project reopen.
+Import portable sprite atlas bundles into editable cels. Start with the version 2 manifest and `lib/export/sprite-playback.ts`. Use a packed fixture with rotated crops, trim offsets, multiple clip directions, held and blank frames. Reconstruct each full source frame and map its integer tick holds to destination exposures. Validate texture checksums and report companion data whose fields the editable drawing or clip model cannot carry. Verify re-exported frames and timing. Use the [production roadmap checkpoints](PRODUCTION_STUDIO_ROADMAP.md#implementation-checkpoints) for portable project reopen.
