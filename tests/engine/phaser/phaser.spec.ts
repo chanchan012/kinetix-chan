@@ -1,28 +1,6 @@
 import { expect, test } from "@playwright/test";
-import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
 import { PNG } from "pngjs";
-import { exportedAtlasFixture } from "../../fixtures/sprite-atlas";
-import { spriteBundleManifest } from "../../../lib/export/sprite-playback";
-
-type Layout = Parameters<typeof exportedAtlasFixture>[0];
-
-async function fixture(layout: Layout, scale = 1, update = false) {
-  const files = unzipSync(await exportedAtlasFixture(layout, scale));
-  const manifest = spriteBundleManifest.parse(JSON.parse(strFromU8(files["kinetix.json"])));
-  const [east, west] = manifest.clips;
-  west.frames[1].events = [{ name: "stride", tick: 1, data: { foot: "left" } }];
-  if (update) {
-    const used = new Set(east.frames.map(frame => frame.file));
-    for (const file of manifest.files) if (!used.has(file.file)) delete files[file.file];
-    manifest.clips = [east];
-    manifest.files = manifest.files.filter(file => used.has(file.file));
-    manifest.textureBytes = manifest.files.reduce((sum, file) => sum + file.width * file.height * 4, 0);
-    manifest.source.revision++;
-    east.name = "Bright flicker";
-  }
-  files["kinetix.json"] = strToU8(JSON.stringify(manifest));
-  return { bytes: [...zipSync(files)], east: east.id, west: west.id };
-}
+import { engineSpriteFixture } from "../../fixtures/engine-sprites";
 
 for (const renderer of ["canvas", "webgl"] as const) {
   test(`${renderer} plays and revises portable sprite bundles with stable game objects`, async ({ page }) => {
@@ -30,11 +8,11 @@ for (const renderer of ["canvas", "webgl"] as const) {
     await page.goto(`/tests/engine/phaser/receiver.html?${renderer}`);
     await page.waitForFunction(() => window.receiver);
     expect(await page.evaluate(() => [window.receiver.version, window.receiver.renderer])).toEqual(["3.90.0", renderer === "webgl" ? 2 : 1]);
-    const { east, west } = await fixture("packed");
+    const { east, west } = await engineSpriteFixture("packed");
     const canvas = page.locator("canvas");
     let reference: Buffer | undefined;
     for (const layout of ["loose", "fixed-grid", "packed"] as const) {
-      const { bytes } = await fixture(layout);
+      const { bytes } = await engineSpriteFixture(layout);
       const receipt = await page.evaluate(bytes => window.receiver.importBytes(bytes), bytes);
       expect(receipt).toMatchObject({ layout, profile: { version: 1, phaser: "3.90.0" }, clipIds: [east, west] });
       const details = await page.evaluate(east => {
@@ -70,7 +48,7 @@ for (const renderer of ["canvas", "webgl"] as const) {
     expect(plays).toEqual({ atBlank: true, onceEnds: 2, atLoop: 0,
       cues: [["ignite", { flammable: true }], ["stride", { foot: "left" }], ["stride", { foot: "left" }]] });
 
-    const { bytes: revised } = await fixture("packed", 2, true);
+    const { bytes: revised } = await engineSpriteFixture("packed", 2, true);
     const reimport = await page.evaluate(async ({ east, revised }) => {
       const { actor, scene, library, cues } = window.receiver;
       actor!.playClip(east).setPlaying(false).setPosition(72, 56).setScale(1.25);
@@ -119,7 +97,7 @@ test("standalone starter opens a sprite ZIP and keeps playable clips after inval
   await page.goto("/integrations/phaser/starter/");
   await expect(page.locator("canvas")).toBeVisible();
   const upload = page.getByLabel("Portable sprite ZIP");
-  const { bytes, west } = await fixture("packed");
+  const { bytes, west } = await engineSpriteFixture("packed");
   await upload.setInputFiles({ name: "flame.zip", mimeType: "application/zip", buffer: Buffer.from(bytes) });
   await expect(page.getByRole("status")).toHaveText("Imported 2 clips from packed.");
   const select = page.getByLabel("Clip and direction");

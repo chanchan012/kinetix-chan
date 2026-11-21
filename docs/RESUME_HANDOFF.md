@@ -192,9 +192,15 @@ Run `npm test -- tests/unit/phaser-timeline.test.ts` for cue windows. Run `npm r
 
 Vercel marked the feature preview for `0f92d7a` ready. The merge on GitHub `main` is `79ffea0`. Its Vercel commit status reports a 24-hour deployment rate limit as of November 21, 2026 at 12:13 UTC. Once the limit resets, trigger a production deployment from the validated `main` revision. Confirm that Vercel lists the intended commit as `READY` for `production`, check `/sprite-player/phaser` for `application/zip` and the 11 starter files, then run the `preflights and plays three layouts` scenario signed in against production on desktop and portrait phone. The existing Clerk test account fixture can run against a hosted URL by using a Playwright config with that base URL and no local web server.
 
-## M9.3 · Next implementation step
+## M9.3 · PixiJS verification
 
-Build PixiJS as its own profile using `tests/fixtures/sprite-atlas.ts` and `lib/export/sprite-playback.ts`. Pin the PixiJS release, load a version 2 package in a clean scene, and compare the three layouts at fractional scale. Verify clip selection, cue delivery and stable game references after rename, repack and a failed update. Record the renderer and PixiJS versions used. Start the plain image slicer and conformance fixture in M9.4 after the web profiles.
+Run `npm run test:pixi` with Chrome and access to a WebGPU adapter to check Canvas, WebGL, WebGPU and the starter. `npm run test:phaser` covers the shared frame and cue behavior. The PixiJS ZIP contains ten files and an npm lockfile. Extract it, run `npm ci` and `npm run build`, and serve `dist` to verify the recipient experience. The authenticated test `preflights and plays three layouts` verifies the kit download and page containment across four viewports. WebGPU can report PixiJS bind-group warnings for retired textures. The receiver verifies that replacement frames still render and that app shutdown destroys its actor. The profile needs no additional deployment settings.
+
+## M9.4 · Next implementation step
+
+Use the existing multi-clip fixture to generate a plain fixed-grid or numbered full-frame profile with a constant FPS. Expand each hold at the selected output timebase and publish the stable frame map and timing quantization in a sidecar. Verify playback with a simple image slicer that reads only the grid and FPS. Then verify the same source with the portable manifest loader, including exact holds, pivots and cues, and package the fixture and expected observations for engine authors.
+
+## M9.3 · Unity verification
 
 Unity verification can proceed independently from `codex/m9-3-unity-sprites` at `e71ae3e`. The Windows installer for Unity 6000.3.29f1 was downloaded and verified, but Windows canceled its launch. Once Unity is installed, set `KINETIX_UNITY_PATH` to `Editor/Unity.exe` and run `npm test -- tests/unit/unity-sprite.test.ts` on that branch. Merge the current `main` into the candidate and rerun the whole unit and browser suites after passing the editor check.
 

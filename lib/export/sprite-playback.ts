@@ -196,3 +196,74 @@ export function restoreSpritePixels(texture:SpriteBitmap,frame:PlaybackFrame,set
 export function spriteDrawOrigin(frame:PlaybackFrame,x:number,y:number,zoom:number) {
   return {x:x+(frame.trimOffset.x-frame.pivot.x)*zoom,y:y+(frame.trimOffset.y-frame.pivot.y)*zoom};
 }
+
+/** Give trimmed and untrimmed layouts the same transparent edge when sampling. */
+export function createSpriteCanvas(crop: ReturnType<typeof restoreSpritePixels> | undefined) {
+  const canvas = document.createElement("canvas");
+  canvas.width = canvas.height = 1;
+  const context = canvas.getContext("2d");
+  if (!context) throw new Error("Could not prepare a sprite texture canvas.");
+  if (!crop) return { canvas, x: 0, y: 0 };
+
+  const { width, height, pixels } = crop;
+  let left = width, top = height, right = -1, bottom = -1;
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      if (!pixels[(y * width + x) * 4 + 3]) continue;
+      left = Math.min(left, x);
+      right = Math.max(right, x);
+      top = Math.min(top, y);
+      bottom = Math.max(bottom, y);
+    }
+  }
+  if (right < 0) return { canvas, x: 0, y: 0 };
+
+  const cropWidth = right - left + 1;
+  canvas.width = cropWidth + 2;
+  canvas.height = bottom - top + 3;
+  const guarded = context.createImageData(canvas.width, canvas.height);
+  for (let y = top; y <= bottom; y++) {
+    const from = (y * width + left) * 4;
+    const to = ((y - top + 1) * canvas.width + 1) * 4;
+    guarded.data.set(pixels.subarray(from, from + cropWidth * 4), to);
+  }
+  context.putImageData(guarded, 0, 0);
+  return { canvas, x: left - 1, y: top - 1 };
+}
+
+export function spriteCropIdentity(frame: PlaybackFrame) {
+  if (frame.blank) return "blank";
+  const { x, y, width, height } = frame.rect;
+  return JSON.stringify([frame.file, x, y, width, height, frame.rotation]);
+}
+
+export type SpriteCue = { clipId: string; frameId: string; cue: PlaybackFrame["events"][number] };
+
+export function compileSpriteTimeline(clip: PlaybackClip) {
+  const visits = [...clip.frames];
+  if (clip.loopMode === "ping-pong") visits.push(...clip.frames.slice(1, -1).reverse());
+  let period = 0;
+  const cues = visits.flatMap(frame => {
+    const start = period;
+    period += frame.durationTicks;
+    return frame.events.toSorted((a, b) => a.tick - b.tick).map(cue => ({
+      tick: start + cue.tick,
+      event: { clipId: clip.id, frameId: frame.id, cue },
+    }));
+  });
+  return { period, cues, repeats: clip.loopMode !== "once" };
+}
+
+export function* spriteCuesBetween(timeline: ReturnType<typeof compileSpriteTimeline>, from: number, to: number) {
+  if (!timeline.cues.length) return;
+  const firstLoop = Math.floor(Math.max(0, from) / timeline.period);
+  const lastLoop = timeline.repeats ? Math.floor(to / timeline.period) : 0;
+  for (let loop = firstLoop; loop <= lastLoop; loop++) {
+    const start = loop * timeline.period;
+    for (const { tick, event } of timeline.cues) {
+      const absoluteTick = start + tick;
+      if (absoluteTick > to) break;
+      if (absoluteTick > from) yield { tick: absoluteTick, event };
+    }
+  }
+}
