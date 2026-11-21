@@ -80,6 +80,16 @@ test("an illustrator preflights and plays three layouts of a portable sprite bun
       "README.md","import_sprite_bundle.gd","import_sprite_package.gd","kinetix_sprite.gd",
     ]);
     expect(strFromU8(scripts["import_sprite_bundle.gd"])).toContain("func import_bundle");
+    const starterDownload=page.waitForEvent("download");
+    await page.getByRole("link",{name:"Phaser starter",exact:true}).click();
+    const starter=await starterDownload;
+    expect(starter.suggestedFilename()).toBe("kinetix-phaser-starter.zip");
+    const starterFiles=unzipSync(await readFile(await starter.path()));
+    expect(JSON.parse(strFromU8(starterFiles["package.json"]))).toMatchObject({
+      name:"kinetix-phaser-starter",dependencies:{phaser:"3.90.0"},
+    });
+    expect(starterFiles["integrations/phaser/starter/index.html"]).toBeDefined();
+    expect(starterFiles["lib/export/sprite-playback.ts"]).toBeDefined();
     const canvas=page.getByRole("img",{name:"Sprite preview"});
     const sample=()=>canvas.evaluate(element=>{
       const canvas=element as HTMLCanvasElement;

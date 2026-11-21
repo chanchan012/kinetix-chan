@@ -9,7 +9,10 @@ export default function SpritePlayerPage() {
   return <main className="sprite-player-shell">
     <header>
       <Link href="/">Kinetix</Link><h1>Sprite player</h1>
-      <a className="sprite-player-importer" href="/sprite-player/godot" download>Godot importer</a>
+      <nav className="sprite-player-importers" aria-label="Engine importers">
+        <a href="/sprite-player/godot" download>Godot importer</a>
+        <a href="/sprite-player/phaser" download>Phaser starter</a>
+      </nav>
     </header>
     <SpritePlayer/>
   </main>;
