@@ -1,5 +1,6 @@
 import { Hono } from "hono";
 import { validator } from "hono/validator";
+import { bodyLimit } from "hono/body-limit";
 import { z } from "zod";
 import type { IdentityEnv } from "./api";
 import type { Library } from "../db/library";
@@ -9,6 +10,8 @@ import { exportApi } from "./export/api";
 import { realtimeApi } from "./realtime/api";
 import type { RoomBus } from "./realtime/bus";
 import { credentialApi } from "./mcp/credentials";
+import { maxSequenceRequestBytes,sequenceImportInput } from "./import/sequence-options";
+import { importPngSequence } from "./import/sequence-service";
 
 const name = z.string().trim().min(1).max(120);
 const createRig = z.union([z.strictObject({name,study:studyIdSchema}), z.strictObject({name,artboard:artboardSchema})]);
@@ -76,6 +79,14 @@ export function libraryApi(repository:()=>Library,rooms?:()=>RoomBus) {
       if (!current) return c.json(missing,404);
       if (current.revision !== revision) return c.json({error:"revision_conflict",revision:current.revision},409);
       return c.json({error:"study_mismatch"},400);
+    })
+    .post("/:id/imports/png-sequence",bodyLimit({maxSize:maxSequenceRequestBytes,onError:c=>
+      c.json({error:"archive_too_large",message:"Choose a PNG sequence ZIP of 2 MiB or less."},413)}),body(sequenceImportInput),async c=>{
+      const clientId=z.uuid().safeParse(c.req.header("x-kinetix-client")).data;
+      const result=await importPngSequence(repository(),c.req.param("id"),c.req.valid("json"),
+        {userId:c.get("userId")!,kind:"human",clientId},rooms);
+      if ("error" in result) return c.json({error:result.error,message:result.message},result.status);
+      return c.json({receipt:result.receipt,...("state" in result && {state:result.state})},result.status);
     })
     .get("/:id/clips",async c => {
       const rows = await repository().listClips(c.get("userId")!,c.req.param("id"));

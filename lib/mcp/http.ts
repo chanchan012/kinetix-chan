@@ -4,6 +4,7 @@ import type { Library } from "../../db/library";
 import type { RoomBus } from "../realtime/bus";
 import { RigAgent } from "./actions";
 import { createStudioMcp } from "./server";
+import { maxSequenceRequestBytes } from "../import/sequence-options";
 
 export function mcpHttp(repository:()=>Library, rooms?:()=>RoomBus) {
   const hosts = [process.env.VERCEL_URL,process.env.VERCEL_BRANCH_URL,process.env.VERCEL_PROJECT_PRODUCTION_URL]
@@ -11,7 +12,7 @@ export function mcpHttp(repository:()=>Library, rooms?:()=>RoomBus) {
   const app = createMcpHonoApp({
     host:process.env.VERCEL === "1" ? "0.0.0.0" : "127.0.0.1",
     ...(hosts.length && {allowedHosts:hosts,allowedOrigins:hosts}),
-    maxRequestBodySize:1024*1024,
+    maxRequestBodySize:maxSequenceRequestBytes,
   });
   return app.all("/",async c => {
     const authorization = c.req.header("Authorization");

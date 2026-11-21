@@ -26,6 +26,8 @@ import { Dialog } from "../dialog";
 import { FacetPanel,useFacetTool } from "./facet-tools";
 import { LayerList } from "./layer-list";
 import { SvgImportDialog } from "./svg-import-dialog";
+import { SequenceImportDialog } from "./sequence-import-dialog";
+import type { SequenceImportInput,SequenceReceipt } from "@/lib/import/sequence-options";
 import { AppearanceControls } from "./appearance-controls";
 import { editablePartIds,layerTreeFor,visibleLayerRows } from "@/lib/rig/layer-tree";
 import { CelControls, defaultCelSettings, type CelSettings } from "./cel-controls";
@@ -77,6 +79,7 @@ export function Studio({actorId, rigId, name, initial, revision: initialRevision
   const [liveClips, setLiveClips] = useState(clips);
   const [exportOpen, setExportOpen] = useState(false);
   const [importOpen,setImportOpen] = useState(false);
+  const [sequenceOpen,setSequenceOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
   const [mcpOpen, setMcpOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
@@ -230,6 +233,40 @@ export function Studio({actorId, rigId, name, initial, revision: initialRevision
     }
   }
 
+  async function sendSequence(input:SequenceImportInput) {
+    const response=await fetch(`/api/rigs/${rigId}/imports/png-sequence`,{method:"POST",
+      headers:{"Content-Type":"application/json",...(room.clientId && {"X-Kinetix-Client":room.clientId})},body:JSON.stringify(input)});
+    const result=await response.json().catch(()=>null) as {receipt?:SequenceReceipt;state?:KinetixRigState;message?:string}|null;
+    if (!response.ok || !result?.receipt) throw new Error(result?.message ?? "Could not read this PNG sequence.");
+    return {receipt:result.receipt,state:result.state};
+  }
+
+  const sequenceBlocked=dirty || timelineDirty || saving || conflict || room.revision>revision;
+  async function applySequence(input:SequenceImportInput) {
+    if (pending.current || sequenceBlocked || store.getState().rig!==saved) throw new Error("Finish saving Studio changes before importing.");
+    pending.current=true;
+    setSaving(true);
+    try {
+      const result=await sendSequence(input);
+      if (!result.state || !result.receipt.applied) throw new Error("Could not save the new drawing and clip.");
+      store.getState().reset(result.state);
+      setSaved(store.getState().rig);
+      setRevision(result.receipt.revision);
+      setError("");
+      clipRefresh.current++;
+      const imported=result.receipt.clip;
+      setLiveClips(rows=>[...rows.filter(row=>row.id!==imported.id),imported]);
+      selectClip(imported.id);
+      setClip(imported);
+      setIsolate(null);
+      select({kind:"drawing",id:result.receipt.drawingId});
+      setSequenceOpen(false);
+    } finally {
+      pending.current=false;
+      setSaving(false);
+    }
+  }
+
   const autosave = useEffectEvent(() => { void save(); });
   const reconcile = useEffectEvent(() => {
     if (dirty) setConflict(true);
@@ -371,7 +408,8 @@ export function Studio({actorId, rigId, name, initial, revision: initialRevision
       <aside className="studio-hierarchy" id="studio-hierarchy" aria-label="Rig hierarchy">
         <div className="studio-panel-title"><h2>Hierarchy</h2><span>{rig.bones.length} bones</span></div>
         <Hierarchy rig={rig} selected={selected} selectedParts={selectedParts} select={select} isolation={isolation}
-          setIsolate={setIsolate} edit={edit} makeDrawing={makeDrawing} openImport={()=>setImportOpen(true)}/>
+          setIsolate={setIsolate} edit={edit} makeDrawing={makeDrawing} openImport={()=>setImportOpen(true)}
+          openSequence={()=>setSequenceOpen(true)}/>
       </aside>
       <PanelHandle panel="hierarchy" size={layout.panels.hierarchy} label="Resize hierarchy" controls="studio-hierarchy"/>
       <PanelHandle panel="split" size={layout.panels.split} label="Resize side panels" controls="studio-hierarchy studio-inspector"/>
@@ -463,6 +501,9 @@ export function Studio({actorId, rigId, name, initial, revision: initialRevision
       setImportOpen(false);
       return true;
     }}/>}
+    {sequenceOpen && <SequenceImportDialog revision={revision} applyBlocked={sequenceBlocked}
+      emptyArtboard={rig.version===2 && !rig.parts.length && !rig.bones.length && !rig.drawings?.layers.length}
+      check={async input=>(await sendSequence(input)).receipt} apply={applySequence} close={()=>setSequenceOpen(false)}/>}
     {shareOpen && <ShareDialog rigId={rigId} close={() => setShareOpen(false)}/>}
     {mcpOpen && <McpDialog rigId={rigId} close={() => setMcpOpen(false)}/>}
     {shortcutsOpen && <ShortcutsDialog close={() => setShortcutsOpen(false)}/>}
@@ -603,11 +644,12 @@ function WeightTools({part, rig, brush, setBrush, edit, report}: {
   </section>;
 }
 
-function Hierarchy({rig, selected, selectedParts, select, isolation, setIsolate, edit, makeDrawing, openImport}: {
+function Hierarchy({rig, selected, selectedParts, select, isolation, setIsolate, edit, makeDrawing, openImport, openSequence}: {
   rig: KinetixRigState; selected: Selection; selectedParts:string[]; select: (value: Selection) => void;
   isolation:string|null;setIsolate:(id:string|null)=>void;edit:Edit;
   makeDrawing:(mode:"indexed"|"rgba")=>void;
   openImport:()=>void;
+  openSequence:()=>void;
 }) {
   const depths = new Map<string, number>();
   return <div className="studio-tree">
@@ -618,7 +660,7 @@ function Hierarchy({rig, selected, selectedParts, select, isolation, setIsolate,
         aria-pressed={selected?.kind === "bone" && selected.id === bone.id} onClick={() => select({ kind: "bone", id: bone.id })}>
         <BoneIcon size={14}/><span>{bone.name}</span></button></li>;
     })}</ul>
-    <LayerList {...{rig,selectedParts,setIsolate,edit,makeDrawing,openImport}} isolate={isolation} boneSelected={selected?.kind==="bone"}
+    <LayerList {...{rig,selectedParts,setIsolate,edit,makeDrawing,openImport,openSequence}} isolate={isolation} boneSelected={selected?.kind==="bone"}
       drawingId={selected?.kind==="drawing" ? selected.id : undefined} selectDrawing={id=>select({kind:"drawing",id})}
       selectPart={id=>select(id ? {kind:"part",id} : null)}/>
     {selected && <button className="studio-deselect" onClick={() => select(null)}>Clear selection</button>}

@@ -17,6 +17,8 @@ import { viewportFrameFor } from "../rig/render";
 import { layerTreeFor } from "../rig/layer-tree";
 import { drawingIdSchema } from "../rig/drawings";
 import { planSvgImport,svgImportByteLimit } from "../rig/svg-import";
+import { sequenceImportInput,type SequenceImportInput } from "../import/sequence-options";
+import { importPngSequence } from "../import/sequence-service";
 
 const frame = z.int().min(0).max(35_999);
 const clipId = z.uuid();
@@ -40,6 +42,7 @@ export const inputs = {
     name:z.string().trim().min(1).max(120).optional(),importId:z.uuid().optional(),
     placement:z.enum(["original","fit"]).default("original"),preflight:z.boolean().default(false),
   }),
+  import_png_sequence:sequenceImportInput,
   read_drawing_cel:z.strictObject({
     drawingId:drawingIdSchema,celId:drawingIdSchema,revision:z.int().min(0).optional(),
     offset:z.int().min(0).max(40_000).default(0),limit:z.int().min(1).max(2000).default(300),
@@ -198,6 +201,12 @@ export class RigAgent {
     }
     const saved=await this.changeRig("Import SVG",()=>commands,null,input.revision);
     return {...summary,revision:saved.revision,applied:true};
+  }
+  async importPngSequence(input:SequenceImportInput) {
+    const result=await importPngSequence(this.library,this.rigId,input,
+      {kind:"ai",userId:this.userId,clientId:this.agent.id},this.room);
+    if ("error" in result) throw new Error(result.message);
+    return result.receipt;
   }
   async readDrawingCel(input:z.infer<typeof inputs.read_drawing_cel>) {
     const {state,revision}=await this.snapshot();
