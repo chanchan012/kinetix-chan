@@ -6,6 +6,8 @@ import { createBlankRig, createRigState, type Artboard, type KinetixRigState } f
 import type { Track } from "../lib/rig/animation";
 import { ExportQueue } from "./exports";
 import { RigTokens } from "./tokens";
+import { projectArchiveClipLimit } from "../lib/project/archive-options";
+import type { ArchivedClip } from "../lib/project/archive";
 
 type ClipInput = Pick<typeof clips.$inferInsert, "name" | "fps" | "frameCount">;
 const rigFields = {id:rigs.id,name:rigs.name,state:rigs.state,revision:rigs.revision,updatedAt:rigs.updatedAt};
@@ -66,6 +68,35 @@ export class Library {
   async create(owner:string,name:string,source:Study["id"] | Artboard) {
     const state = typeof source === "string" ? createRigState(source) : createBlankRig(source);
     return (await this.db.insert(rigs).values({ownerId:owner,name,state}).returning(rigFields))[0];
+  }
+  async projectSnapshot(owner:string,id:string) {
+    const animation=sql<ArchivedClip[]>`coalesce((
+      select jsonb_agg(to_jsonb(saved) order by saved.id) from (
+        select ${clips.id}, ${clips.name}, ${clips.fps}, ${clips.frameCount} as "frameCount", ${clips.tracks},
+          ${clips.trackRevision} as "trackRevision"
+        from ${clips} where ${clips.rigId} = "rigs"."id" order by ${clips.id} limit ${projectArchiveClipLimit+1}
+      ) saved
+    ), '[]'::jsonb)`;
+    return (await this.db.select({...rigFields,clips:animation}).from(rigs).where(this.owned(owner,id)))[0];
+  }
+  async restoreProject(owner:string,input:{id:string;name:string;state:KinetixRigState;clips:ArchivedClip[]}) {
+    const transfers=input.clips.map(({id,name,fps,frameCount,tracks})=>({id,name,fps,frame_count:frameCount,tracks}));
+    const result=await this.db.execute<{id:string}>(sql`
+      with opened as (
+        insert into rigs (id, owner_id, name, state)
+        values (${input.id}, ${owner}, ${input.name}, ${JSON.stringify(input.state)}::jsonb)
+        on conflict (id) do nothing returning id
+      ), added as (
+        insert into clips (id, rig_id, name, fps, frame_count, tracks)
+        select transfer.id, opened.id, transfer.name, transfer.fps, transfer.frame_count, transfer.tracks
+        from opened cross join jsonb_to_recordset(${JSON.stringify(transfers)}::jsonb)
+          as transfer(id uuid, name text, fps integer, frame_count integer, tracks jsonb)
+        returning id
+      )
+      select opened.id from opened where (select count(*) from added) = ${transfers.length}`);
+    if ((result as {rows:{id:string}[]}).rows[0]) return {id:input.id,reused:false};
+    const existing=await this.get(owner,input.id);
+    return existing && {id:existing.id,reused:true};
   }
   async saveRigState(owner:string,id:string,revision:number,state:KinetixRigState) {
     const study = sql`case when ${rigs.state}->>'version' = '2' then 'blank'

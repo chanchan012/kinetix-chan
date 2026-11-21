@@ -3,7 +3,8 @@ import { and, desc, eq, gt, inArray } from "drizzle-orm";
 import type { PgDatabase, PgQueryResultHKT } from "drizzle-orm/pg-core";
 import { rigs, rigTokens } from "./schema";
 
-const identity = {id:rigTokens.id,label:rigTokens.label,createdAt:rigTokens.createdAt,expiresAt:rigTokens.expiresAt};
+const identity = {id:rigTokens.id,label:rigTokens.label,createdAt:rigTokens.createdAt,expiresAt:rigTokens.expiresAt,
+  allowArchiveReopen:rigTokens.allowArchiveReopen};
 const hash = (token: string) => createHash("sha256").update(token).digest("hex");
 const tokenPattern = /^kinetix_[A-Za-z0-9_-]{43}$/;
 
@@ -21,18 +22,19 @@ export class RigTokens {
       .orderBy(desc(rigTokens.createdAt));
   }
 
-  async create(owner: string, rigId: string, label: string) {
+  async create(owner: string, rigId: string, label: string, allowArchiveReopen=false) {
     if (!(await this.ownerId(owner,rigId))[0]) return;
     const token = "kinetix_" + randomBytes(32).toString("base64url");
     const expiresAt = new Date(Date.now()+30*24*60*60*1000);
     const [credential] = await this.db.insert(rigTokens)
-      .values({rigId,label,digest:hash(token),expiresAt}).returning(identity);
+      .values({rigId,label,digest:hash(token),expiresAt,allowArchiveReopen}).returning(identity);
     return {...credential,token};
   }
 
   async verify(token: string) {
     if (!tokenPattern.test(token)) return;
-    return (await this.db.select({id:rigTokens.id,rigId:rigs.id,userId:rigs.ownerId,label:rigTokens.label})
+    return (await this.db.select({id:rigTokens.id,rigId:rigs.id,userId:rigs.ownerId,label:rigTokens.label,
+      allowArchiveReopen:rigTokens.allowArchiveReopen})
       .from(rigTokens).innerJoin(rigs,eq(rigs.id,rigTokens.rigId))
       .where(and(eq(rigTokens.digest,hash(token)),gt(rigTokens.expiresAt,new Date()))))[0];
   }

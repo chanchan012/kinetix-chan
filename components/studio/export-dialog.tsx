@@ -7,6 +7,7 @@ import type { Artboard } from "@/lib/rig/model";
 import type { SpriteSource } from "@/lib/rig/sprite-sources";
 import type { ClipTiming } from "./timeline";
 import { SpriteBundleForm } from "./sprite-bundle-form";
+import { ProjectArchiveForm } from "./project-archive-form";
 
 type Job = { id: string; format: ExportFormat; status: "queued" | "running" | "ready" | "failed"; byteCount: number | null };
 const statusLabel = { queued:"Queued", running:"Rendering", ready:"Ready", failed:"Failed" } as const;
@@ -16,7 +17,7 @@ export function ExportDialog({rigId, revision, clip, clips, frameCount, artboard
   clips:ClipTiming[];spriteSources?:SpriteSource[];
   unsaved: boolean; hasArtboard: boolean; renderConfigured: boolean; close: () => void;
 }) {
-  const [format, setFormat] = useState<ExportFormat | "sprite-package" | "sprite-bundle">("lottie");
+  const [format, setFormat] = useState<ExportFormat | "sprite-package" | "sprite-bundle" | "project-archive">("lottie");
   const [jobs, setJobs] = useState<Job[]>([]);
   const [sending, setSending] = useState(false);
   const [message, setMessage] = useState("");
@@ -28,8 +29,9 @@ export function ExportDialog({rigId, revision, clip, clips, frameCount, artboard
   const path = rigPath + "/exports";
   const isSprite = format === "sprite-package";
   const isBundle = format === "sprite-bundle";
+  const isProject = format === "project-archive";
   const hasScale = isSprite || format==="png-sequence" || format==="spritesheet";
-  const frameLimit = isSprite || isBundle ? spriteMaxFrames : formats[format].frames;
+  const frameLimit = isSprite || isBundle || isProject ? spriteMaxFrames : formats[format].frames;
   useEffect(() => {
     const element = dialog.current!;
     element.showModal();
@@ -37,6 +39,7 @@ export function ExportDialog({rigId, revision, clip, clips, frameCount, artboard
   }, []);
 
   useEffect(() => {
+    if (isProject) return;
     const controller = new AbortController();
     let timer: ReturnType<typeof setTimeout>;
     async function refresh() {
@@ -57,11 +60,11 @@ export function ExportDialog({rigId, revision, clip, clips, frameCount, artboard
     }
     void refresh();
     return () => { controller.abort(); clearTimeout(timer); };
-  }, [path]);
+  }, [path,isProject]);
 
   async function enqueue(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (sending || isBundle) return;
+    if (sending || isBundle || isProject) return;
     const fields = new FormData(event.currentTarget);
     const scale = hasScale ? Number(fields.get("scale")) : undefined;
     const startFrame = Number(fields.get("start")) - 1;
@@ -134,15 +137,17 @@ export function ExportDialog({rigId, revision, clip, clips, frameCount, artboard
 
   return <dialog ref={dialog} className="studio-easing studio-export" aria-label="Export animation" onCancel={close}>
     <header><h2>Export animation</h2><button onClick={close}>Close</button></header>
-    {unsaved && <p className="studio-export-note">The export uses your saved rig and keyframes.</p>}
+    {unsaved && !isProject && <p className="studio-export-note">The export uses your saved rig and keyframes.</p>}
     {hasArtboard && <a href={"/api/rigs/" + rigId + "/artboard.png"}>Download saved artboard PNG</a>}
-    {!renderConfigured && !isSprite && !isBundle && <p className="studio-export-note">Exports will run when the render service is connected.</p>}
+    {!renderConfigured && !isSprite && !isBundle && !isProject && <p className="studio-export-note">Exports will run when the render service is connected.</p>}
       <label className="studio-export-format">Format<select value={format} onChange={event => setFormat(event.target.value as typeof format)}>
         {clip && <option value="sprite-package">Sprite package (ZIP)</option>}
         {clips.length>0 && <option value="sprite-bundle">Portable sprite bundle (ZIP)</option>}
+        <option value="project-archive">Editable project archive (ZIP)</option>
         {exportFormats.map(item => <option key={item} value={item}>{formats[item].label}</option>)}
       </select></label>
-    {isBundle ? <SpriteBundleForm path={rigPath+"/sprite-bundle"} rigId={rigId} revision={revision} clips={clips} spriteSources={spriteSources}
+    {isProject ? <ProjectArchiveForm {...{rigId,revision,clips,unsaved}}/> : isBundle ?
+      <SpriteBundleForm path={rigPath+"/sprite-bundle"} rigId={rigId} revision={revision} clips={clips} spriteSources={spriteSources}
       activeId={clip?.id} artboard={artboard} unsaved={unsaved}/> : <form onSubmit={enqueue}>
       {hasScale && <label>Pixel scale<select name="scale" defaultValue="1">
         {[1,2,3,4].map(value=><option key={value} value={value}>{value}×</option>)}
@@ -164,8 +169,8 @@ export function ExportDialog({rigId, revision, clip, clips, frameCount, artboard
         (sending ? "Rendering…" : "Download sprite package") : (sending ? "Queuing…" : "Queue export")}</button>
     </form>}
     {message && <p className="studio-key-error" role="alert">{message}</p>}
-    {loadError && <p className="studio-key-error" role="status">Could not load export status. Retrying…</p>}
-    {jobs.length > 0 && <section aria-label="Export jobs" className="studio-export-jobs">
+    {loadError && !isProject && <p className="studio-key-error" role="status">Could not load export status. Retrying…</p>}
+    {jobs.length > 0 && !isProject && <section aria-label="Export jobs" className="studio-export-jobs">
       <h3>Recent exports</h3>
       <ul>{jobs.map(job => <li key={job.id}>
         <span>{formats[job.format].label}</span><span>{statusLabel[job.status]}</span>

@@ -43,6 +43,13 @@
       "when": 1795108419356,
       "tag": "0005_rig_tokens",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1795242757228,
+      "tag": "0006_project_archive_grant",
+      "breakpoints": true
     }
   ]
 }

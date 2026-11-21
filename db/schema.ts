@@ -1,5 +1,5 @@
 import { sql } from "drizzle-orm";
-import { check, index, integer, jsonb, pgTable, primaryKey, text, timestamp, uuid } from "drizzle-orm/pg-core";
+import { boolean, check, index, integer, jsonb, pgTable, primaryKey, text, timestamp, uuid } from "drizzle-orm/pg-core";
 
 export const rigs = pgTable("rigs", {
   id: uuid().defaultRandom().primaryKey(),
@@ -43,6 +43,7 @@ export const rigTokens = pgTable("rig_tokens", {
   id: uuid().defaultRandom().primaryKey(),
   rigId: uuid("rig_id").notNull().references(() => rigs.id, { onDelete:"cascade" }),
   label: text().notNull(),
+  allowArchiveReopen:boolean("allow_archive_reopen").notNull().default(false),
   digest: text().notNull().unique(),
   createdAt: timestamp("created_at",{withTimezone:true}).defaultNow().notNull(),
   expiresAt: timestamp("expires_at",{withTimezone:true}).notNull(),
