@@ -16,11 +16,19 @@ Implemented the application shell, interactive guest playground, Clerk access ro
 
 ## Active subgoal and next exact step
 
-The active implementation goal covers all 23 subgoals in [the production studio roadmap](docs/PRODUCTION_STUDIO_ROADMAP.md). The original M5.1 through M5.5 slices, part position channels from M7.1, editable SVG and PNG sequence import from M8.1, M9.1 and Godot sprite import within M9.3 are deployed. The [production tool inventory](docs/PRODUCTION_STUDIO_ROADMAP.md#production-tool-inventory) maps the complete illustrator and MCP toolsets to their owning subgoals. The [delivery paths](docs/PRODUCTION_STUDIO_ROADMAP.md#choose-a-delivery-path) cover basic grid slicers, portable players, native engine importers, runtime rigs and media pipelines. Unity, Phaser, PixiJS, Unreal and GameMaker remain in M9.3.
+The active implementation goal covers all 23 subgoals in [the production studio roadmap](docs/PRODUCTION_STUDIO_ROADMAP.md). The original M5.1 through M5.5 slices, part position channels from M7.1, editable SVG, PNG sequence and sprite atlas import from M8.1, M9.1 and Godot sprite import within M9.3 are deployed. The [production tool inventory](docs/PRODUCTION_STUDIO_ROADMAP.md#production-tool-inventory) maps the complete illustrator and MCP toolsets to their owning subgoals. The [delivery paths](docs/PRODUCTION_STUDIO_ROADMAP.md#choose-a-delivery-path) cover basic grid slicers, portable players, native engine importers, runtime rigs and media pipelines. Unity, Phaser, PixiJS, Unreal and GameMaker remain in M9.3.
 
-The next exact step is portable sprite atlas import within M8.1. Start with a version 2 packed fixture containing rotated crops, trim offsets, multiple clip directions, holds and a blank frame. Reuse the validated sprite reader to reconstruct source frames, then map the manifest's clip timebase and hold ticks to editable exposures. Verify re-exported pixels and report which companion metadata remains outside the drawing or clip model.
+The next exact step is the portable project archive and clean reopen within M8.1. Start with a project containing vectors, linked and blank drawn cels, imported sprite companions, and two independently revisioned clips. Capture the document and tracks in one snapshot. Validate the versioned package, remap clip references into a fresh owner-scoped project, then compare restored source and render samples through Studio and MCP.
 
 Owner-managed Inngest Cloud activation is still open. After the signing and event keys are present in Vercel, redeploy, sync the existing endpoint, and verify a hosted thumbnail and animation export run. Saved still PNGs are served directly.
+
+## M8.1 portable sprite atlas import · November 21, 2026
+
+- **Brief and build** added editable cels and clip creation from all three version 2 sprite layouts. Studio, REST and scoped MCP share the importer. Preserved export carries source holds, directions, loop modes, anchors and companion data.
+- **Test** passed strict TypeScript and 83 Vitest cases with Godot enabled. Across the full Playwright run and reruns, all 90 distinct executable cases passed with six expected skips. The reruns verified the corrected badge state polling and compared atlas clips by direction.
+- **Merge** published feature commit `68433c0` and main merge `1227f8e`.
+- **Deploy** passed the local production build and verified Vercel [preview](https://kinetix-chan-aashdwq5e-chanchans-projects-aada625f.vercel.app) and [production](https://kinetix-chan.vercel.app). Desktop and mobile production smoke tests imported and re-exported the packed fixture. Desktop also verified import and export through scoped MCP.
+- **Document** records the archive and export contracts, limits and the next portable project fixture.
 
 ## M8.1 PNG sequence import · November 21, 2026
 

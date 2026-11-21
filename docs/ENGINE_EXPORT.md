@@ -40,6 +40,14 @@ The request can supply per-frame metadata. This example makes source frame 0 hol
 
 The direct bundle supports up to 96 frames, 16 clips, 16 megapixels across output textures and a 1.5 MB ZIP. For large scenes, select shorter ranges, reduce pixel scale or use smaller bundles by animation group.
 
+## Reopen sprites as editable cels
+
+Choose **Layers → Import sprite bundle** for a Kinetix version 2 ZIP. All three layouts are supported, including rotated and trimmed packed rectangles. Use a blank transparent design at the source dimensions for an isolated round trip. Import restores the art at its original pixel coordinates, creates editable drawing exposures and opens the first clip. Source delays become integer tick holds in the Studio timeline.
+
+Turn on **Preserve imported timing and frame metadata** when exporting the imported clips. Studio enables this option by default. With REST or MCP, pass `preserveImportedTiming: true` on the clip request and use the inclusive Studio tick range. Existing holds and newly edited exposures determine the sample boundaries. Pose or transform key tracks are sampled at every selected tick. The manifest uses contiguous sample IDs, and `startTick` and `durationTicks` carry the exact playback schedule. Event ticks are relative to the emitted hold.
+
+The preserved mode carries direction, loop mode, pivots, origins, sockets, collisions, cues and source world scale. Export samples the visible composition, including the background and other visible layers. Bundles with different original pixel scales require separate preserved exports. Turn off preservation to author new export metadata. Imports normalize linear or premultiplied textures to straight sRGB channel values, which can introduce rounding.
+
 ## Version 1 Godot export
 
 Create a design and save a clip. Select a path to animate its local X or Y offset. Save the artwork and keys, then open **Export** and choose **Sprite package (ZIP)**. Set the frame range, pivot, texture filtering and loop behavior.
