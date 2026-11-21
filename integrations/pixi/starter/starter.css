@@ -1,0 +1,21 @@
+:root { font: 16px/1.5 system-ui, sans-serif; color: #eaf1ee; background: #15201f; }
+* { box-sizing: border-box; }
+body { margin: 0; }
+main { height: 100dvh; max-width: 960px; margin: auto; padding: 18px; display: flex; flex-direction: column; gap: 12px; overflow: auto; }
+h1, h2, p, dl, dd { margin: 0; }
+h1 { font-size: clamp(1.25rem, 4vw, 1.7rem); }
+h2 { font-size: 0.95rem; }
+.controls { display: flex; flex-wrap: wrap; align-items: end; gap: 10px 16px; }
+label { display: grid; gap: 4px; min-width: 0; font-size: 0.88rem; }
+input { max-width: 100%; }
+button, select, input::file-selector-button { border: 1px solid #57716a; border-radius: 4px; padding: 5px 9px; color: inherit; background: #213833; font: inherit; }
+button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid #cefa8a; outline-offset: 3px; }
+:disabled { opacity: 0.54; }
+#plan { border: 1px solid #57716a; background: #1e312d; padding: 9px 12px; }
+#changes { margin: 5px 0 8px; padding-inline-start: 22px; max-height: 96px; overflow: auto; }
+#message, #changes { overflow-wrap: anywhere; }
+#game { position: relative; flex: 1; min-height: 120px; min-width: 0; overflow: hidden; background: #202f29; border: 1px solid #40594e; }
+#game canvas { position: absolute; inset: 0; display: block; }
+.controls, dl { flex: 0 0 auto; }
+dl { display: flex; gap: 6px 12px; flex-wrap: wrap; font-size: 0.86rem; }
+dt { color: #b6cbc0; }

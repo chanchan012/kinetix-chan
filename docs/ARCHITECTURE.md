@@ -195,6 +195,14 @@ Generated project paths use stable rig and clip IDs. The aggregate resource keep
 
 Imports are serialized per library. A revision replaces available clips by stable source ID, keeps omitted clips and refreshes active containers before releasing retired textures. Failed staging leaves the active library available. The receipt records the target and bundle versions, source revision, package digest, included clips and retained clips. See [Phaser package setup](ENGINE_EXPORT.md#import-and-update-in-phaser-3900).
 
+## M9.3 · PixiJS sprite profile
+
+The static ZIP at `/sprite-player/pixi` packages a PixiJS 8.23.0 adapter, starter and locked dependencies. It accepts version 2 bundles created in Studio, REST or MCP. PixiJS and Phaser share the frame decoder, transparent-edge treatment and cue schedule through `lib/export/sprite-playback.ts`.
+
+`previewImport` checks the ZIP and compares named clips by source ID. The returned base hash can be passed to `importBundle` to guard the update against a stale preview. The library stages restored textures under the renderer and library pixel limits. It checks WebGPU allocation errors before publishing, destroys staged textures on a failed update, and keeps clips omitted by a partial export. Actors remain attached to their game-owned parents. Their animation clocks, transforms, listeners and child objects survive successful updates. Renderer-owned textures are released when replaced or when the library closes.
+
+The receipt records the source revision, ZIP digest, profile and layout, with added, updated and retained clips. The starter displays those changes and applies them on confirmation. The existing version 2 manifest, REST and MCP inputs remain the source contract. [PixiJS package setup](ENGINE_EXPORT.md#import-and-update-in-pixijs-8230)
+
 ## M8.1 · Editable SVG import
 
 `lib/rig/svg-import.ts` converts XML to the existing `part.create`, `layer.group`, `layer.flags` and `layer.mask` commands. It resolves viewports and transforms into artboard coordinates, reconstructs editable cubic handles, and stores clipping geometry on hidden layers. The parser accepts UTF-8 files up to 512 KiB and bounds XML, reference expansion and command counts. Local references resolve against the document's own IDs. Studio reads the source XML in the browser and draws the proposed group through the regular Canvas path. It dispatches one history entry and saves the normalized document through the existing state endpoint.

@@ -90,6 +90,16 @@ test("an illustrator preflights and plays three layouts of a portable sprite bun
     });
     expect(starterFiles["integrations/phaser/starter/index.html"]).toBeDefined();
     expect(starterFiles["lib/export/sprite-playback.ts"]).toBeDefined();
+    const pixiDownload=page.waitForEvent("download");
+    await page.getByRole("link",{name:"PixiJS starter",exact:true}).click();
+    const pixi=await pixiDownload;
+    expect(pixi.suggestedFilename()).toBe("kinetix-pixi-starter.zip");
+    const pixiFiles=unzipSync(await readFile(await pixi.path()));
+    expect(JSON.parse(strFromU8(pixiFiles["package.json"]))).toMatchObject({
+      name:"kinetix-pixi-starter",dependencies:{"pixi.js":"8.23.0"},
+    });
+    expect(pixiFiles["integrations/pixi/starter/index.html"]).toBeDefined();
+    expect(pixiFiles["package-lock.json"]).toBeDefined();
     const canvas=page.getByRole("img",{name:"Sprite preview"});
     const sample=()=>canvas.evaluate(element=>{
       const canvas=element as HTMLCanvasElement;
@@ -114,6 +124,9 @@ test("an illustrator preflights and plays three layouts of a portable sprite bun
       await expect(frame).toHaveText("1 · 1 tick");
       expect(await page.evaluate(()=>document.documentElement.scrollHeight)).toBeLessThanOrEqual(
         await page.evaluate(()=>window.innerHeight),
+      );
+      expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBeLessThanOrEqual(
+        await page.evaluate(()=>window.innerWidth),
       );
     }
   } finally {

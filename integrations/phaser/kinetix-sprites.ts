@@ -1,5 +1,5 @@
 import Phaser from "phaser";
-import { frameAtTick, openSpriteBundle, restoreSpritePixels, type PlaybackClip, type PlaybackFrame } from "../../lib/export/sprite-playback";
+import { createSpriteCanvas, frameAtTick, openSpriteBundle, restoreSpritePixels, spriteCropIdentity, type PlaybackClip, type PlaybackFrame } from "../../lib/export/sprite-playback";
 import { compileSpriteTimeline, spriteCuesBetween } from "./timeline";
 
 export const phaserSpriteProfile = { id: "kinetix.phaser.sprites", version: 1, phaser: "3.90.0", bundle: 2 } as const;
@@ -13,46 +13,6 @@ type ImportedClip = {
 };
 
 const maxPreparedPixels = 16 * 1024 * 1024;
-
-/** Give trimmed and untrimmed layouts the same transparent edge when sampling. */
-function makeFrameTexture(crop: ReturnType<typeof restoreSpritePixels> | undefined) {
-  const canvas = document.createElement("canvas");
-  canvas.width = canvas.height = 1;
-  if (!crop) return { canvas, x: 0, y: 0 };
-
-  const { width, height, pixels } = crop;
-  let left = width, top = height, right = -1, bottom = -1;
-  for (let y = 0; y < height; y++) {
-    for (let x = 0; x < width; x++) {
-      if (!pixels[(y * width + x) * 4 + 3]) continue;
-      left = Math.min(left, x);
-      right = Math.max(right, x);
-      top = Math.min(top, y);
-      bottom = Math.max(bottom, y);
-    }
-  }
-  if (right < 0) return { canvas, x: 0, y: 0 };
-
-  const cropWidth = right - left + 1;
-  canvas.width = cropWidth + 2;
-  canvas.height = bottom - top + 3;
-  const context = canvas.getContext("2d");
-  if (!context) throw new Error("Phaser could not prepare a sprite texture canvas.");
-  const guarded = context.createImageData(canvas.width, canvas.height);
-  for (let y = top; y <= bottom; y++) {
-    const from = (y * width + left) * 4;
-    const to = ((y - top + 1) * canvas.width + 1) * 4;
-    guarded.data.set(pixels.subarray(from, from + cropWidth * 4), to);
-  }
-  context.putImageData(guarded, 0, 0);
-  return { canvas, x: left - 1, y: top - 1 };
-}
-
-function textureIdentity(frame: PlaybackFrame) {
-  if (frame.blank) return "blank";
-  const { x, y, width, height } = frame.rect;
-  return JSON.stringify([frame.file, x, y, width, height, frame.rotation]);
-}
 
 /** Owns the published textures for one rig in one Phaser scene. */
 export class KinetixPhaserLibrary {
@@ -135,7 +95,7 @@ export class KinetixPhaserLibrary {
 
     const unique = new Map<string, PlaybackFrame>();
     for (const clip of manifest.clips) {
-      for (const frame of clip.frames) unique.set(textureIdentity(frame), frame);
+      for (const frame of clip.frames) unique.set(spriteCropIdentity(frame), frame);
     }
     const retainedKeys = new Set(kept.flatMap(([, clip]) => [...clip.frames.values()].map(frame => frame.key)));
     let totalPixels = [...retainedKeys].reduce((size, key) => {
@@ -149,7 +109,7 @@ export class KinetixPhaserLibrary {
       for (const [identity, frame] of unique) {
         const key = `${this.texturePrefix}-${this.nextTexture++}`;
         const crop = frame.blank ? undefined : restoreSpritePixels(textures.get(frame.file)!, frame, manifest.texture);
-        const { canvas, x, y } = makeFrameTexture(crop);
+        const { canvas, x, y } = createSpriteCanvas(crop);
         totalPixels += canvas.width * canvas.height;
         if (totalPixels > maxPreparedPixels) {
           throw new Error("The restored Phaser textures exceed 16 megapixels. Import fewer clips or use a smaller export scale.");
@@ -166,7 +126,7 @@ export class KinetixPhaserLibrary {
       for (const clip of manifest.clips) {
         updated.set(clip.id, {
           data: clip, pixelScale: manifest.source.pixelScale, timeline: compileSpriteTimeline(clip),
-          frames: new Map(clip.frames.map(frame => [frame.id, stagedTextures.get(textureIdentity(frame))!])),
+          frames: new Map(clip.frames.map(frame => [frame.id, stagedTextures.get(spriteCropIdentity(frame))!])),
         });
       }
     } catch (error) {

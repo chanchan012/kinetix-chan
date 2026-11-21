@@ -78,6 +78,12 @@ Open the sprite player and choose **Phaser starter** to download the ZIP. The fi
 
 In an existing game, create a `KinetixPhaserLibrary` in your scene, call `importBundle(bytes)` and `createSprite(x, y, clipId)`. Use the returned container for placement and game-owned children. Bind `kinetix-cue` for frame events. `socket(name)` and `collisions()` return pivot-relative metadata in scene units after conversion from export pixels. A partial reimport keeps the omitted clips, and renamed clips retain their saved IDs. Import setup, calls and reimport behavior are documented in the [starter README](../integrations/phaser/README.md).
 
+## Import and update in PixiJS 8.23.0
+
+Choose **PixiJS starter** in the sprite player once the deployment is available. Extract it and run `npm ci` and `npm run dev` with Node.js 24. Select a version 2 ZIP, review the added, updated and retained clips, and apply the import. The starter prefers WebGL and can use Canvas. The library was tested in Chrome with Canvas, WebGL and WebGPU.
+
+Use `KinetixPixiLibrary` after initializing a PixiJS application. The optional preview base hash guards against replacing an intervening import. An existing actor stays in the scene when its clip is renamed or repacked. Receive timing cues through `kinetix-cue` and place props using pivot-relative `socket(name)` coordinates. PixiJS 8.23.0 can log WebGPU bind-group warnings when retiring textures after reimport or teardown. The browser fixture verifies playback through reimport and actor destruction. [Starter setup and API](../integrations/pixi/README.md)
+
 ## MCP and other engines
 
 Use `rig-hierarchy` for the art revision and `timeline-summary` for the selected clip revision. Call `export_sprite_package` with the clip ID, both revisions, and a zero-based inclusive range. Optional settings include `pivot`, `loop` and `filter`. Set `preflight: true` to inspect the manifest without rendering. For a download, decode `structuredContent.base64` and save the returned filename.

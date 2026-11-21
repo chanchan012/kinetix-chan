@@ -13,6 +13,7 @@
     "test": "vitest run",
     "test:e2e": "playwright test",
     "test:phaser": "playwright test --config tests/engine/phaser.config.ts",
+    "test:pixi": "playwright test --config tests/engine/pixi.config.ts",
     "mcp:stdio": "node scripts/kinetix-mcp.mjs",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate"
@@ -61,6 +62,7 @@
     "@types/react-dom": "^19.3.0",
     "drizzle-kit": "^0.31.11",
     "phaser": "3.90.0",
+    "pixi.js": "8.23.0",
     "postcss": "^8.5.33",
     "tailwindcss": "^4.3.5",
     "typescript": "^5.9.3",

@@ -12,6 +12,7 @@ export default function SpritePlayerPage() {
       <nav className="sprite-player-importers" aria-label="Engine importers">
         <a href="/sprite-player/godot" download>Godot importer</a>
         <a href="/sprite-player/phaser" download>Phaser starter</a>
+        <a href="/sprite-player/pixi" download>PixiJS starter</a>
       </nav>
     </header>
     <SpritePlayer/>
