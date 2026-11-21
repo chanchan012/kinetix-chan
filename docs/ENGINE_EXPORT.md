@@ -6,6 +6,8 @@ The Godot 4.5.1 adapter reads all three version 2 layouts and the version 1 fixe
 
 In Studio Export, choose **Portable sprite bundle (ZIP)**. Select clips, set each source range, and choose the layout and texture options. **Check export** reports the number and size of PNG files and the estimated RGBA texture memory. Save the ZIP and open it in [the sprite player](https://kinetix-chan.vercel.app/sprite-player). The player decodes the ZIP locally and restores each sprite to its original frame before scaling.
 
+Image placements set to **Artwork and exports** are baked into sprite frames, including placements attached to bones. **Reference only** placements stay in the editable project. Relink missing visible artwork from **Image assets** before delivering a sprite bundle.
+
 | Layout | Files | Frame geometry |
 | --- | --- | --- |
 | Loose PNG frames | `frames/00001.png` and subsequent files | Each file contains the full source frame. |

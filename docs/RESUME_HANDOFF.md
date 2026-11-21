@@ -172,14 +172,22 @@ Run `npm test -- tests/unit/sprite-atlas.test.ts tests/unit/library.test.ts` and
 
 ## M8.1 · Editable project archive
 
-In Studio, choose **Export → Editable project archive (ZIP)** and download the saved project. From another rig library, open **Open project archive**, select the ZIP, check its contents and choose **Open as new project**. The private copy has fresh IDs and revision counters. Linked cels, blank exposures, paths, groups, rigs, saved keyframes and sprite companions are preserved. The archive captures the built-in study ID when applicable. External linked assets and font relinking depend on the asset model work below.
+In Studio, choose **Export → Editable project archive (ZIP)** and download the saved project. From another rig library, open **Open project archive**, select the ZIP, check its contents and choose **Open as new project**. The private copy has fresh IDs and revision counters. Linked cels, blank exposures, paths, groups, rigs, saved keyframes and sprite companions are preserved. The archive captures the built-in study ID when applicable. Version 2 adds the linked image payloads described below. Font relinking remains planned.
 
 MCP `export_project_archive` accepts the saved revision and every clip ID with its track revision. Set `preflight: true` to inspect the contents before downloading. To use MCP `reopen_project_archive`, enable **Allow reopening archives as new private projects** when issuing a credential. Reuse the preflight `importId` on apply. Issue a separate rig credential to edit a reopened project through MCP.
 
 The tracked migration `0006_project_archive_grant.sql` is applied to the Kinetix Neon database. The new grant defaults to false. No new environment variables are required. Run `npm test -- tests/unit/project-archive.test.ts tests/unit/library.test.ts` and `npm run test:e2e -- --grep 'reopens an editable project archive'`. The desktop fixture downloads the ZIP, opens it in a second account and tests the granted MCP path.
 
-## M8.1 · Next implementation step
+## M8.1 · Reusable PNG and WebP images
 
-Add project-owned PNG and WebP reference assets. Start with a transparent reference image and two placements that share its bytes. Define the asset ID, media type, dimensions, digest, placement and scene visibility. Add Studio and MCP actions to import, place, inspect and replace the asset. Extend the portable project manifest to include the asset payload once, track where it is used and offer an actionable relink for a missing dependency. Verify clean-account reopen with networking to the source disabled and prove both placements update after one valid replacement.
+Open **Studio → Layers → Image assets**, import a still PNG or WebP, then place it as a reference or artwork. Select the placement to adjust its position, size, rotation, opacity or bone attachment. Drag a selected image to move it. Use **Replace image** in the asset browser to update every placement. Reference-only images can be toggled in the viewport and are excluded from clean exports.
+
+A project ZIP with images uses version 2 and carries every embedded payload once. The reopen preview lists missing images. In the reopened project, select the missing asset and use **Relink image**. Visible artwork images require raster delivery and a resolved file. Existing version 1 archives remain supported.
+
+The image limits are 1 MiB per file, 1.5 MiB of embedded bytes per project, up to 4096 pixels per side and 8 megapixels per image. MCP uses `import_image_asset`, `place_image_asset` and `read_image_asset`. Use the same asset ID to replace or relink it. Run `npm test -- tests/unit/image-assets.test.ts tests/unit/project-archive.test.ts` and `npm run test:e2e -- --grep 'reuses image assets'`. No new service configuration is needed.
+
+## M9.3 · Next implementation step
+
+Build the Unity sprite adapter against a verified Unity LTS editor and a minimal 2D project. Start with the existing version 2 bundle fixtures in `tests/fixtures/sprite-atlas.ts` and the shared manifest checks in `lib/export/sprite-playback.ts`. Validate the package, generate sprites and animation clips with stable asset identities, and preserve original placement, pivots, hold timing, directions and cues. Add a starter scene and a headless import and reimport check. Verify that renamed clips, repacked textures, and a corrupt update preserve game-owned references. Record the Unity version and the certified feature set before claiming native support.
 
 For later releases, use the [tool inventory](PRODUCTION_STUDIO_ROADMAP.md#production-tool-inventory) to slice editor and MCP work together. Use the [production fixtures](PRODUCTION_STUDIO_ROADMAP.md#end-to-end-production-fixtures) to verify a user and a clean MCP session can finish the same project, reopen editable source, and deliver and revise it in the recipient environment. The revised roadmap requires no new environment values.

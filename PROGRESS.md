@@ -16,11 +16,19 @@ Implemented the application shell, interactive guest playground, Clerk access ro
 
 ## Active subgoal and next exact step
 
-The active implementation goal covers all 23 subgoals in [the production studio roadmap](docs/PRODUCTION_STUDIO_ROADMAP.md). Deployed work includes the original M5.1 through M5.5 slices, part position channels from M7.1, portable sprite bundles from M9.1 and Godot sprite import from M9.3. M8.1 has shipped editable SVG, PNG sequence and sprite atlas import, plus editable project archives. The [production tool inventory](docs/PRODUCTION_STUDIO_ROADMAP.md#production-tool-inventory) maps the complete illustrator and MCP toolsets to their owning subgoals. The [delivery paths](docs/PRODUCTION_STUDIO_ROADMAP.md#choose-a-delivery-path) cover basic grid slicers, portable players, native engine importers, runtime rigs and media pipelines. Unity, Phaser, PixiJS, Unreal and GameMaker remain in M9.3.
+The active implementation goal covers all 23 subgoals in [the production studio roadmap](docs/PRODUCTION_STUDIO_ROADMAP.md). Deployed work includes the original M5.1 through M5.5 slices, part position channels from M7.1, portable sprite bundles from M9.1 and Godot sprite import from M9.3. M8.1 has shipped editable SVG, PNG sequence and sprite atlas import, editable project archives and reusable PNG and WebP images with relinking. The [production tool inventory](docs/PRODUCTION_STUDIO_ROADMAP.md#production-tool-inventory) maps the illustrator and MCP toolsets to their subgoals. The [delivery paths](docs/PRODUCTION_STUDIO_ROADMAP.md#choose-a-delivery-path) cover basic grid slicers, portable players, native engine importers, runtime rigs and media pipelines.
 
-The next exact step within M8.1 is project-owned PNG and WebP references. Start with a transparent image used in two placements. Validate and store its bytes once, expose both placements and asset replacement through Studio and MCP, and extend the project ZIP to carry and relink the dependency in a clean workspace.
+The next exact step is the Unity sprite adapter in M9.3. Start with a verified Unity LTS editor, a minimal 2D project and the existing version 2 sprite bundle fixture. Generate sprites and animation clips with stable asset identities. Compare exact hold timing, placement and cues, then reimport a renamed and repacked bundle without breaking the starter scene's references.
 
 Owner-managed Inngest Cloud activation is still open. After the signing and event keys are present in Vercel, redeploy, sync the existing endpoint, and verify a hosted thumbnail and animation export run. Saved still PNGs are served directly.
+
+## M8.1 reusable image assets · November 21, 2026
+
+- **Brief and build** added a searchable image catalog, reference and artwork placements, bone attachments, scoped MCP image tools and project ZIP relinking. Multiple placements share one source image and update together.
+- **Test** passed strict TypeScript, 90 Vitest checks with Godot enabled, and 98 Playwright cases across four viewport profiles with six expected skips.
+- **Merge** published feature commit `9c2cc54` and main merge `4e2858a`.
+- **Deploy** passed the local production build and verified Vercel [preview](https://kinetix-chan-68x5hn186-chanchans-projects-aada625f.vercel.app) and [production](https://kinetix-chan.vercel.app). Desktop and mobile signed-in smoke tests passed, including clean-account relinking and scoped MCP replacement on desktop.
+- **Document** records the image catalog, archive version 2, supported render profiles and the Unity adapter fixture. The release requires no database migration or new service values.
 
 ## M8.1 editable project archives · November 21, 2026
 
