@@ -16,6 +16,7 @@ import { bindMesh } from "../rig/skinning";
 import { viewportFrameFor } from "../rig/render";
 import { layerTreeFor } from "../rig/layer-tree";
 import { drawingIdSchema } from "../rig/drawings";
+import { planSvgImport,svgImportByteLimit } from "../rig/svg-import";
 
 const frame = z.int().min(0).max(35_999);
 const clipId = z.uuid();
@@ -33,6 +34,11 @@ export const inputs = {
   edit_document:z.strictObject({
     revision:z.int().min(0).max(2_147_483_646),
     commands:z.array(rigCommandSchema).min(1).max(100),
+  }),
+  import_svg:z.strictObject({
+    revision:z.int().min(0).max(2_147_483_646),svg:z.string().min(1).max(svgImportByteLimit),
+    name:z.string().trim().min(1).max(120).optional(),importId:z.uuid().optional(),
+    placement:z.enum(["original","fit"]).default("original"),preflight:z.boolean().default(false),
   }),
   read_drawing_cel:z.strictObject({
     drawingId:drawingIdSchema,celId:drawingIdSchema,revision:z.int().min(0).optional(),
@@ -178,6 +184,20 @@ export class RigAgent {
     }
     const edit = input.commands.findLast(command=>command.type==="cel.edit");
     return this.changeRig("Edit document",()=>input.commands,edit ? {kind:"drawing",id:edit.drawingId}:null,input.revision);
+  }
+  async importSvg(input:z.infer<typeof inputs.import_svg>) {
+    const current=await this.snapshot();
+    if (current.revision!==input.revision) throw new Error("The document has changed. Read its current revision before retrying.");
+    const importId=input.importId ?? crypto.randomUUID();
+    const {commands,...receipt}=planSvgImport(input.svg,{name:input.name,importId,
+      fit:input.placement==="fit" ? artboardFor(current.state) : undefined});
+    const summary={rigId:this.rigId,importId,...receipt,ready:commands.length>0};
+    if (input.preflight || !commands.length) {
+      if (commands.length) editRig(current.state,commands);
+      return {...summary,revision:current.revision,applied:false};
+    }
+    const saved=await this.changeRig("Import SVG",()=>commands,null,input.revision);
+    return {...summary,revision:saved.revision,applied:true};
   }
   async readDrawingCel(input:z.infer<typeof inputs.read_drawing_cel>) {
     const {state,revision}=await this.snapshot();

@@ -15,6 +15,8 @@ import { readRigState } from "../../lib/rig/model";
 import { strFromU8, unzipSync } from "fflate";
 import { createCanvas, loadImage } from "@napi-rs/canvas";
 import { spriteBundleRequest } from "../../lib/export/sprite-bundle-options";
+import { planSvgImport } from "../../lib/rig/svg-import";
+import { editRig } from "../../lib/rig/commands";
 
 const pg = new PGlite();
 const library = new Library(drizzle(pg));
@@ -33,6 +35,28 @@ beforeAll(async () => {
 },30000);
 afterAll(() => pg.close());
 describe("saved library", () => {
+  it("preflights, applies and pins the same SVG import over scoped MCP and the studio command path",async ()=>{
+    const rig=await library.create("illustrator","SVG fixture",{name:"Artwork",width:120,height:96,background:null});
+    const credential=await library.tokens.create("illustrator",rig.id,"SVG agent");
+    try {
+      const agent=new RigAgent(library,(await library.tokens.verify(credential!.token))!);
+      const svg=readFileSync("tests/fixtures/layered-artwork.svg","utf8");
+      const importId="38862090-7b23-45b8-9e01-0b2b302b08f4";
+      const args={revision:rig.revision,svg,importId,placement:"original" as const};
+      const preview=await agent.importSvg({...args,preflight:true});
+      expect(preview).toMatchObject({ready:true,applied:false,partCount:4,diagnostics:[{element:"text #Caption"}]});
+      expect((await agent.hierarchy()).parts).toEqual([]);
+      const applied=await agent.importSvg({...args,preflight:false});
+      expect(applied).toMatchObject({applied:true,groupId:preview.groupId,revision:rig.revision+1});
+      const [studio]=editRig(readRigState(rig.state),planSvgImport(svg,{importId}).commands);
+      const saved=await library.get("illustrator",rig.id);
+      expect(saved!.state).toEqual(JSON.parse(JSON.stringify(studio)));
+      await expect(agent.importSvg({...args,preflight:false})).rejects.toThrow("document has changed");
+      expect((await agent.hierarchy()).revision).toBe(applied.revision);
+    } finally {
+      await library.remove("illustrator",rig.id);
+    }
+  });
   it("edits and reads scoped cels through MCP and renders the queued revision",async ()=>{
     const rig=await library.create("artist","Raster fixture",{name:"Flame",width:48,height:48,background:null});
     const path="/"+rig.id;

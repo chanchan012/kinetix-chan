@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import { readFile } from "node:fs/promises";
 import { strFromU8, unzipSync } from "fflate";
 import { createCanvas, loadImage } from "@napi-rs/canvas";
@@ -13,6 +13,15 @@ test.beforeEach(async ({page}) => {
   await page.goto("/");
   await clerk.signIn({page, emailAddress:process.env.KINETIX_TEST_EMAIL!});
 });
+
+async function expectStudioViewport(page:Page) {
+  await expect.poll(()=>page.evaluate(()=>{
+    const root=document.documentElement;
+    const studio=document.querySelector(".studio-shell");
+    return {horizontalOverflow:Math.max(0,root.scrollWidth-innerWidth),verticalOverflow:Math.max(0,root.scrollHeight-innerHeight),
+      viewportHeightMatches:Boolean(studio && Math.abs(studio.getBoundingClientRect().height-innerHeight)<1)};
+  })).toEqual({horizontalOverflow:0,verticalOverflow:0,viewportHeightMatches:true});
+}
 
 test("an illustrator paints, links, recolors, and exports pixel cels",async ({page},info)=>{
   test.setTimeout(100_000);
@@ -54,9 +63,17 @@ test("an illustrator paints, links, recolors, and exports pixel cels",async ({pa
     await page.getByRole("button",{name:"Next cel exposure"}).click();
     await expect(panel.getByText("Frame 9",{exact:true})).toBeVisible();
     await panel.getByLabel("Edit palette color").fill("#7249ff");
-    const saved=async()=> ((await (await page.request.get(path+"/state")).json()).state as KinetixRigState).drawings?.layers[0];
-    await expect.poll(async()=>(await saved())?.storage).toMatchObject({mode:"indexed",colors:["#7249ff","#fff2a0","#d54139","#202a48"]});
-    const drawing=(await saved())!;
+    const saved=async()=>{
+      const response=await page.request.get(path+"/state");
+      if (response.status()===429 || response.status()===503) return;
+      expect(response.ok(),`Read saved drawing returned HTTP ${response.status()}`).toBe(true);
+      return ((await response.json()).state as KinetixRigState).drawings?.layers[0];
+    };
+    const readback:{drawing?:Awaited<ReturnType<typeof saved>>}={};
+    await expect.poll(async()=>(readback.drawing=await saved())?.storage,{intervals:[300,650,1100]})
+      .toMatchObject({mode:"indexed",colors:["#7249ff","#fff2a0","#d54139","#202a48"]});
+    const drawing=readback.drawing;
+    if (!drawing) throw new Error("The saved drawing could not be loaded.");
     expect(drawing.tracks[0]).toMatchObject({clipId,keys:[
       {frame:0,celId:drawing.cels[0].id},{frame:2,celId:drawing.cels[0].id},
       {frame:5,celId:drawing.cels[1].id},{frame:8,celId:null},
@@ -618,7 +635,7 @@ test("a member queues an export from the studio", async ({page}, info) => {
         await expect(row.getByText("Queued",{exact:true})).toBeVisible();
       }
     }
-    expect(await page.evaluate(()=>document.documentElement.scrollHeight<=innerHeight && document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+    await expectStudioViewport(page);
   } finally {
     expect((await page.request.delete(path)).status()).toBe(204);
   }
@@ -788,11 +805,11 @@ test("a member can open, manipulate, and save a studio rig", async ({page}, info
     await expect(page.getByRole("button",{name:"Pause timeline"})).toBeVisible();
     await page.keyboard.press("Space");
     await page.keyboard.press("?");
-    await expect(page.getByRole("dialog",{name:"Keyboard shortcuts"})).toBeVisible();
+    const shortcuts=page.getByRole("dialog",{name:"Keyboard shortcuts"});
+    await expect(shortcuts).toBeVisible();
     await page.keyboard.press("Escape");
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth &&
-      document.documentElement.scrollHeight <= innerHeight &&
-      Math.abs(document.querySelector(".studio-shell")!.getBoundingClientRect().height - innerHeight) < 1)).toBe(true);
+    await expect(shortcuts).toBeHidden();
+    await expectStudioViewport(page);
     await page.screenshot({path:info.outputPath("studio.png")});
   } finally {
     expect((await page.request.delete(path)).status()).toBe(204);

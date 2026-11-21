@@ -99,7 +99,11 @@ function styleFor(context:RigDrawingContext,part:VectorPart,paint:Paint,poses:Ma
   if (value.kind==="solid") return value.color;
   const [from,to] = gradientAxis(part,value,poses);
   const gradient = context.createLinearGradient(from.x,from.y,to.x,to.y);
-  for (const stop of value.stops) gradient.addColorStop(stop.offset,stop.color);
+  for (const stop of value.stops) {
+    const alpha=stop.opacity ?? 1;
+    const color=alpha===1 ? stop.color : `rgba(${parseInt(stop.color.slice(1,3),16)},${parseInt(stop.color.slice(3,5),16)},${parseInt(stop.color.slice(5,7),16)},${alpha})`;
+    gradient.addColorStop(stop.offset,color);
+  }
   return gradient;
 }
 
@@ -184,12 +188,16 @@ export function drawRigArtwork(
       else if (part.mesh) traceMesh(context,deformMesh(part,poses),part.mesh.triangles);
       else inPartSpace(context,part,poses,()=>tracePart(context,part));
       if (part.closed && fill) {
+        const alpha=context.globalAlpha;
+        context.globalAlpha=alpha*(appearance?.fillOpacity ?? 1);
         context.fillStyle = styleFor(context,part,fill,poses,swatches);
-        context.fill(part.contours ? "evenodd" : "nonzero");
+        context.fill(part.fillRule ?? (part.contours ? "evenodd" : "nonzero"));
+        context.globalAlpha=alpha;
       }
     }
     if (stroke) {
       if (part.facets || part.mesh) tracePolygons(context,regionPolygons(pathRegions(part,poses)));
+      context.globalAlpha *= stroke.opacity ?? 1;
       context.strokeStyle = styleFor(context,part,stroke.paint,poses,swatches);
       context.lineWidth = stroke.width;
       context.lineCap = stroke.cap;

@@ -59,7 +59,30 @@ export function pathRegions(part:VectorPart,poses:Map<string,BonePose>):MultiPol
   }
   const world = (point:Point)=>partWorldSpace(point,part,poses);
   const rings = [part.knots,...(part.contours ?? [])].map(knots=>[flattenRing(knots,world)]);
-  return rings.length===1 ? clipping.union(rings[0]) : clipping.xor(rings[0],...rings.slice(1));
+  if (rings.length===1) return clipping.union(rings[0]);
+  if (part.fillRule!=="nonzero") return clipping.xor(rings[0],...rings.slice(1));
+  // Keep disjoint regions by winding count so overlapping opposite rings cancel once.
+  let bands=new Map<number,MultiPolygon>();
+  for (const ring of rings) {
+    const winding=Math.sign(ring[0].slice(1).reduce((area,[x,y],i)=>area+ring[0][i][0]*y-x*ring[0][i][1],0));
+    if (!winding) continue;
+    const next=new Map<number,MultiPolygon>();
+    function append(weight:number,polygons:MultiPolygon) {
+      if (!weight || !polygons.length) return;
+      const same=next.get(weight);
+      next.set(weight,same ? clipping.union(same,polygons) : polygons);
+    }
+    let uncovered=clipping.union(ring);
+    for (const [count,area] of bands) {
+      append(count,clipping.difference(area,ring));
+      append(count+winding,clipping.intersection(area,ring));
+      if (uncovered.length) uncovered=clipping.difference(uncovered,area);
+    }
+    append(winding,uncovered);
+    bands=next;
+  }
+  const visible=[...bands.values()];
+  return visible.length ? clipping.union(visible[0],...visible.slice(1)) : [];
 }
 
 export function intersectRegions(first:MultiPolygon,next:MultiPolygon) {
