@@ -650,7 +650,7 @@ export function Viewport({rig, phase, sample, ghosts, pixels, onionSettings, bru
             return context.isPointInPath(point.x, point.y);
           }
           inPartSpace(context,item,authoredPoses,() => tracePart(context,item));
-          return item.closed ? context.isPointInPath(point.x,point.y,item.contours?"evenodd":"nonzero") :
+          return item.closed ? context.isPointInPath(point.x,point.y,item.fillRule ?? (item.contours?"evenodd":"nonzero")) :
             context.isPointInStroke(point.x,point.y);
         });
         context.restore();

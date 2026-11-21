@@ -77,6 +77,8 @@ function GradientFields({label,gradient,update}: {label:string;gradient:Linear;u
         update({...gradient,stops:gradient.stops.map((item,index)=>i===index?{...item,offset:value/100}:item).sort((a,b)=>a.offset-b.offset)})}/>
       <button disabled={gradient.stops.length<=2} aria-label={"Remove "+label.toLowerCase()+" stop "+(i+1)}
         onClick={()=>update({...gradient,stops:gradient.stops.filter((_,index)=>i!==index)})}>×</button>
+      <NumberField label={label+" stop "+(i+1)+" opacity (%)"} min={0} max={100} value={(stop.opacity ?? 1)*100} update={value=>
+        update({...gradient,stops:gradient.stops.map((item,index)=>i===index?{...item,opacity:value/100}:item)})}/>
     </div>)}
     <button disabled={gradient.stops.length>=16} onClick={()=>{
       const pairs = gradient.stops.slice(1).map((stop,i)=>({left:gradient.stops[i],right:stop}));
@@ -97,13 +99,22 @@ export function AppearanceControls({part,swatches,edit}: {part:VectorPart;swatch
     <summary>Appearance</summary>
     <div className="studio-paint-fields">
       <NumberField label="Opacity (%)" min={0} max={100} value={(appearance.opacity ?? 1)*100} update={value=>change({opacity:value/100})}/>
-      {part.closed && !part.facets && <PaintFields label="Fill" paint={fill} swatches={swatches} part={part} nullable
-        update={paint=>change({fill:paint})}/>}
+      {part.closed && !part.facets && <>
+        <PaintFields label="Fill" paint={fill} swatches={swatches} part={part} nullable update={paint=>change({fill:paint})}/>
+        {fill && <NumberField label="Fill opacity (%)" min={0} max={100} value={(appearance.fillOpacity ?? 1)*100}
+          update={value=>change({fillOpacity:value/100})}/>}
+        {Boolean(part.contours?.length) && <label>Fill rule<select value={part.fillRule ?? "evenodd"} onChange={event=>{
+          const fillRule=event.target.value==="nonzero" ? "nonzero" : "evenodd";
+          edit("Edit fill rule",{type:"part.update",id:part.id,changes:{fillRule}});
+        }}><option value="evenodd">Even-odd</option><option value="nonzero">Nonzero winding</option></select></label>}
+      </>}
       <label className="studio-check"><input type="checkbox" checked={Boolean(stroke)}
         onChange={event=>change({stroke:event.target.checked ? defaultStroke(part.fill) : null})}/>Stroke</label>
       {stroke && <>
         <PaintFields label="Stroke" paint={stroke.paint} swatches={swatches} part={part}
           update={paint=>{ if (paint) change({stroke:{...stroke,paint}}); }}/>
+        <NumberField label="Stroke opacity (%)" min={0} max={100} value={(stroke.opacity ?? 1)*100}
+          update={value=>change({stroke:{...stroke,opacity:value/100}})}/>
         <NumberField label="Stroke width (px)" min={0.01} max={512} value={stroke.width}
           update={width=>change({stroke:{...stroke,width}})}/>
         <div className="studio-field-pair">

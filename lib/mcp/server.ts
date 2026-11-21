@@ -44,6 +44,7 @@ export function createStudioMcp(agent:RigAgent) {
   tool("draw_primitive","Draw a rectangle, ellipse or star from opposite corners in the part's local coordinates.",inputs.draw_primitive,input=>agent.drawPrimitive(input));
   tool("draw_pencil_path","Simplify and smooth a sequence of sampled points in the part's local coordinates.",inputs.draw_pencil_path,input=>agent.drawPencil(input));
   tool("edit_document","Apply one atomic batch of rig and artwork commands at the specified revision.",inputs.edit_document,input=>agent.editDocument(input));
+  tool("import_svg","Preflight or add a local SVG as an editable group at a saved revision. Returns import diagnostics and the created group ID.",inputs.import_svg,input=>agent.importSvg(input));
   tool("read_drawing_cel","Read a revision-pinned page of a cel's pixel runs as [row, left, width, ink].",inputs.read_drawing_cel,input=>agent.readDrawingCel(input));
   tool("bind_mesh_weights","Bind a closed vector part and assign up to four influences to specified vertices.",inputs.bind_mesh_weights,input=>agent.bindWeights(input));
   tool("create_animation_clip","Create a saved clip with a frame rate and duration in frames.",inputs.create_animation_clip,input=>agent.createClip(input));

@@ -383,6 +383,7 @@ function applyCommand(rig: Draft<KinetixRigState>, command: RigCommand) {
       const source = ids.map(id=>findById(rig.parts,id,"Path"));
       const [target] = source;
       Object.assign(target,booleanPath(source,command.mode,evaluateRig(rig)),{mesh:undefined,facets:undefined});
+      if (target.fillRule!==undefined) target.fillRule="evenodd";
       rig.parts=rig.parts.filter(part=>part.id===target.id || !ids.includes(part.id));
       break;
     }

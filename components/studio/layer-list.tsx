@@ -6,7 +6,7 @@ import type { RigCommand } from "@/lib/rig/commands";
 import { inLayerSubtree,layerTreeFor,orderedLayers } from "@/lib/rig/layer-tree";
 import type { KinetixRigState } from "@/lib/rig/model";
 
-export function LayerList({rig,selectedParts,boneSelected,drawingId,selectPart,selectDrawing,makeDrawing,isolate,setIsolate,edit}: {
+export function LayerList({rig,selectedParts,boneSelected,drawingId,selectPart,selectDrawing,makeDrawing,openImport,isolate,setIsolate,edit}: {
   rig:KinetixRigState;
   selectedParts:string[];
   boneSelected:boolean;
@@ -14,6 +14,7 @@ export function LayerList({rig,selectedParts,boneSelected,drawingId,selectPart,s
   selectPart:(id:string|null)=>void;
   selectDrawing:(id:string)=>void;
   makeDrawing:(mode:"indexed"|"rgba")=>void;
+  openImport:()=>void;
   isolate:string|null;
   setIsolate:(id:string|null)=>void;
   edit:(label:string,command:RigCommand)=>boolean;
@@ -38,6 +39,7 @@ export function LayerList({rig,selectedParts,boneSelected,drawingId,selectPart,s
   const query = search.trim().toLowerCase();
   return <section className="studio-layer-list" aria-label="Artwork layers">
     <h3>Layers</h3>
+    <div className="studio-layer-actions"><button type="button" onClick={openImport}>Import SVG</button></div>
     <details className="studio-layer-actions">
       <summary>Add drawing layer</summary>
       <button onClick={()=>makeDrawing("indexed")}>Indexed drawing</button>

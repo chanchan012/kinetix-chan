@@ -25,6 +25,7 @@ import { ArtboardFields, readArtboardFields } from "../artboard-fields";
 import { Dialog } from "../dialog";
 import { FacetPanel,useFacetTool } from "./facet-tools";
 import { LayerList } from "./layer-list";
+import { SvgImportDialog } from "./svg-import-dialog";
 import { AppearanceControls } from "./appearance-controls";
 import { editablePartIds,layerTreeFor,visibleLayerRows } from "@/lib/rig/layer-tree";
 import { CelControls, defaultCelSettings, type CelSettings } from "./cel-controls";
@@ -75,6 +76,7 @@ export function Studio({actorId, rigId, name, initial, revision: initialRevision
   const [clipId, selectClip] = useState(clips[0]?.id ?? "");
   const [liveClips, setLiveClips] = useState(clips);
   const [exportOpen, setExportOpen] = useState(false);
+  const [importOpen,setImportOpen] = useState(false);
   const [shareOpen, setShareOpen] = useState(false);
   const [mcpOpen, setMcpOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
@@ -369,7 +371,7 @@ export function Studio({actorId, rigId, name, initial, revision: initialRevision
       <aside className="studio-hierarchy" id="studio-hierarchy" aria-label="Rig hierarchy">
         <div className="studio-panel-title"><h2>Hierarchy</h2><span>{rig.bones.length} bones</span></div>
         <Hierarchy rig={rig} selected={selected} selectedParts={selectedParts} select={select} isolation={isolation}
-          setIsolate={setIsolate} edit={edit} makeDrawing={makeDrawing}/>
+          setIsolate={setIsolate} edit={edit} makeDrawing={makeDrawing} openImport={()=>setImportOpen(true)}/>
       </aside>
       <PanelHandle panel="hierarchy" size={layout.panels.hierarchy} label="Resize hierarchy" controls="studio-hierarchy"/>
       <PanelHandle panel="split" size={layout.panels.split} label="Resize side panels" controls="studio-hierarchy studio-inspector"/>
@@ -454,6 +456,13 @@ export function Studio({actorId, rigId, name, initial, revision: initialRevision
     </div>
     {exportOpen && <ExportDialog rigId={rigId} revision={revision} clip={clip} clips={liveClips} frameCount={referenceFrameCount(rig)} artboard={artboardFor(rig)}
       unsaved={dirty || timelineDirty} hasArtboard={rig.version === 2} renderConfigured={renderConfigured} close={() => setExportOpen(false)}/>}
+    {importOpen && <SvgImportDialog rig={rig} close={()=>setImportOpen(false)} apply={plan=>{
+      if (!edit("Import SVG",...plan.commands)) return false;
+      setIsolate(null);
+      chooseTool("select");
+      setImportOpen(false);
+      return true;
+    }}/>}
     {shareOpen && <ShareDialog rigId={rigId} close={() => setShareOpen(false)}/>}
     {mcpOpen && <McpDialog rigId={rigId} close={() => setMcpOpen(false)}/>}
     {shortcutsOpen && <ShortcutsDialog close={() => setShortcutsOpen(false)}/>}
@@ -594,10 +603,11 @@ function WeightTools({part, rig, brush, setBrush, edit, report}: {
   </section>;
 }
 
-function Hierarchy({rig, selected, selectedParts, select, isolation, setIsolate, edit, makeDrawing}: {
+function Hierarchy({rig, selected, selectedParts, select, isolation, setIsolate, edit, makeDrawing, openImport}: {
   rig: KinetixRigState; selected: Selection; selectedParts:string[]; select: (value: Selection) => void;
   isolation:string|null;setIsolate:(id:string|null)=>void;edit:Edit;
   makeDrawing:(mode:"indexed"|"rgba")=>void;
+  openImport:()=>void;
 }) {
   const depths = new Map<string, number>();
   return <div className="studio-tree">
@@ -608,7 +618,7 @@ function Hierarchy({rig, selected, selectedParts, select, isolation, setIsolate,
         aria-pressed={selected?.kind === "bone" && selected.id === bone.id} onClick={() => select({ kind: "bone", id: bone.id })}>
         <BoneIcon size={14}/><span>{bone.name}</span></button></li>;
     })}</ul>
-    <LayerList {...{rig,selectedParts,setIsolate,edit,makeDrawing}} isolate={isolation} boneSelected={selected?.kind==="bone"}
+    <LayerList {...{rig,selectedParts,setIsolate,edit,makeDrawing,openImport}} isolate={isolation} boneSelected={selected?.kind==="bone"}
       drawingId={selected?.kind==="drawing" ? selected.id : undefined} selectDrawing={id=>select({kind:"drawing",id})}
       selectPart={id=>select(id ? {kind:"part",id} : null)}/>
     {selected && <button className="studio-deselect" onClick={() => select(null)}>Clear selection</button>}

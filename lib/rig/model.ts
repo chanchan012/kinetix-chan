@@ -113,6 +113,7 @@ export const partSchema = z.strictObject({
   knots: z.array(knotSchema).min(2).max(256),
   fill: color,
   appearance: appearanceSchema.optional(),
+  fillRule: z.enum(["nonzero","evenodd"]).optional(),
   contours:z.array(z.array(knotSchema).min(3).max(2048)).max(128).optional(),
   closed: z.boolean(),
   mesh: meshSchema.optional(),

@@ -6,7 +6,7 @@ type Vec = [number, number];
 type Color = [number, number, number];
 type Matrix = [number, number, number, number, number, number];
 type Shape = { i: Vec[]; o: Vec[]; v: Vec[]; c: boolean };
-type Gradient = { from:Vec;to:Vec;stops:{offset:number;color:Color}[];addColorStop(offset:number,color:string):void };
+type Gradient = { from:Vec;to:Vec;stops:{offset:number;color:Color;opacity:number}[];addColorStop(offset:number,color:string):void };
 type StrokeStyle = { width:number;cap:CanvasLineCap;join:CanvasLineJoin;miter:number;dash:number[];offset:number };
 type Mark = { paths:Shape[];paint:Color|Gradient;opacity:number;rule:CanvasFillRule;stroke:StrokeStyle|null;mask:Shape[]|null };
 type GraphicsState = { matrix:Matrix;fill:unknown;stroke:unknown;strokeStyle:StrokeStyle;alpha:number;mask:Shape[]|null };
@@ -134,7 +134,11 @@ class VectorCapture implements RigDrawingContext {
   createLinearGradient(x0:number,y0:number,x1:number,y1:number):Gradient {
     const stops:Gradient["stops"] = [];
     return {from:this.point(x0,y0),to:this.point(x1,y1),stops,
-      addColorStop:(offset,color)=>stops.push({offset,color:colorOf(color)})};
+      addColorStop:(offset,color)=>{
+        const rgba=/^rgba\((\d+),(\d+),(\d+),([\d.e+-]+)\)$/.exec(color);
+        stops.push(rgba ? {offset,color:rgba.slice(1,4).map(value=>Number(value)/255) as Color,opacity:Number(rgba[4])} :
+          {offset,color:colorOf(color),opacity:1});
+      }};
   }
   setLineDash(dash:number[]) { this.dash = dash.length%2 ? [...dash,...dash] : [...dash]; }
   clip() { this.mask = this.paths.filter(path=>path.v.length>=3); }
@@ -170,9 +174,14 @@ function direction(path:Shape) {
 function buildLayer(marks: Mark[], index: number, frames: number) {
   const first = marks[0];
   const gradient = !Array.isArray(first.paint);
+  const hasGradientAlpha=gradient && marks.some(mark=>(mark.paint as Gradient).stops.some(stop=>stop.opacity!==1));
   const ink = gradient ? {
     t:1,g:{p:(first.paint as Gradient).stops.length,
-      k:sampleValue(marks.map(mark=>(mark.paint as Gradient).stops.flatMap(stop=>[stop.offset,...stop.color])))},
+      k:sampleValue(marks.map(mark=>{
+        const stops=(mark.paint as Gradient).stops;
+        const color=stops.flatMap(stop=>[stop.offset,...stop.color]);
+        return hasGradientAlpha ? [...color,...stops.flatMap(stop=>[stop.offset,stop.opacity])] : color;
+      }))},
     s:sampleValue(marks.map(mark=>(mark.paint as Gradient).from)),
     e:sampleValue(marks.map(mark=>(mark.paint as Gradient).to)),
   } : {c:sampleValue(marks.map(mark=>mark.paint as Color))};

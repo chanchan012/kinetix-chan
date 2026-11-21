@@ -1,4 +1,6 @@
 .studio-shell {
+  /* Keep offscreen controls inside the studio's clipped viewport. */
+  position:relative;
   --studio-line:#d6d6ca;
   --studio-panel:#faf9f4;
   --studio-highlight:#f5e6d8;
@@ -87,6 +89,7 @@
 .studio-appearance select { width:100%;min-width:0 }
 .studio-gradient-stop { display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr) auto;gap:4px;align-items:end }
 .studio-gradient-stop button { min-height:34px }
+.studio-gradient-stop > label:last-child { grid-column:1 / -1 }
 .studio-viewport-actions { right:12px;top:12px }
 .studio-stage-footer { left:50%;bottom:12px;transform:translateX(-50%) }
 .studio-tool-group { display:flex;align-items:center;gap:3px;min-width:0 }
@@ -158,6 +161,11 @@
 .studio-export form label,.studio-export-format { display:grid;gap:4px;font-size:12px }
 .studio-export form input,.studio-export form select,.studio-export-format select { width:100%;min-width:0 }
 .studio-export form select,.studio-export-format select { padding:4px 6px;border:1px solid var(--studio-line);background:#fffdf7;border-radius:4px }
+.studio-svg-import .studio-svg-fit { display:flex;align-items:center;gap:7px }
+.studio-svg-import .studio-svg-fit input { width:auto }
+.studio-svg-import .studio-svg-review { display:grid;min-width:0;gap:6px;font-size:12px }
+.studio-svg-import .studio-svg-review canvas { margin:0 auto;max-width:100%;width:auto;max-height:140px;object-fit:contain }
+.studio-svg-import .studio-svg-review li { margin-block:5px;overflow-wrap:anywhere }
 .studio-bundle-clips { display:grid;gap:8px;min-width:0;border:1px solid var(--studio-line);padding:7px }
 .studio-bundle-clip { display:grid;gap:6px }
 .studio-bundle-clip textarea { width:100%;border:1px solid var(--studio-line);background:#fffdf7;padding:4px;font:11px var(--mono) }
