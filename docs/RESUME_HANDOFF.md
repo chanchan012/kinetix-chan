@@ -190,11 +190,13 @@ The image limits are 1 MiB per file, 1.5 MiB of embedded bytes per project, up t
 
 Run `npm test -- tests/unit/phaser-timeline.test.ts` for cue windows. Run `npm run test:phaser` with a Playwright Chromium installation or `PLAYWRIGHT_CHANNEL=chrome` for real Phaser Canvas and WebGL, a renamed and repacked update, a simulated staging failure, and starter playback. The starter ZIP includes its own npm lockfile. Extract it and run `npm ci` and `npm run build` to validate it independently. Run `npm run test:e2e -- --grep 'preflights and plays three layouts'` to check the authenticated browser delivery across viewports. No new environment variables or migrations are needed.
 
-Vercel marked the feature preview for `0f92d7a` ready. The merge on GitHub `main` is `79ffea0`. Its Vercel commit status reports a 24-hour deployment rate limit as of November 21, 2026 at 12:13 UTC. Once the limit resets, trigger a production deployment from the validated `main` revision. Confirm that Vercel lists the intended commit as `READY` for `production`, check `/sprite-player/phaser` for `application/zip` and the 11 starter files, then run the `preflights and plays three layouts` scenario signed in against production on desktop and portrait phone. The existing Clerk test account fixture can run against a hosted URL by using a Playwright config with that base URL and no local web server.
+Vercel marked the feature preview for `0f92d7a` ready. The first production attempt for `79ffea0` hit a deployment rate limit. Production `951ab0b` subsequently published the Phaser route. `/sprite-player/phaser` returns the tested 11-file ZIP. The existing Clerk test account fixture can run the `preflights and plays three layouts` scenario against a hosted URL by using a Playwright config with that base URL and no local web server.
 
 ## M9.3 · PixiJS verification
 
 Run `npm run test:pixi` with Chrome and access to a WebGPU adapter to check Canvas, WebGL, WebGPU and the starter. `npm run test:phaser` covers the shared frame and cue behavior. The PixiJS ZIP contains ten files and an npm lockfile. Extract it, run `npm ci` and `npm run build`, and serve `dist` to verify the recipient experience. The authenticated test `preflights and plays three layouts` verifies the kit download and page containment across four viewports. WebGPU can report PixiJS bind-group warnings for retired textures. The receiver verifies that replacement frames still render and that app shutdown destroys its actor. The profile needs no additional deployment settings.
+
+Vercel marked the `5540668` preview and `951ab0b` production deployment ready. The preview ZIP returned `application/zip`, and the production versions of both the Phaser and PixiJS ZIPs matched the Git checkout. The signed-in desktop and portrait phone production smoke checks passed. [Production sprite player](https://kinetix-chan.vercel.app/sprite-player)
 
 ## M9.4 · Next implementation step
 

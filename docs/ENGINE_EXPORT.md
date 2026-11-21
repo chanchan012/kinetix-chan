@@ -74,13 +74,13 @@ Version 2 validates ZIP sizes, texture digests, bounds and timing before publish
 
 ## Import and update in Phaser 3.90.0
 
-Open the sprite player and choose **Phaser starter** to download the ZIP. The first release is available in the Vercel preview while production waits for the build limit to reset. Extract the ZIP and run `npm ci`, then `npm run dev`, with Node.js 24. Upload a version 2 portable sprite ZIP in the starter and select a named clip and direction. Chrome verification covers Phaser Canvas and WebGL, all three package layouts, fractional scale, exact frame holds, cue delivery and reimport. [Phaser release preview](https://kinetix-chan-l26n5z98k-chanchans-projects-aada625f.vercel.app/sprite-player)
+Open the sprite player and choose **Phaser starter** to download the ZIP. Extract it and run `npm ci`, then `npm run dev`, with Node.js 24. Upload a version 2 portable sprite ZIP in the starter and select a named clip and direction. Chrome verification covers Phaser Canvas and WebGL, all three package layouts, fractional scale, exact frame holds, cue delivery and reimport. [Download Phaser starter](https://kinetix-chan.vercel.app/sprite-player/phaser)
 
 In an existing game, create a `KinetixPhaserLibrary` in your scene, call `importBundle(bytes)` and `createSprite(x, y, clipId)`. Use the returned container for placement and game-owned children. Bind `kinetix-cue` for frame events. `socket(name)` and `collisions()` return pivot-relative metadata in scene units after conversion from export pixels. A partial reimport keeps the omitted clips, and renamed clips retain their saved IDs. Import setup, calls and reimport behavior are documented in the [starter README](../integrations/phaser/README.md).
 
 ## Import and update in PixiJS 8.23.0
 
-Choose **PixiJS starter** in the sprite player once the deployment is available. Extract it and run `npm ci` and `npm run dev` with Node.js 24. Select a version 2 ZIP, review the added, updated and retained clips, and apply the import. The starter prefers WebGL and can use Canvas. The library was tested in Chrome with Canvas, WebGL and WebGPU.
+Choose **PixiJS starter** in the sprite player. Extract it and run `npm ci` and `npm run dev` with Node.js 24. Select a version 2 ZIP, review the added, updated and retained clips, and apply the import. The starter prefers WebGL and can use Canvas. The library was tested in Chrome with Canvas, WebGL and WebGPU. [Download PixiJS starter](https://kinetix-chan.vercel.app/sprite-player/pixi)
 
 Use `KinetixPixiLibrary` after initializing a PixiJS application. The optional preview base hash guards against replacing an intervening import. An existing actor stays in the scene when its clip is renamed or repacked. Receive timing cues through `kinetix-cue` and place props using pivot-relative `socket(name)` coordinates. PixiJS 8.23.0 can log WebGPU bind-group warnings when retiring textures after reimport or teardown. The browser fixture verifies playback through reimport and actor destruction. [Starter setup and API](../integrations/pixi/README.md)
 
