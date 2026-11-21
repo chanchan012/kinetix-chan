@@ -14,11 +14,33 @@ func _initialize() -> void:
 	if file == null or file.get_length() > MAX_PACKAGE_BYTES or archive.open(package_path) != OK:
 		_fail("Could not open this Kinetix sprite ZIP.")
 		return
-	if not archive.file_exists("kinetix.json") or not archive.file_exists("atlas.png"):
-		_fail("The package must contain kinetix.json and atlas.png.")
+	if not archive.file_exists("kinetix.json"):
+		_fail("The package must contain kinetix.json.")
+		return
+	var sizes := _archive_sizes(file.get_buffer(file.get_length()))
+	if sizes.is_empty() or not sizes.has("kinetix.json"):
+		_fail("The ZIP entry sizes are invalid or exceed the package limit.")
 		return
 	var manifest: Variant = JSON.parse_string(archive.read_file("kinetix.json").get_string_from_utf8())
-	if not manifest is Dictionary or not _valid_manifest(manifest):
+	if manifest is Dictionary and manifest.get("schema") == "kinetix.sprite-package" and manifest.get("version") == 2:
+		var directory: String = get_script().resource_path.get_base_dir()
+		var adapter_path := directory.path_join("import_sprite_bundle.gd")
+		if not FileAccess.file_exists(adapter_path) or not FileAccess.file_exists(directory.path_join("kinetix_sprite.gd")):
+			_fail("Keep all three importer scripts in the same project folder for a version 2 bundle.")
+			return
+		var adapter := load(adapter_path) as Script
+		if adapter == null or not adapter.can_instantiate():
+			_fail("The version 2 importer could not load.")
+			return
+		var result: Dictionary = adapter.new().import_bundle(archive, sizes, manifest)
+		archive.close()
+		if result.has("error"):
+			_fail(result.error)
+		else:
+			print("KINETIX_IMPORT " + JSON.stringify(result))
+			quit()
+		return
+	if not sizes.has("atlas.png") or not manifest is Dictionary or not _valid_manifest(manifest):
 		_fail("Invalid or unsupported Kinetix sprite manifest.")
 		return
 	var png := archive.read_file("atlas.png")
@@ -39,11 +61,23 @@ func _initialize() -> void:
 	if directory_status != OK:
 		_fail("Could not create the generated asset directory.")
 		return
+	var lock := ProjectSettings.globalize_path(target.get_base_dir()).path_join(".kinetix-import.lock")
+	if DirAccess.make_dir_absolute(lock) != OK:
+		_fail("The asset directory is locked. Finish the existing import before retrying.")
+		return
+	var result := _save_legacy(manifest, image, target)
+	DirAccess.remove_absolute(lock)
+	if result.has("error"):
+		_fail(result.error)
+	else:
+		print("KINETIX_IMPORT " + JSON.stringify(result))
+		quit()
+
+func _save_legacy(manifest: Dictionary, image: Image, target: String) -> Dictionary:
 	var frames := _sprite_frames(manifest, ImageTexture.create_from_image(image))
 	var frames_path := target + "/frames.res"
 	if ResourceSaver.save(frames, frames_path, ResourceSaver.FLAG_CHANGE_PATH) != OK:
-		_fail("Could not save the SpriteFrames resource.")
-		return
+		return {"error": "Could not save the SpriteFrames resource."}
 
 	var sprite := AnimatedSprite2D.new()
 	sprite.name = "KinetixSprite"
@@ -58,10 +92,40 @@ func _initialize() -> void:
 	var pack_status := scene.pack(sprite)
 	sprite.free()
 	if pack_status != OK or ResourceSaver.save(scene, scene_path) != OK:
-		_fail("Could not save the generated sprite scene.")
-		return
-	print("KINETIX_IMPORT " + JSON.stringify({"scene":scene_path,"frames":frames_path,"frameCount":manifest.frames.size()}))
-	quit()
+		return {"error": "Could not save the generated sprite scene."}
+	return {"scene": scene_path, "frames": frames_path, "frameCount": manifest.frames.size()}
+
+# Bound ZIP extraction using the central directory before allocating any entry.
+func _archive_sizes(bytes: PackedByteArray) -> Dictionary:
+	var end_record := bytes.size() - 22
+	var earliest := maxi(0, end_record - 65535)
+	while end_record >= earliest:
+		if bytes.decode_u32(end_record) == 0x06054b50 and end_record + 22 + bytes.decode_u16(end_record + 20) == bytes.size():
+			break
+		end_record -= 1
+	if end_record < earliest or bytes.decode_u32(end_record + 4) != 0:
+		return {}
+	var count := bytes.decode_u16(end_record + 10)
+	var cursor := bytes.decode_u32(end_record + 16)
+	if count < 1 or count > 128 or count != bytes.decode_u16(end_record + 8) or cursor + bytes.decode_u32(end_record + 12) != end_record:
+		return {}
+	var names := {}
+	var total := 0
+	for item in range(count):
+		if cursor + 46 > end_record or bytes.decode_u32(cursor) != 0x02014b50:
+			return {}
+		var length := bytes.decode_u16(cursor + 28)
+		var next := cursor + 46 + length + bytes.decode_u16(cursor + 30) + bytes.decode_u16(cursor + 32)
+		var entry_size := bytes.decode_u32(cursor + 24)
+		total += entry_size
+		if next > end_record or total > MAX_PACKAGE_BYTES:
+			return {}
+		var name := bytes.slice(cursor + 46, cursor + 46 + length).get_string_from_utf8()
+		if name.is_empty() or names.has(name):
+			return {}
+		names[name] = entry_size
+		cursor = next
+	return names if cursor == end_record else {}
 
 func _valid_manifest(manifest: Dictionary) -> bool:
 	if manifest.get("schema") != "kinetix.sprite-package" or manifest.get("version") != 1 or manifest.get("layout") != "fixed-grid":
